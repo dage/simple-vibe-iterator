@@ -31,7 +31,7 @@ class NiceGUIView(SessionEventListener):
 
     def render(self) -> None:
         with ui.column().classes('w-full h-screen p-4 gap-3'):
-            ui.label('AI Code Generator').classes('text-2xl font-bold')
+            ui.label('Simple Vibe Iterator').classes('text-2xl font-bold')
 
             # Taller, top-positioned prompt area; will remove itself after first submission
             with ui.card().classes('w-full p-4') as prompt_card:
@@ -112,7 +112,7 @@ class NiceGUIView(SessionEventListener):
 
             with ui.row().classes('w-full'):
                 feedback = ui.textarea(placeholder='Optional feedback for next iteration...').classes('w-full')
-                ui.button('Send Feedback', on_click=lambda fb=feedback, sid=session.id: self._send_feedback(sid, fb))
+                ui.button('Iterate', on_click=lambda fb=feedback, sid=session.id: self._send_feedback(sid, fb))
         return card
 
     async def _update_session_card(self, session: SessionData) -> None:
