@@ -96,8 +96,8 @@ class NiceGUIView(SessionEventListener):
             card.image_area = ui.expansion('Screenshot')  # type: ignore[attr-defined]
             with card.image_area:
                 if session.screenshot_path:
-                    # Show a much larger screenshot when expanded
-                    ui.image(session.screenshot_path).classes('w-full max-w-[1600px]')
+                    # Show a very large screenshot when expanded
+                    ui.image(session.screenshot_path).classes('w-[1600px] h-auto max-w-none')
                 else:
                     ui.label('(no screenshot yet)')
 
@@ -136,7 +136,7 @@ class NiceGUIView(SessionEventListener):
             image_area.clear()
             with image_area:
                 if session.screenshot_path:
-                    ui.image(session.screenshot_path).classes('w-full max-w-[1600px]')
+                    ui.image(session.screenshot_path).classes('w-[1600px] h-auto max-w-none')
                 else:
                     ui.label('(no screenshot yet)')
         # logs
