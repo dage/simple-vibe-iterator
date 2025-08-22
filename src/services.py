@@ -62,3 +62,34 @@ class OpenRouterVisionService(VisionService):
             return f"Vision analysis failed: {exc}"
 
 
+class OpenRouterAICodeService(AICodeService):
+    async def generate_html(self, prompt: str) -> str:
+        system = (
+            "You generate complete standalone HTML documents. "
+            "Return ONLY valid HTML (starting with <!DOCTYPE html>), no explanations."
+        )
+        user = (
+            "Create a minimal, clean HTML page based on this description. "
+            "Use inline CSS only. Add a visible title and a main section.\n\n"
+            f"Description: {prompt}"
+        )
+        try:
+            convo = or_client.Conversation()
+            convo.set_system(system)
+            reply = await convo.ask(user, temperature=0.2)
+        except Exception as exc:
+            return (
+                "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Error</title></head>"
+                f"<body><h1>Code generation failed</h1><pre>{exc}</pre></body></html>"
+            )
+
+        text = (reply or "").strip()
+        if "<!DOCTYPE html" not in text[:200].lower():
+            # Fallback wrap if model returned fragment
+            return (
+                "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Generated Page</title></head>"
+                f"<body>{text}</body></html>"
+            )
+        return text
+
+
