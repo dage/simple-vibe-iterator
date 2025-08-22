@@ -37,7 +37,7 @@ class NiceGUIView(SessionEventListener):
             with ui.card().classes('w-full p-4') as prompt_card:
                 self.prompt_input = ui.textarea(
                     placeholder='Describe your desired HTML page...'
-                ).classes('w-full mb-3 h-64')
+                ).classes('w-full mb-3')
                 ui.button('Generate', on_click=lambda: self._on_generate_click_and_remove(prompt_card)).classes('w-full')
 
             with ui.scroll_area().classes('flex-grow w-full') as scroll:
