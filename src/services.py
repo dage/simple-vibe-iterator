@@ -4,10 +4,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 from pathlib import Path
-from typing import List, Tuple
+from typing import List
 
 from .interfaces import AICodeService, BrowserService, VisionService
-from . import or_client
 from .playwright_browser import capture_html, parse_viewport
 
 
@@ -50,46 +49,36 @@ class PlaywrightBrowserService(BrowserService):
 
 class OpenRouterVisionService(VisionService):
     async def analyze_screenshot(self, screenshot_path: str, console_logs: List[str]) -> str:
-        prompt = (
-            "You are evaluating a rendered HTML page screenshot. "
-            "Summarize what you see briefly and suggest 2 improvements. "
-            "Also consider these console logs: " + "\n".join(console_logs[:10])
-        )
-        try:
-            reply = await or_client.vision_single(prompt=prompt, image=Path(screenshot_path))
-            return reply
-        except Exception as exc:
-            return f"Vision analysis failed: {exc}"
+        # Stubbed vision: summarize basic info without calling an LLM
+        await asyncio.sleep(0.05)
+        name = Path(screenshot_path).name
+        summary = [
+            f"Vision stub", 
+            f"Screenshot: {name}",
+            f"Console entries: {len(console_logs)}",
+        ]
+        # Include first few console lines for context
+        head = console_logs[:5]
+        if head:
+            summary.append("\nSample console logs:")
+            summary.extend(head)
+        return "\n".join(summary)
 
 
-class OpenRouterAICodeService(AICodeService):
-    async def generate_html(self, prompt: str) -> str:
-        system = (
-            "You generate complete standalone HTML documents. "
-            "Return ONLY valid HTML (starting with <!DOCTYPE html>), no explanations."
-        )
-        user = (
-            "Create a minimal, clean HTML page based on this description. "
-            "Use inline CSS only. Add a visible title and a main section.\n\n"
-            f"Description: {prompt}"
-        )
-        try:
-            convo = or_client.Conversation()
-            convo.set_system(system)
-            reply = await convo.ask(user, temperature=0.2)
-        except Exception as exc:
-            return (
-                "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Error</title></head>"
-                f"<body><h1>Code generation failed</h1><pre>{exc}</pre></body></html>"
-            )
-
-        text = (reply or "").strip()
-        if "<!DOCTYPE html" not in text[:200].lower():
-            # Fallback wrap if model returned fragment
-            return (
-                "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Generated Page</title></head>"
-                f"<body>{text}</body></html>"
-            )
-        return text
+class StubVisionService(VisionService):
+    async def analyze_screenshot(self, screenshot_path: str, console_logs: List[str]) -> str:
+        # Same behavior as OpenRouterVisionService placeholder but clearly marked as stub
+        await asyncio.sleep(0.05)
+        name = Path(screenshot_path).name
+        summary = [
+            f"Vision stub", 
+            f"Screenshot: {name}",
+            f"Console entries: {len(console_logs)}",
+        ]
+        head = console_logs[:5]
+        if head:
+            summary.append("\nSample console logs:")
+            summary.extend(head)
+        return "\n".join(summary)
 
 

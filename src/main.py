@@ -4,14 +4,14 @@ from __future__ import annotations
 from nicegui import ui
 
 from .controller import SessionController
-from .services import OpenRouterVisionService, PlaywrightBrowserService, OpenRouterAICodeService
+from .services import StubVisionService, PlaywrightBrowserService, StubAICodeService
 from .view import NiceGUIView
 
 
 def create_app() -> NiceGUIView:
-    ai_service = OpenRouterAICodeService()
+    ai_service = StubAICodeService()
     browser_service = PlaywrightBrowserService()
-    vision_service = OpenRouterVisionService()
+    vision_service = StubVisionService()
 
     controller = SessionController(ai_service, browser_service, vision_service)
     view = NiceGUIView(controller)
