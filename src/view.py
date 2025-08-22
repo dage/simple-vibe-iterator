@@ -33,15 +33,17 @@ class NiceGUIView(SessionEventListener):
         with ui.column().classes('w-full h-screen p-4 gap-3'):
             ui.label('AI Code Generator').classes('text-2xl font-bold')
 
+            # Taller, top-positioned prompt area; will remove itself after first submission
+            with ui.card().classes('w-full p-4') as prompt_card:
+                self.prompt_input = ui.textarea(
+                    placeholder='Describe your desired HTML page...'
+                ).classes('w-full mb-3 h-64')
+                ui.button('Generate', on_click=lambda: self._on_generate_click_and_remove(prompt_card)).classes('w-full')
+
             with ui.scroll_area().classes('flex-grow w-full') as scroll:
                 self.chat_container = ui.column().classes('w-full gap-4')
                 self.scroll_area = scroll
 
-            with ui.card().classes('w-full p-4'):
-                self.prompt_input = ui.textarea(
-                    placeholder='Describe your desired HTML page...'
-                ).classes('w-full mb-3')
-                ui.button('Generate', on_click=self._on_generate_click).classes('w-full')
 
     async def _on_generate_click(self) -> None:
         if not self.prompt_input:
@@ -52,6 +54,14 @@ class NiceGUIView(SessionEventListener):
             return
         self.prompt_input.value = ''
         await self.controller.create_session(prompt)
+
+    async def _on_generate_click_and_remove(self, prompt_card: ui.card) -> None:
+        await self._on_generate_click()
+        # Remove prompt card after first use
+        try:
+            prompt_card.delete()
+        except Exception:
+            pass
 
     # SessionEventListener
     async def on_session_created(self, session: SessionData) -> None:
@@ -86,7 +96,8 @@ class NiceGUIView(SessionEventListener):
             card.image_area = ui.expansion('Screenshot')  # type: ignore[attr-defined]
             with card.image_area:
                 if session.screenshot_path:
-                    ui.image(session.screenshot_path)
+                    # Show a much larger screenshot when expanded
+                    ui.image(session.screenshot_path).classes('w-full max-w-[1600px]')
                 else:
                     ui.label('(no screenshot yet)')
 
@@ -125,7 +136,7 @@ class NiceGUIView(SessionEventListener):
             image_area.clear()
             with image_area:
                 if session.screenshot_path:
-                    ui.image(session.screenshot_path)
+                    ui.image(session.screenshot_path).classes('w-full max-w-[1600px]')
                 else:
                     ui.label('(no screenshot yet)')
         # logs
