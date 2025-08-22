@@ -46,28 +46,9 @@ class PlaywrightBrowserService(BrowserService):
             flat_logs.append(f"[{t}] {msg}")
         return (str(png_path), flat_logs)
 
-
-class OpenRouterVisionService(VisionService):
-    async def analyze_screenshot(self, screenshot_path: str, console_logs: List[str]) -> str:
-        # Stubbed vision: summarize basic info without calling an LLM
-        await asyncio.sleep(0.05)
-        name = Path(screenshot_path).name
-        summary = [
-            f"Vision stub", 
-            f"Screenshot: {name}",
-            f"Console entries: {len(console_logs)}",
-        ]
-        # Include first few console lines for context
-        head = console_logs[:5]
-        if head:
-            summary.append("\nSample console logs:")
-            summary.extend(head)
-        return "\n".join(summary)
-
-
 class StubVisionService(VisionService):
     async def analyze_screenshot(self, screenshot_path: str, console_logs: List[str]) -> str:
-        # Same behavior as OpenRouterVisionService placeholder but clearly marked as stub
+        # Stubbed vision: summarize basic info without calling an LLM
         await asyncio.sleep(0.05)
         name = Path(screenshot_path).name
         summary = [

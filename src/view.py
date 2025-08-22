@@ -110,15 +110,17 @@ class NiceGUIView(SessionEventListener):
             with card.vision_area:
                 ui.markdown(session.vision_analysis or '(pending)')
 
-            # Show complete prompt (readonly preview) above Iterate button
-            complete_prompt = self._build_complete_prompt(session, feedback_text='')
-            card.prompt_preview = ui.textarea(label='Show complete prompt', value=complete_prompt).props('readonly').classes('w-full')  # type: ignore[attr-defined]
+            # Feedback input
+            feedback = ui.textarea(placeholder='Optional feedback for next iteration...').classes('w-full')
+            card.feedback_input = feedback  # type: ignore[attr-defined]
+
+            # Subdued button to show the combined prompt in a dialog, placed just above Iterate
+            ui.button(
+                'Show complete prompt',
+                on_click=lambda sid=session.id, fb=feedback: self._open_prompt_preview(sid, fb),
+            ).props('outline color=grey-7')
 
             with ui.row().classes('w-full'):
-                feedback = ui.textarea(placeholder='Optional feedback for next iteration...').classes('w-full')
-                # If user starts typing, clear the preview to avoid showing disconnected state
-                feedback.on('change', lambda e, c=card: self._clear_prompt_preview(c))
-                card.feedback_input = feedback  # type: ignore[attr-defined]
                 ui.button('Iterate', on_click=lambda fb=feedback, sid=session.id: self._send_feedback(sid, fb)).classes('')
         return card
 
@@ -160,12 +162,6 @@ class NiceGUIView(SessionEventListener):
             with vision_area:
                 ui.markdown(session.vision_analysis or '(pending)')
 
-        # Update prompt preview content to reflect latest logs/vision
-        preview = getattr(card, 'prompt_preview', None)
-        feedback_input = getattr(card, 'feedback_input', None)
-        if preview:
-            feedback_text = (feedback_input.value or '') if feedback_input else ''
-            preview.value = self._build_complete_prompt(session, feedback_text)
 
     def _build_complete_prompt(self, session: SessionData, feedback_text: str) -> str:
         logs_text = '\n'.join(session.console_logs or [])
@@ -188,9 +184,17 @@ class NiceGUIView(SessionEventListener):
         await self.controller.send_feedback(session_id, combined)
         feedback_widget.value = ''
 
-    def _clear_prompt_preview(self, card: ui.card) -> None:
-        preview = getattr(card, 'prompt_preview', None)
-        if preview:
-            preview.value = ''
+    def _open_prompt_preview(self, session_id: str, feedback_widget: ui.textarea) -> None:
+        s = self.controller.get_session(session_id)
+        if not s:
+            ui.notify('Session not found', color='negative')
+            return
+        combined = self._build_complete_prompt(s, (feedback_widget.value or '').strip())
+        with ui.dialog() as dialog:
+            with ui.card().classes('w-[800px] max-w-full'):
+                ui.label('Complete Prompt for coding model').classes('text-lg font-semibold')
+                ui.code(combined).classes('w-full')
+                ui.button('Close', on_click=dialog.close).classes('w-full')
+        dialog.open()
 
 
