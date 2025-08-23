@@ -173,8 +173,3 @@ class IterationController:
         for listener in self._listeners:
             await listener.on_node_created(node)
 
-    async def _notify_node_updated(self, node: IterationNode) -> None:
-        for listener in self._listeners:
-            await listener.on_node_updated(node)
-
-

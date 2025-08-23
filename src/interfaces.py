@@ -53,7 +53,3 @@ class VisionService(Protocol):
 
 class IterationEventListener(Protocol):
     async def on_node_created(self, node: IterationNode) -> None: ...
-
-    async def on_node_updated(self, node: IterationNode) -> None: ...
-
-

@@ -101,10 +101,6 @@ class NiceGUIView(IterationEventListener):
         if self.scroll_area:
             self.scroll_area.scroll_to(percent=1.0)
 
-    async def on_node_updated(self, node: IterationNode) -> None:
-        # Not used currently; δ is atomic in this prototype
-        pass
-
     async def _rebuild_chain(self, leaf_id: str) -> None:
         if self.chat_container is None:
             return
