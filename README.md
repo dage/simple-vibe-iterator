@@ -8,7 +8,7 @@ Current state:
 - State-machine architecture: each iteration is a state transition δ producing a new `IterationNode`
 - Pipeline in δ: render → screenshot/console → vision analysis → code prompt → new HTML output
 - Clean separation: NiceGUI only in `src/view.py`; controller/services are framework‑agnostic
-- OpenRouter integration verified by tests; not required for GUI
+- OpenRouter-backed services for both code and vision are used throughout
 
 
 ### Setup
@@ -21,9 +21,8 @@ pip install -r requirements.txt
 ```
 python -m playwright install
 ```
-4. Create `.env` from `.env_template` and fill values (used by GUI/tests without exporting):
-   - Required: `VIBES_API_KEY`
-   - Defaults provided: `OPENROUTER_BASE_URL`, `VIBES_CODE_MODEL`, `VIBES_VISION_MODEL`
+4. Create `.env` from `.env_template` and fill values:
+   - Required: `OPENROUTER_BASE_URL`, `VIBES_API_KEY`, `VIBES_CODE_MODEL`, `VIBES_VISION_MODEL`
 
 We automatically load `.env` at app startup (`load_dotenv()` in `src/main.py`) and in the OpenRouter client. You do not need to `export` variables in your shell.
 
@@ -49,6 +48,16 @@ This will:
 - Run a trivial chat on the code model
 - Run a simple vision check on a generated image
 
+### Run end-to-end OpenRouter ping
+Execute:
+```
+python integration-tests/test_openrouter_e2e_ping.py
+```
+This will:
+- Skip if required env vars are missing
+- Create a root iteration using OpenRouter-backed services
+- Assert that HTML output, screenshot, console logs, and vision analysis are produced
+
 ### Run the GUI prototype
 ```bash
 python -m src.main
@@ -64,9 +73,9 @@ Workflow:
 ### Architecture overview
 - `src/interfaces.py`: dataclasses and service/controller interfaces (no UI deps)
 - `src/controller.py`: framework-agnostic iteration controller
-- `src/services.py`: stub AI services + Playwright browser service
+- `src/services.py`: OpenRouter AI services + Playwright browser service
 - `src/view.py`: NiceGUI view (UI only)
-- `src/main.py`: dependency wiring and app entry
+- `src/main.py`: dependency wiring and app entry (OpenRouter-only)
 
 Notes:
 - Screenshots/HTML are written to `artifacts/` (ignored by Git).

@@ -24,13 +24,41 @@ def inject_src_into_syspath(project_root: Path) -> None:
         sys.path.insert(0, str(project_root))
 
 
+# Test-local stub services (do not rely on network)
+class _TestStubAICodeService:
+    async def generate_html(self, prompt: str) -> str:
+        await asyncio.sleep(0.05)
+        safe = (prompt or "").strip()[:200]
+        return (
+            "<!DOCTYPE html>\n"
+            "<html><head><meta charset=\"utf-8\"><title>Generated Page</title>\n"
+            "<style>body{font-family:sans-serif;padding:24px} .box{padding:16px;border:1px solid #ccc;border-radius:8px}</style>\n"
+            "</head><body>\n"
+            f"<h1>Generated from prompt</h1><div class=\"box\"><pre>{safe}</pre></div>\n"
+            "<script>console.log('Page loaded');</script>\n"
+            "</body></html>"
+        )
+
+
+class _TestStubVisionService:
+    async def analyze_screenshot(self, screenshot_path: str, console_logs: List[str]) -> str:
+        await asyncio.sleep(0.01)
+        name = Path(screenshot_path).name
+        lines = [
+            "Vision stub",
+            f"Screenshot: {name}",
+            f"Console entries: {len(console_logs)}",
+        ]
+        return "\n".join(lines)
+
+
 async def build_controller():
-    from src.services import StubAICodeService, PlaywrightBrowserService, StubVisionService
+    from src.services import PlaywrightBrowserService
     from src.controller import IterationController
 
-    ai = StubAICodeService()
+    ai = _TestStubAICodeService()
     browser = PlaywrightBrowserService()
-    vision = StubVisionService()
+    vision = _TestStubVisionService()
     return IterationController(ai, browser, vision)
 
 
@@ -133,7 +161,7 @@ async def test_prompt_placeholders() -> Tuple[bool, str]:
     # Recording AI service to capture the prompt sent by δ
     from src.controller import IterationController
     from src.interfaces import AICodeService, TransitionSettings
-    from src.services import PlaywrightBrowserService, StubVisionService
+    from src.services import PlaywrightBrowserService
 
     class RecordingAICodeService(AICodeService):
         def __init__(self) -> None:
@@ -153,7 +181,7 @@ async def test_prompt_placeholders() -> Tuple[bool, str]:
 
     ai = RecordingAICodeService()
     browser = PlaywrightBrowserService()
-    vision = StubVisionService()
+    vision = _TestStubVisionService()
     ctrl = IterationController(ai, browser, vision)
 
     settings = default_settings("Ensure placeholders")

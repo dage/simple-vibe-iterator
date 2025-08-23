@@ -10,21 +10,6 @@ from .interfaces import AICodeService, BrowserService, VisionService
 from .playwright_browser import capture_html, parse_viewport
 
 
-class StubAICodeService(AICodeService):
-    async def generate_html(self, prompt: str) -> str:
-        await asyncio.sleep(0.1)
-        safe = (prompt or "").strip()[:200]
-        return (
-            "<!DOCTYPE html>\n"
-            "<html><head><meta charset=\"utf-8\"><title>Generated Page</title>\n"
-            "<style>body{font-family:sans-serif;padding:24px} .box{padding:16px;border:1px solid #ccc;border-radius:8px}</style>\n"
-            "</head><body>\n"
-            f"<h1>Generated from prompt</h1><div class=\"box\"><pre>{safe}</pre></div>\n"
-            "<script>console.log('Page loaded');</script>\n"
-            "</body></html>"
-        )
-
-
 class PlaywrightBrowserService(BrowserService):
     def __init__(self, out_dir: Path | None = None, viewport: str | None = None) -> None:
         self._out_dir = Path(out_dir or "artifacts").resolve()
@@ -46,20 +31,42 @@ class PlaywrightBrowserService(BrowserService):
             flat_logs.append(f"[{t}] {msg}")
         return (str(png_path), flat_logs)
 
-class StubVisionService(VisionService):
+
+# ---- OpenRouter-backed services ----
+
+class OpenRouterAICodeService(AICodeService):
+    async def generate_html(self, prompt: str) -> str:
+        # Defer import to avoid requiring env when using stubs/tests
+        from . import or_client
+
+        # Minimal call: the controller provides a full prompt with context
+        reply = await or_client.chat(
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return reply or ""
+
+
+class OpenRouterVisionService(VisionService):
     async def analyze_screenshot(self, screenshot_path: str, console_logs: List[str]) -> str:
-        # Stubbed vision: summarize basic info without calling an LLM
-        await asyncio.sleep(0.05)
-        name = Path(screenshot_path).name
-        summary = [
-            f"Vision stub", 
-            f"Screenshot: {name}",
-            f"Console entries: {len(console_logs)}",
-        ]
-        head = console_logs[:5]
-        if head:
-            summary.append("\nSample console logs:")
-            summary.extend(head)
-        return "\n".join(summary)
+        from . import or_client
+
+        # Build a concise prompt including a short sample of console logs
+        preview_logs: List[str] = console_logs[:20] if console_logs else []
+        logs_text = "\n".join(preview_logs)
+        prompt = (
+            "Analyze this rendered page screenshot and the console log excerpt.\n"
+            "- Identify visual issues or layout problems.\n"
+            "- Note any console errors/warnings impacting rendering.\n"
+            "- Provide concrete, concise suggestions to improve the HTML/CSS/JS.\n\n"
+        )
+        if logs_text:
+            prompt += f"Console log excerpt (first {len(preview_logs)} lines):\n{logs_text}\n\n"
+
+        reply = await or_client.vision_single(
+            prompt=prompt,
+            image=screenshot_path,
+            temperature=0,
+        )
+        return reply or ""
 
 
