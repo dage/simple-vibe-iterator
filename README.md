@@ -5,7 +5,8 @@ AI-driven development system for graphical web applications using autonomous vis
 Simple Vibe Iterator extends traditional vibe coding by introducing autonomous vision-guided iteration after an initial single-shot implementation. The system targets graphical intensive web applications including special effects and games.
 
 Current state:
-- Iteration loop working: stub AI services + Playwright render/screenshot/console logs
+- State-machine architecture: each iteration is a state transition δ producing a new `IterationNode`
+- Pipeline in δ: render → screenshot/console → vision analysis → code prompt → new HTML output
 - Clean separation: NiceGUI only in `src/view.py`; controller/services are framework‑agnostic
 - OpenRouter integration verified by tests; not required for GUI
 
@@ -24,7 +25,18 @@ python -m playwright install
    - Required: `VIBES_API_KEY`
    - Defaults provided: `OPENROUTER_BASE_URL`, `VIBES_CODE_MODEL`, `VIBES_VISION_MODEL`
 
-### Run integration checks
+### Run state-machine tests
+Execute:
+```
+python integration-tests/test_state_machine.py
+```
+This will:
+- Validate linear chains and correct parent-child links
+- Verify re-running mid-chain deletes descendants and applies updated settings
+- Ensure artifacts exist (screenshot, console logs, vision output)
+- Verify prompt template substitution uses `{html_input}`, `{code_instructions}`, `{overall_goal}`, `{vision_output}`
+
+### Run OpenRouter integration checks
 Execute:
 ```
 python integration-tests/test_openrouter_integration.py
@@ -42,10 +54,10 @@ python -m src.main
 Then open `http://localhost:8080`.
 
 Workflow:
-- Enter an initial prompt at the top; it disappears after first use.
-- Each iteration renders a card with HTML, Screenshot (expand to view), Console Logs, and Vision Analysis.
-- Feedback is optional. Click "Show complete prompt" to preview the combined prompt sent on Iterate.
-- Click "Iterate" to create the next iteration using the combined prompt.
+- Create a root node: enter the overall goal, then click "Create root" (the coding agent creates the initial HTML).
+- Each node card shows: HTML Input (empty for root), HTML Output, Screenshot, Console Logs, and Vision Analysis.
+- Edit settings for the next iteration (model slugs default from `VIBES_CODE_MODEL`/`VIBES_VISION_MODEL`, plus instructions/templates/overall goal).
+- Click "Iterate" on any node to create its next child; descendants of that node are replaced by the new chain.
 
 ### Architecture overview
 - `src/interfaces.py`: dataclasses and service/controller interfaces (no UI deps)

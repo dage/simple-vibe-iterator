@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from nicegui import ui
 
-from .controller import SessionController
+from .controller import IterationController
 from .services import StubVisionService, PlaywrightBrowserService, StubAICodeService
 from .view import NiceGUIView
 
@@ -13,7 +13,7 @@ def create_app() -> NiceGUIView:
     browser_service = PlaywrightBrowserService()
     vision_service = StubVisionService()
 
-    controller = SessionController(ai_service, browser_service, vision_service)
+    controller = IterationController(ai_service, browser_service, vision_service)
     view = NiceGUIView(controller)
     view.render()
     return view

@@ -2,199 +2,157 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Dict
+import os
+from typing import Dict, List
 
 from nicegui import ui
 
-from .controller import SessionController
-from .interfaces import SessionData, SessionEventListener, SessionStatus
+from .controller import IterationController
+from .interfaces import IterationEventListener, IterationNode, TransitionSettings
 
 
-STATUS_TO_COLOR = {
-    SessionStatus.IDLE: "grey",
-    SessionStatus.GENERATING_HTML: "blue",
-    SessionStatus.CAPTURING_SCREENSHOT: "amber",
-    SessionStatus.ANALYZING_VISION: "purple",
-    SessionStatus.READY_FOR_FEEDBACK: "green",
-    SessionStatus.ERROR: "red",
-}
-
-
-class NiceGUIView(SessionEventListener):
-    def __init__(self, controller: SessionController):
+class NiceGUIView(IterationEventListener):
+    def __init__(self, controller: IterationController):
         self.controller = controller
         self.controller.add_listener(self)
-        self.session_cards: Dict[str, ui.card] = {}
+        self.node_cards: Dict[str, ui.card] = {}
         self.chat_container: ui.element | None = None
         self.scroll_area: ui.scroll_area | None = None
-        self.prompt_input: ui.textarea | None = None
+        self.initial_goal_input: ui.textarea | None = None
 
     def render(self) -> None:
         with ui.column().classes('w-full h-screen p-4 gap-3'):
             ui.label('Simple Vibe Iterator').classes('text-2xl font-bold')
 
-            # Taller, top-positioned prompt area; will remove itself after first submission
-            with ui.card().classes('w-full p-4') as prompt_card:
-                self.prompt_input = ui.textarea(
-                    placeholder='Describe your desired HTML page...'
+            # Root creation area (overall goal only)
+            with ui.card().classes('w-full p-4'):
+                self.initial_goal_input = ui.textarea(
+                    placeholder='Overall goal...',
                 ).classes('w-full mb-3')
-                ui.button('Start iterating', on_click=lambda: self._on_generate_click_and_remove(prompt_card)).classes('w-full')
+                ui.button('Create root', on_click=self._on_create_root_click).classes('w-full')
 
             with ui.scroll_area().classes('flex-grow w-full') as scroll:
                 self.chat_container = ui.column().classes('w-full gap-4')
                 self.scroll_area = scroll
 
-
-    async def _on_generate_click(self) -> None:
-        if not self.prompt_input:
+    async def _on_create_root_click(self) -> None:
+        overall_goal = (self.initial_goal_input.value or '').strip() if self.initial_goal_input else ''
+        if not overall_goal:
+            ui.notify('Please enter an overall goal', color='negative')
             return
-        prompt = (self.prompt_input.value or '').strip()
-        if not prompt:
-            ui.notify('Please enter a prompt', color='negative')
-            return
-        self.prompt_input.value = ''
-        await self.controller.create_session(prompt)
 
-    async def _on_generate_click_and_remove(self, prompt_card: ui.card) -> None:
-        await self._on_generate_click()
-        # Remove prompt card after first use
-        try:
-            prompt_card.delete()
-        except Exception:
-            pass
+        settings = self._default_settings(overall_goal)
+        await self.controller.create_root(settings)
 
-    # SessionEventListener
-    async def on_session_created(self, session: SessionData) -> None:
-        if self.chat_container is None:
-            return
-        with self.chat_container:
-            card = self._create_session_card(session)
-            self.session_cards[session.id] = card
+    def _default_settings(self, overall_goal: str) -> TransitionSettings:
+        code_model = os.getenv('VIBES_CODE_MODEL', 'code-model')
+        vision_model = os.getenv('VIBES_VISION_MODEL', 'vision-model')
+        return TransitionSettings(
+            code_model=code_model,
+            code_instructions='',
+            vision_model=vision_model,
+            vision_instructions='',
+            overall_goal=overall_goal,
+            code_template=(
+                'Improve the following HTML while adhering to the goal.\n'
+                'Goal: {overall_goal}\n'
+                'Vision analysis: {vision_output}\n'
+                'Instructions: {code_instructions}\n'
+                'HTML:\n{html_input}\n'
+            ),
+            vision_template=(
+                'Analyze the HTML and its rendering to provide guidance.\n'
+                'Goal: {overall_goal}\n'
+                'Instructions: {vision_instructions}\n'
+                'HTML:\n{html_input}\n'
+            ),
+        )
+
+    # IterationEventListener
+    async def on_node_created(self, node: IterationNode) -> None:
+        await self._rebuild_chain(node.id)
         await asyncio.sleep(0.05)
         if self.scroll_area:
             self.scroll_area.scroll_to(percent=1.0)
 
-    async def on_session_updated(self, session: SessionData) -> None:
-        await self._update_session_card(session)
+    async def on_node_updated(self, node: IterationNode) -> None:
+        # Not used currently; δ is atomic in this prototype
+        pass
 
-    async def on_status_changed(self, session_id: str, status: SessionStatus) -> None:
-        s = self.controller.get_session(session_id)
-        if s:
-            await self._update_session_card(s)
+    async def _rebuild_chain(self, leaf_id: str) -> None:
+        if self.chat_container is None:
+            return
+        # Build linear chain from root -> leaf by following parents
+        chain: List[IterationNode] = []
+        cur = self.controller.get_node(leaf_id)
+        while cur is not None:
+            chain.append(cur)
+            cur = self.controller.get_node(cur.parent_id) if cur.parent_id else None
+        chain.reverse()
 
-    def _create_session_card(self, session: SessionData) -> ui.card:
-        badge = ui.badge(session.status.value).props(f'color={STATUS_TO_COLOR.get(session.status, "grey")}')
+        self.chat_container.clear()
+        self.node_cards.clear()
+        with self.chat_container:
+            for idx, node in enumerate(chain, start=1):
+                card = self._create_node_card(idx, node)
+                self.node_cards[node.id] = card
+
+    def _create_node_card(self, index: int, node: IterationNode) -> ui.card:
         with ui.card().classes('w-full p-3') as card:
             with ui.row().classes('items-center justify-between w-full'):
-                ui.label(f'Iteration {session.iteration}').classes('text-lg font-semibold')
-                card.badge = badge  # type: ignore[attr-defined]
+                ui.label(f'Iteration {index}').classes('text-lg font-semibold')
 
-            card.html_area = ui.expansion('HTML')  # type: ignore[attr-defined]
-            with card.html_area:
-                ui.code(session.html_code or '(empty)').classes('w-full')
+            # HTML input and output
+            html_in = ui.expansion('HTML Input')
+            with html_in:
+                ui.code(node.html_input or '(empty)').classes('w-full')
 
-            card.image_area = ui.expansion('Screenshot')  # type: ignore[attr-defined]
-            with card.image_area:
-                if session.screenshot_path:
-                    # Show a very large screenshot when expanded
-                    ui.image(session.screenshot_path).classes('w-[1600px] h-auto max-w-none')
-                else:
-                    ui.label('(no screenshot yet)')
+            html_out = ui.expansion('HTML Output')
+            with html_out:
+                ui.code(node.html_output or '(empty)').classes('w-full')
 
-            card.logs_area = ui.expansion('Console Logs')  # type: ignore[attr-defined]
-            with card.logs_area:
-                logs_text = '\n'.join(session.console_logs or []) or '(no logs)'
-                ui.code(logs_text).classes('w-full')
-
-            card.vision_area = ui.expansion('Vision Analysis')  # type: ignore[attr-defined]
-            with card.vision_area:
-                ui.markdown(session.vision_analysis or '(pending)')
-
-            # Feedback input
-            feedback = ui.textarea(placeholder='Optional feedback for next iteration...').classes('w-full')
-            card.feedback_input = feedback  # type: ignore[attr-defined]
-
-            # Subdued button to show the combined prompt in a dialog, placed just above Iterate
-            ui.button(
-                'Show complete prompt',
-                on_click=lambda sid=session.id, fb=feedback: self._open_prompt_preview(sid, fb),
-            ).props('outline color=grey-7')
-
-            with ui.row().classes('w-full'):
-                ui.button('Iterate', on_click=lambda fb=feedback, sid=session.id: self._send_feedback(sid, fb)).classes('')
-        return card
-
-    async def _update_session_card(self, session: SessionData) -> None:
-        card = self.session_cards.get(session.id)
-        if not card:
-            return
-        # status badge
-        badge = getattr(card, 'badge', None)
-        if badge:
-            badge.text = session.status.value
-            badge.props(f'color={STATUS_TO_COLOR.get(session.status, "grey")}')
-        # html
-        html_area = getattr(card, 'html_area', None)
-        if html_area:
-            html_area.clear()
-            with html_area:
-                ui.code(session.html_code or '(empty)').classes('w-full')
-        # image
-        image_area = getattr(card, 'image_area', None)
-        if image_area:
-            image_area.clear()
+            # Screenshot
+            image_area = ui.expansion('Screenshot')
             with image_area:
-                if session.screenshot_path:
-                    ui.image(session.screenshot_path).classes('w-[1600px] h-auto max-w-none')
+                if node.artifacts.screenshot_filename:
+                    ui.image(node.artifacts.screenshot_filename).classes('w-[1600px] h-auto max-w-none')
                 else:
                     ui.label('(no screenshot yet)')
-        # logs
-        logs_area = getattr(card, 'logs_area', None)
-        if logs_area:
-            logs_area.clear()
+
+            # Console Logs
+            logs_area = ui.expansion('Console Logs')
             with logs_area:
-                logs_text = '\n'.join(session.console_logs or []) or '(no logs)'
+                logs_text = '\n'.join(node.artifacts.console_logs or []) or '(no logs)'
                 ui.code(logs_text).classes('w-full')
-        # vision
-        vision_area = getattr(card, 'vision_area', None)
-        if vision_area:
-            vision_area.clear()
+
+            # Vision Analysis
+            vision_area = ui.expansion('Vision Analysis')
             with vision_area:
-                ui.markdown(session.vision_analysis or '(pending)')
+                ui.markdown(node.artifacts.vision_output or '(pending)')
 
+            # Settings editor for next transition (pre-filled with node.settings)
+            with ui.expansion('Settings for next iteration'):
+                code_model = ui.input(label='code_model', value=node.settings.code_model).classes('w-full')
+                code_instr = ui.textarea(label='code_instructions', value=node.settings.code_instructions).classes('w-full')
+                vision_model = ui.input(label='vision_model', value=node.settings.vision_model).classes('w-full')
+                vision_instr = ui.textarea(label='vision_instructions', value=node.settings.vision_instructions).classes('w-full')
+                overall_goal = ui.textarea(label='overall_goal', value=node.settings.overall_goal).classes('w-full')
+                code_tmpl = ui.textarea(label='code_template', value=node.settings.code_template).classes('w-full')
+                vision_tmpl = ui.textarea(label='vision_template', value=node.settings.vision_template).classes('w-full')
 
-    def _build_complete_prompt(self, session: SessionData, feedback_text: str) -> str:
-        logs_text = '\n'.join(session.console_logs or [])
-        vision_text = (session.vision_analysis or '').strip()
-        user_text = (feedback_text or '').strip()
-        return (
-            f"Browser console logs: {logs_text}\n"
-            f"Vision Analysis: {vision_text}\n"
-            f"User feedback: {user_text}\n"
-        )
+                def _iterate_from_node(nid: str) -> None:
+                    updated = TransitionSettings(
+                        code_model=code_model.value or '',
+                        code_instructions=code_instr.value or '',
+                        vision_model=vision_model.value or '',
+                        vision_instructions=vision_instr.value or '',
+                        overall_goal=overall_goal.value or '',
+                        code_template=code_tmpl.value or '',
+                        vision_template=vision_tmpl.value or '',
+                    )
+                    asyncio.create_task(self.controller.apply_transition(nid, updated))
 
-    async def _send_feedback(self, session_id: str, feedback_widget: ui.textarea) -> None:
-        # Feedback is optional
-        s = self.controller.get_session(session_id)
-        if not s:
-            ui.notify('Session not found', color='negative')
-            return
-        text = (feedback_widget.value or '').strip()
-        combined = self._build_complete_prompt(s, text)
-        await self.controller.send_feedback(session_id, combined)
-        feedback_widget.value = ''
-
-    def _open_prompt_preview(self, session_id: str, feedback_widget: ui.textarea) -> None:
-        s = self.controller.get_session(session_id)
-        if not s:
-            ui.notify('Session not found', color='negative')
-            return
-        combined = self._build_complete_prompt(s, (feedback_widget.value or '').strip())
-        with ui.dialog() as dialog:
-            with ui.card().classes('w-[800px] max-w-full'):
-                ui.label('Complete Prompt for coding model').classes('text-lg font-semibold')
-                ui.code(combined).classes('w-full')
-                ui.button('Close', on_click=dialog.close).classes('w-full')
-        dialog.open()
+                ui.button('Iterate', on_click=lambda nid=node.id: _iterate_from_node(nid)).classes('')
+        return card
 
 
