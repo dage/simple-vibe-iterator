@@ -24,32 +24,36 @@ async def δ(
     browser_service: BrowserService,
     vision_service: VisionService,
 ) -> tuple[str, TransitionArtifacts]:
-    # 1) Render html_input to capture screenshot and console logs
-    screenshot_path, console_logs = await browser_service.render_and_capture(html_input)
+    # 1) Render html_input to capture screenshot and console logs for analysis
+    in_screenshot_path, in_console_logs = await browser_service.render_and_capture(html_input)
 
-    # 2) Build vision prompt (template-based); current VisionService ignores it (stub)
+    # 2) Build vision prompt for current state and analyze
     _ = settings.vision_template.format(
         html_input=html_input,
         vision_instructions=settings.vision_instructions,
         overall_goal=settings.overall_goal,
     )
-    vision_output = await vision_service.analyze_screenshot(screenshot_path, console_logs)
+    in_vision_output = await vision_service.analyze_screenshot(in_screenshot_path, in_console_logs)
 
-    # 3) Build code-model prompt from template + vision output
+    # 3) Build code-model prompt from template + analysis of current state
     code_prompt = settings.code_template.format(
         html_input=html_input,
         code_instructions=settings.code_instructions,
         overall_goal=settings.overall_goal,
-        vision_output=vision_output,
+        vision_output=in_vision_output,
     )
 
     # 4) Call code model to produce html_output
     html_output = await ai_service.generate_html(code_prompt)
 
+    # 5) Render the NEW html_output to produce the artifacts for this transition
+    out_screenshot_path, out_console_logs = await browser_service.render_and_capture(html_output)
+    out_vision_output = await vision_service.analyze_screenshot(out_screenshot_path, out_console_logs)
+
     artifacts = TransitionArtifacts(
-        screenshot_filename=screenshot_path,
-        console_logs=console_logs,
-        vision_output=vision_output,
+        screenshot_filename=out_screenshot_path,
+        console_logs=out_console_logs,
+        vision_output=out_vision_output,
     )
     return html_output, artifacts
 
