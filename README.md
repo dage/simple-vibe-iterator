@@ -10,6 +10,13 @@ Current state:
 - Clean separation: NiceGUI only in `src/view.py`; controller/services are framework‑agnostic
 - OpenRouter-backed services for both code and vision are used throughout
 
+UI/UX additions:
+- Sticky operation status (top-right): shows current operation and services live phase with elapsed time
+  - Example phases: `Playwright: Capture screenshot`, `Code: <code_model>`, `Vision: <vision_model>`
+  - Idle state: green icon and “No operation running”
+- Operation lock: prevents concurrent user actions (e.g., "Create root" / "Iterate")
+  - If an operation is in progress, further clicks are rejected with a warning
+
 
 ### Setup
 1. Create and activate a Python environment (Conda recommended).
@@ -69,6 +76,7 @@ Workflow:
 - Each node card shows: HTML Input (empty for root), HTML Output, Screenshot, Console Logs, and Vision Analysis.
 - Edit settings for the next iteration (model slugs default from `VIBES_CODE_MODEL`/`VIBES_VISION_MODEL`, plus instructions/templates/overall goal).
 - Click "Iterate" on any node to create its next child; descendants of that node are replaced by the new chain.
+ - While an operation is running, the status shows the current phase and seconds elapsed; other actions are temporarily blocked.
 
 ### Architecture overview
 - `src/interfaces.py`: dataclasses and service/controller interfaces (no UI deps)

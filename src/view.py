@@ -9,6 +9,7 @@ from nicegui import ui
 
 from .controller import IterationController
 from .interfaces import IterationEventListener, IterationNode, TransitionSettings
+from . import op_status
 
 
 class NiceGUIView(IterationEventListener):
@@ -19,10 +20,29 @@ class NiceGUIView(IterationEventListener):
         self.chat_container: ui.element | None = None
         self.scroll_area: ui.scroll_area | None = None
         self.initial_goal_input: ui.textarea | None = None
+        # --- Operation status & lock ---
+        self._op_busy: bool = False
+        self._status_container: ui.element | None = None
+        self._status_spinner: ui.element | None = None
+        self._status_ok_icon: ui.element | None = None
+        self._status_title: ui.label | None = None
+        self._status_detail: ui.label | None = None
+        self._status_timer: ui.timer | None = None
 
     def render(self) -> None:
         with ui.column().classes('w-full h-screen p-4 gap-3'):
             ui.label('Simple Vibe Iterator').classes('text-2xl font-bold')
+
+            # Sticky top-right operation status (two lines, system-like font)
+            with ui.row().classes('fixed top-2 right-2 z-50 items-start gap-2 bg-white/90 border border-gray-300 rounded px-3 py-2 shadow') as sc:
+                self._status_container = sc
+                self._status_spinner = ui.spinner('dots').classes('w-5 h-5')
+                self._status_ok_icon = ui.icon('check_circle', color='green').classes('w-5 h-5')
+                with ui.column().classes('leading-none gap-0'):
+                    self._status_title = ui.label('No operation running').classes('font-mono text-sm')
+                    self._status_detail = ui.label('').classes('font-mono text-xs text-gray-600')
+            self._status_timer = ui.timer(0.25, self._refresh_phase)
+            self._update_status_ui()
 
             # Root creation area (overall goal only)
             with ui.card().classes('w-full p-4'):
@@ -40,9 +60,15 @@ class NiceGUIView(IterationEventListener):
         if not overall_goal:
             ui.notify('Please enter an overall goal', color='negative')
             return
-
-        settings = self._default_settings(overall_goal)
-        await self.controller.create_root(settings)
+        if not self._begin_operation('Create root'):
+            return
+        try:
+            settings = self._default_settings(overall_goal)
+            await self.controller.create_root(settings)
+        except Exception as exc:
+            ui.notify(f'Create root failed: {exc}', color='negative')
+        finally:
+            self._end_operation()
 
     def _default_settings(self, overall_goal: str) -> TransitionSettings:
         code_model = os.getenv('VIBES_CODE_MODEL', 'code-model')
@@ -139,19 +165,62 @@ class NiceGUIView(IterationEventListener):
             code_tmpl = ui.textarea(label='code_template', value=node.settings.code_template).classes('w-full')
             vision_tmpl = ui.textarea(label='vision_template', value=node.settings.vision_template).classes('w-full')
 
-            def _iterate_from_node(nid: str) -> None:
-                updated = TransitionSettings(
-                    code_model=code_model.value or '',
-                    code_instructions=code_instr.value or '',
-                    vision_model=vision_model.value or '',
-                    vision_instructions=vision_instr.value or '',
-                    overall_goal=overall_goal.value or '',
-                    code_template=code_tmpl.value or '',
-                    vision_template=vision_tmpl.value or '',
-                )
-                asyncio.create_task(self.controller.apply_transition(nid, updated))
+            async def _iterate_from_node(nid: str) -> None:
+                if not self._begin_operation('Iterate'):
+                    return
+                try:
+                    updated = TransitionSettings(
+                        code_model=code_model.value or '',
+                        code_instructions=code_instr.value or '',
+                        vision_model=vision_model.value or '',
+                        vision_instructions=vision_instr.value or '',
+                        overall_goal=overall_goal.value or '',
+                        code_template=code_tmpl.value or '',
+                        vision_template=vision_tmpl.value or '',
+                    )
+                    await self.controller.apply_transition(nid, updated)
+                except Exception as exc:
+                    ui.notify(f'Iterate failed: {exc}', color='negative')
+                finally:
+                    self._end_operation()
 
-            ui.button('Iterate', on_click=lambda nid=node.id: _iterate_from_node(nid)).classes('')
+            ui.button('Iterate', on_click=lambda nid=node.id: asyncio.create_task(_iterate_from_node(nid))).classes('')
         return card
+
+    # --- Operation status helpers ---
+    def _update_status_ui(self) -> None:
+        busy = self._op_busy
+        if self._status_spinner is not None:
+            self._status_spinner.visible = busy
+        if self._status_ok_icon is not None:
+            self._status_ok_icon.visible = not busy
+        if not busy:
+            if self._status_title is not None:
+                self._status_title.text = 'No operation running'
+
+    def _begin_operation(self, title: str) -> bool:
+        if self._op_busy:
+            ui.notify('Another operation is running. Please wait until it finishes.', color='warning')
+            return False
+        self._op_busy = True
+        if self._status_title is not None:
+            self._status_title.text = title
+        if self._status_detail is not None:
+            self._status_detail.text = 'Starting'
+        self._update_status_ui()
+        return True
+
+    def _end_operation(self) -> None:
+        self._op_busy = False
+        self._update_status_ui()
+
+    def _refresh_phase(self) -> None:
+        if self._status_detail is None:
+            return
+        phase, elapsed = op_status.get_phase_and_elapsed()
+        if phase:
+            self._status_detail.text = f"{phase} · {elapsed:.1f}s"
+        else:
+            self._status_detail.text = ''
 
 

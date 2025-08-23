@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import List
 
 from .interfaces import AICodeService, BrowserService, VisionService
+from . import op_status
 from .playwright_browser import capture_html, parse_viewport
 
 
@@ -22,6 +23,7 @@ class PlaywrightBrowserService(BrowserService):
         html_path = self._out_dir / f"page_{digest}.html"
         png_path = self._out_dir / f"page_{digest}.png"
         html_path.write_text(html_code, encoding="utf-8")
+        op_status.set_phase("Playwright: Capture screenshot")
         logs = await asyncio.to_thread(capture_html, html_path, png_path, self._viewport)
         # Flatten console texts for now to meet interface
         flat_logs: List[str] = []
@@ -29,6 +31,7 @@ class PlaywrightBrowserService(BrowserService):
             t = str(entry.get("type") or "log")
             msg = str(entry.get("text") or "")
             flat_logs.append(f"[{t}] {msg}")
+        op_status.clear_phase()
         return (str(png_path), flat_logs)
 
 
@@ -40,9 +43,12 @@ class OpenRouterAICodeService(AICodeService):
         from . import or_client
 
         # Minimal call: the controller provides a full prompt with context
+        s = or_client._settings()
+        op_status.set_phase(f"Code: {s.code_model}")
         reply = await or_client.chat(
             messages=[{"role": "user", "content": prompt}],
         )
+        op_status.clear_phase()
         return reply or ""
 
 
@@ -62,11 +68,14 @@ class OpenRouterVisionService(VisionService):
         if logs_text:
             prompt += f"Console log excerpt (first {len(preview_logs)} lines):\n{logs_text}\n\n"
 
+        s = or_client._settings()
+        op_status.set_phase(f"Vision: {s.vision_model}")
         reply = await or_client.vision_single(
             prompt=prompt,
             image=screenshot_path,
             temperature=0,
         )
+        op_status.clear_phase()
         return reply or ""
 
 
