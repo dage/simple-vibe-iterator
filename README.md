@@ -12,7 +12,7 @@ Current state:
 
 
 ### Setup
-1. Create and activate a Python environment (Conda recommended but optional).
+1. Create and activate a Python environment (Conda recommended).
 2. Install Python packages:
 ```
 pip install -r requirements.txt
@@ -21,9 +21,11 @@ pip install -r requirements.txt
 ```
 python -m playwright install
 ```
-4. (Optional) For OpenRouter integration tests, create `.env` from the template and fill values:
+4. Create `.env` from `.env_template` and fill values (used by GUI/tests without exporting):
    - Required: `VIBES_API_KEY`
    - Defaults provided: `OPENROUTER_BASE_URL`, `VIBES_CODE_MODEL`, `VIBES_VISION_MODEL`
+
+We automatically load `.env` at app startup (`load_dotenv()` in `src/main.py`) and in the OpenRouter client. You do not need to `export` variables in your shell.
 
 ### Run state-machine tests
 Execute:

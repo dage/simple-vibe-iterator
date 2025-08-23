@@ -130,29 +130,28 @@ class NiceGUIView(IterationEventListener):
             with vision_area:
                 ui.markdown(node.artifacts.vision_output or '(pending)')
 
-            # Settings editor for next transition (pre-filled with node.settings)
-            with ui.expansion('Settings for next iteration'):
-                code_model = ui.input(label='code_model', value=node.settings.code_model).classes('w-full')
-                code_instr = ui.textarea(label='code_instructions', value=node.settings.code_instructions).classes('w-full')
-                vision_model = ui.input(label='vision_model', value=node.settings.vision_model).classes('w-full')
-                vision_instr = ui.textarea(label='vision_instructions', value=node.settings.vision_instructions).classes('w-full')
-                overall_goal = ui.textarea(label='overall_goal', value=node.settings.overall_goal).classes('w-full')
-                code_tmpl = ui.textarea(label='code_template', value=node.settings.code_template).classes('w-full')
-                vision_tmpl = ui.textarea(label='vision_template', value=node.settings.vision_template).classes('w-full')
+            # Flat settings inputs (pre-filled with node.settings)
+            code_model = ui.input(label='code_model', value=node.settings.code_model).classes('w-full')
+            code_instr = ui.textarea(label='code_instructions', value=node.settings.code_instructions).classes('w-full')
+            vision_model = ui.input(label='vision_model', value=node.settings.vision_model).classes('w-full')
+            vision_instr = ui.textarea(label='vision_instructions', value=node.settings.vision_instructions).classes('w-full')
+            overall_goal = ui.textarea(label='overall_goal', value=node.settings.overall_goal).classes('w-full')
+            code_tmpl = ui.textarea(label='code_template', value=node.settings.code_template).classes('w-full')
+            vision_tmpl = ui.textarea(label='vision_template', value=node.settings.vision_template).classes('w-full')
 
-                def _iterate_from_node(nid: str) -> None:
-                    updated = TransitionSettings(
-                        code_model=code_model.value or '',
-                        code_instructions=code_instr.value or '',
-                        vision_model=vision_model.value or '',
-                        vision_instructions=vision_instr.value or '',
-                        overall_goal=overall_goal.value or '',
-                        code_template=code_tmpl.value or '',
-                        vision_template=vision_tmpl.value or '',
-                    )
-                    asyncio.create_task(self.controller.apply_transition(nid, updated))
+            def _iterate_from_node(nid: str) -> None:
+                updated = TransitionSettings(
+                    code_model=code_model.value or '',
+                    code_instructions=code_instr.value or '',
+                    vision_model=vision_model.value or '',
+                    vision_instructions=vision_instr.value or '',
+                    overall_goal=overall_goal.value or '',
+                    code_template=code_tmpl.value or '',
+                    vision_template=vision_tmpl.value or '',
+                )
+                asyncio.create_task(self.controller.apply_transition(nid, updated))
 
-                ui.button('Iterate', on_click=lambda nid=node.id: _iterate_from_node(nid)).classes('')
+            ui.button('Iterate', on_click=lambda nid=node.id: _iterate_from_node(nid)).classes('')
         return card
 
 

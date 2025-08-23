@@ -91,6 +91,16 @@ class IterationController:
 
     # Root creation: no initial HTML. Generate initial HTML from the overall goal, then capture artifacts.
     async def create_root(self, settings: TransitionSettings) -> str:
+        # Default model slugs from environment if missing
+        import os
+        if not (settings.code_model or "").strip():
+            env_code = os.getenv("VIBES_CODE_MODEL")
+            if env_code:
+                settings.code_model = env_code
+        if not (settings.vision_model or "").strip():
+            env_vision = os.getenv("VIBES_VISION_MODEL")
+            if env_vision:
+                settings.vision_model = env_vision
         # Build initial code prompt without html_input/vision_output
         code_prompt = settings.code_template.format(
             html_input="",
