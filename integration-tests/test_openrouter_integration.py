@@ -3,18 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import os
 import sys
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 from PIL import Image, ImageDraw
-
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
-from rich.text import Text
-from rich import box
 
 
 def get_project_root() -> Path:
@@ -55,7 +48,11 @@ def inject_src_into_syspath(project_root: Path) -> None:
 # (No external image assets needed; we programmatically generate test images)
 
 
-async def validate_api_key_through_models_list(console: Console):
+def _one_line(text: str) -> str:
+    return " ".join((text or "").split())
+
+
+async def validate_api_key_through_models_list():
     import or_client  # imported after sys.path injection
 
     try:
@@ -121,8 +118,6 @@ async def test_vision_model() -> Tuple[bool, str]:
 
 
 async def main() -> int:
-    console = Console()
-
     project_root = ensure_cwd_project_root()
     inject_src_into_syspath(project_root)
 
@@ -134,85 +129,36 @@ async def main() -> int:
     code_model = get_env_value("VIBES_CODE_MODEL", dotenv)
     vision_model = get_env_value("VIBES_VISION_MODEL", dotenv)
 
-    # Present configuration summary
-    summary = Text()
-    summary.append(".env present: ")
-    summary.append("yes\n" if dotenv_path.exists() else "no\n")
-    # VIBES_APP_NAME is not used in this project
-    summary.append("VIBES_CODE_MODEL: ")
-    summary.append(code_model or "(missing)")
-    summary.append("\n")
-    summary.append("VIBES_VISION_MODEL: ")
-    summary.append(vision_model or "(missing)")
-    summary.append("\n")
-
-    console.print(Panel(summary, title="OpenRouter Configuration", border_style="white"))
-
     # Check presence of required variables first
-    presence_table = Table(
-        title="Required Variables",
-        box=box.ROUNDED,
-        show_header=True,
-        header_style="bold",
-        width=None,
-    )
-    presence_table.add_column("Variable", no_wrap=True)
-    presence_table.add_column("Present")
-    presence_table.add_row("VIBES_API_KEY", "yes" if api_key else "no")
-    presence_table.add_row("VIBES_CODE_MODEL", "yes" if code_model else "no")
-    presence_table.add_row("VIBES_VISION_MODEL", "yes" if vision_model else "no")
-    console.print(presence_table)
-
-    if not (api_key and code_model and vision_model):
-        console.print("✗ Missing required environment variables", style="red")
+    presence_ok = bool(api_key and code_model and vision_model)
+    missing = [
+        name
+        for name, present in [
+            ("VIBES_API_KEY", api_key),
+            ("VIBES_CODE_MODEL", code_model),
+            ("VIBES_VISION_MODEL", vision_model),
+        ]
+        if not present
+    ]
+    presence_details = "all present" if presence_ok else f"missing: {', '.join(missing)}"
+    print(f"[ {'OK' if presence_ok else 'FAIL'} ] Environment variables set: {presence_details}")
+    if not presence_ok:
         return 1
 
     # 1) Validate API key by listing models
-    ok_models, info_models = await validate_api_key_through_models_list(console)
+    ok_models, info_models = await validate_api_key_through_models_list()
+    print(f"[ {'OK' if ok_models else 'FAIL'} ] API key valid via models.list(): {_one_line(info_models)}")
 
     # 2) Test code model with a minimal chat
     ok_code, info_code = await test_code_model()
+    print(f"[ {'OK' if ok_code else 'FAIL'} ] Code model chat returns non-empty reply: reply=\"{_one_line(info_code)}\"")
 
     # 3) Test vision model with a tiny embedded PNG
     ok_vision, info_vision = await test_vision_model()
-
-    # Present results
-    results = Table(
-        title="Integration Test Results",
-        box=box.ROUNDED,
-        show_header=True,
-        header_style="bold",
-        width=None,
-    )
-    results.add_column("Check", no_wrap=True)
-    results.add_column("Status")
-    results.add_column("Details")
-
-    results.add_row(
-        "API Key (models.list)",
-        "✓" if ok_models else "✗",
-        info_models,
-    )
-    results.add_row(
-        "Code Model chat",
-        "✓" if ok_code else "✗",
-        info_code,
-    )
-    results.add_row(
-        "Vision Model vision_single",
-        "✓" if ok_vision else "✗",
-        info_vision,
-    )
-
-    console.print(results)
+    print(f"[ {'OK' if ok_vision else 'FAIL'} ] Vision model identifies circle: reply=\"{_one_line(info_vision)}\"")
 
     all_ok = ok_models and ok_code and ok_vision
-    if all_ok:
-        console.print("✓ All integration checks passed", style="green")
-        return 0
-    else:
-        console.print("✗ One or more integration checks failed", style="red")
-        return 1
+    return 0 if all_ok else 1
 
 
 if __name__ == "__main__":
