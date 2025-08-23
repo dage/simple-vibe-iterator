@@ -41,13 +41,14 @@ class _TestStubAICodeService:
 
 
 class _TestStubVisionService:
-    async def analyze_screenshot(self, screenshot_path: str, console_logs: List[str]) -> str:
+    async def analyze_screenshot(self, prompt: str, screenshot_path: str, console_logs: List[str]) -> str:
         await asyncio.sleep(0.01)
         name = Path(screenshot_path).name
         lines = [
             "Vision stub",
             f"Screenshot: {name}",
             f"Console entries: {len(console_logs)}",
+            f"Prompt bytes: {len((prompt or '').encode('utf-8'))}",
         ]
         return "\n".join(lines)
 

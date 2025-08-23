@@ -53,20 +53,8 @@ class OpenRouterAICodeService(AICodeService):
 
 
 class OpenRouterVisionService(VisionService):
-    async def analyze_screenshot(self, screenshot_path: str, console_logs: List[str]) -> str:
+    async def analyze_screenshot(self, prompt: str, screenshot_path: str, console_logs: List[str]) -> str:
         from . import or_client
-
-        # Build a concise prompt including a short sample of console logs
-        preview_logs: List[str] = console_logs[:20] if console_logs else []
-        logs_text = "\n".join(preview_logs)
-        prompt = (
-            "Analyze this rendered page screenshot and the console log excerpt.\n"
-            "- Identify visual issues or layout problems.\n"
-            "- Note any console errors/warnings impacting rendering.\n"
-            "- Provide concrete, concise suggestions to improve the HTML/CSS/JS.\n\n"
-        )
-        if logs_text:
-            prompt += f"Console log excerpt (first {len(preview_logs)} lines):\n{logs_text}\n\n"
 
         s = or_client._settings()
         op_status.set_phase(f"Vision: {s.vision_model}")

@@ -87,10 +87,14 @@ class NiceGUIView(IterationEventListener):
                 'HTML:\n{html_input}\n'
             ),
             vision_template=(
-                'Analyze the HTML and its rendering to provide guidance.\n'
-                'Goal: {overall_goal}\n'
-                'Instructions: {vision_instructions}\n'
-                'HTML:\n{html_input}\n'
+                'Analyze the screenshot and give concrete suggestions to the coding model on how we can get closer to the overall user goal.\n\n'
+                'Browser console logs:\n{console_logs}\n\n'
+                'Overall goal: {overall_goal}\n'
+                'Follow the user instructions while achieving this:\n'
+                'User instructions: {user_instructions}\n\n'
+                'Do not suggest concrete code changes as the coding agent are best at this, but describe the visuals to aid the coding model which does not have vision capabilities.\n\n'
+                'If any errors occured, like blank screen or strange output, describe this to the coding model.\n'
+                'HTML (for reference only):\n{html_input}\n'
             ),
         )
 

@@ -27,13 +27,19 @@ async def δ(
     # 1) Render html_input to capture screenshot and console logs for analysis
     in_screenshot_path, in_console_logs = await browser_service.render_and_capture(html_input)
 
-    # 2) Build vision prompt for current state and analyze
-    _ = settings.vision_template.format(
+    # 2) Build vision prompt from template for the current state and analyze once
+    vision_prompt = settings.vision_template.format(
         html_input=html_input,
-        vision_instructions=settings.vision_instructions,
+        console_logs="\n".join(in_console_logs or []),
         overall_goal=settings.overall_goal,
+        user_instructions=settings.vision_instructions,
+        vision_instructions=settings.vision_instructions,
     )
-    in_vision_output = await vision_service.analyze_screenshot(in_screenshot_path, in_console_logs)
+    in_vision_output = await vision_service.analyze_screenshot(
+        vision_prompt,
+        in_screenshot_path,
+        in_console_logs,
+    )
 
     # 3) Build code-model prompt from template + analysis of current state
     code_prompt = settings.code_template.format(
@@ -46,14 +52,13 @@ async def δ(
     # 4) Call code model to produce html_output
     html_output = await ai_service.generate_html(code_prompt)
 
-    # 5) Render the NEW html_output to produce the artifacts for this transition
+    # 5) Render the NEW html_output to produce the artifacts for this transition (no vision call here)
     out_screenshot_path, out_console_logs = await browser_service.render_and_capture(html_output)
-    out_vision_output = await vision_service.analyze_screenshot(out_screenshot_path, out_console_logs)
 
     artifacts = TransitionArtifacts(
         screenshot_filename=out_screenshot_path,
         console_logs=out_console_logs,
-        vision_output=out_vision_output,
+        vision_output=in_vision_output,
     )
     return html_output, artifacts
 
@@ -114,7 +119,15 @@ class IterationController:
         )
         html_output = await self._ai_service.generate_html(code_prompt)
         screenshot_path, console_logs = await self._browser_service.render_and_capture(html_output)
-        vision_output = await self._vision_service.analyze_screenshot(screenshot_path, console_logs)
+        # For the root, there is no html_input; vision should analyze the initial output using the template
+        vision_prompt = settings.vision_template.format(
+            html_input="",
+            console_logs="\n".join(console_logs or []),
+            overall_goal=settings.overall_goal,
+            user_instructions=settings.vision_instructions,
+            vision_instructions=settings.vision_instructions,
+        )
+        vision_output = await self._vision_service.analyze_screenshot(vision_prompt, screenshot_path, console_logs)
 
         node_id = str(uuid.uuid4())
         node = IterationNode(

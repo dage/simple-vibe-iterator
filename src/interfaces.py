@@ -46,7 +46,7 @@ class BrowserService(Protocol):
 
 
 class VisionService(Protocol):
-    async def analyze_screenshot(self, screenshot_path: str, console_logs: List[str]) -> str: ...
+    async def analyze_screenshot(self, prompt: str, screenshot_path: str, console_logs: List[str]) -> str: ...
 
 
 # ---- Iteration event listener for UI ----
