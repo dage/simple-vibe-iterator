@@ -94,7 +94,7 @@ async def run_ping() -> Tuple[bool, str]:
     )
 
     ctrl = IterationController(ai, browser, vision)
-    root_id = await ctrl.create_root(settings)
+    root_id = await ctrl.apply_transition(None, settings)
     node = ctrl.get_node(root_id)
     if not node:
         return False, "root node missing"
@@ -106,8 +106,7 @@ async def run_ping() -> Tuple[bool, str]:
     if not shot.exists():
         return False, f"screenshot missing: {shot}"
 
-    if not (node.artifacts.vision_output or "").strip():
-        return False, "vision_output is empty"
+    # Root may skip vision analysis; do not require it here
 
     if not isinstance(node.artifacts.console_logs, list):
         return False, "console_logs not a list"

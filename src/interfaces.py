@@ -1,7 +1,8 @@
 # src/interfaces.py
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import uuid
 from typing import List, Optional, Protocol
 
 
@@ -26,12 +27,12 @@ class TransitionArtifacts:
 
 @dataclass
 class IterationNode:
-    id: str
     parent_id: Optional[str]
     html_input: str
     html_output: str
     settings: TransitionSettings
     artifacts: TransitionArtifacts
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
 
 # ---- Service protocols (unchanged public surface) ----

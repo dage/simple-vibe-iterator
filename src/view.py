@@ -64,7 +64,7 @@ class NiceGUIView(IterationEventListener):
             return
         try:
             settings = self._default_settings(overall_goal)
-            await self.controller.create_root(settings)
+            await self.controller.apply_transition(None, settings)
         except Exception as exc:
             ui.notify(f'Create root failed: {exc}', color='negative')
         finally:

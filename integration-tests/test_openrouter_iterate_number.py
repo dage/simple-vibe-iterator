@@ -99,7 +99,7 @@ async def run_iterate_number() -> Tuple[bool, str]:
         ),
     )
 
-    root_id = await ctrl.create_root(root_settings)
+    root_id = await ctrl.apply_transition(None, root_settings)
     root = ctrl.get_node(root_id)
     if not root:
         return False, "root missing"
@@ -144,7 +144,7 @@ async def run_iterate_number() -> Tuple[bool, str]:
     # Small retry to reduce flakiness of remote vision model
     success = False
     last = ""
-    for _ in range(2):
+    for _ in range(5):
         direct = await or_client.vision_single(
             prompt=(
                 "Identify the single large number in this image. Respond with exactly one character: 0-9."

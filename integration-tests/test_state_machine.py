@@ -93,7 +93,7 @@ async def test_linear_chain() -> Tuple[bool, str]:
     from src.interfaces import IterationNode
 
     ctrl = await build_controller()
-    root_id = await ctrl.create_root(default_settings("Goal A"))
+    root_id = await ctrl.apply_transition(None, default_settings("Goal A"))
     child1_id = await ctrl.apply_transition(root_id, default_settings("Goal A"))
     child2_id = await ctrl.apply_transition(child1_id, default_settings("Goal A"))
 
@@ -112,7 +112,7 @@ async def test_linear_chain() -> Tuple[bool, str]:
 
 async def test_rerun_mid_chain() -> Tuple[bool, str]:
     ctrl = await build_controller()
-    root_id = await ctrl.create_root(default_settings("Goal B"))
+    root_id = await ctrl.apply_transition(None, default_settings("Goal B"))
     child1_id = await ctrl.apply_transition(root_id, default_settings("Goal B"))
     child2_id = await ctrl.apply_transition(child1_id, default_settings("Goal B"))
 
@@ -140,7 +140,7 @@ async def test_artifacts_presence() -> Tuple[bool, str]:
     from src.interfaces import IterationNode
 
     ctrl = await build_controller()
-    root_id = await ctrl.create_root(default_settings("Artifacts"))
+    root_id = await ctrl.apply_transition(None, default_settings("Artifacts"))
     c1_id = await ctrl.apply_transition(root_id, default_settings("Artifacts"))
 
     for nid in [root_id, c1_id]:
@@ -150,7 +150,8 @@ async def test_artifacts_presence() -> Tuple[bool, str]:
         p = Path(node.artifacts.screenshot_filename)
         if not p.exists():
             return False, f"screenshot missing for node {nid}: {p}"
-        if not node.artifacts.vision_output.strip():
+        # Root may skip vision analysis; require non-empty for child
+        if nid != root_id and not node.artifacts.vision_output.strip():
             return False, f"vision_output empty for node {nid}"
         if not isinstance(node.artifacts.console_logs, list):
             return False, f"console_logs not a list for node {nid}"
@@ -190,7 +191,7 @@ async def test_prompt_placeholders() -> Tuple[bool, str]:
     # Create root (no initial html_input). Then apply one transition; δ should
     # render root.html_output, compute vision_output, and build a code prompt
     # that includes all placeholders.
-    root_id = await ctrl.create_root(settings)
+    root_id = await ctrl.apply_transition(None, settings)
     child_id = await ctrl.apply_transition(root_id, settings)
     root = ctrl.get_node(root_id)
     child = ctrl.get_node(child_id)

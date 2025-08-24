@@ -93,7 +93,7 @@ async def test_template_context_rendering() -> Tuple[bool, str]:
         ctrl = IterationController(ai, browser, vision)
         settings = make_settings()
 
-        root_id = await ctrl.create_root(settings)
+        root_id = await ctrl.apply_transition(None, settings)
         child_id = await ctrl.apply_transition(root_id, settings)
         _ = ctrl.get_node(child_id)
         return ai.last_prompt, vision.last_prompt
