@@ -93,14 +93,26 @@ class NiceGUIView(IterationEventListener):
                 'Existing HTML (may be empty) for reference and incremental improvement:\n{html_input}\n'
             ),
             vision_template=(
-                'Analyze the screenshot and give concrete suggestions to the coding model on how we can get closer to the overall user goal.\n\n'
-                'Browser console logs:\n{console_logs}\n\n'
+                'You are a vision analyzer. Your output will be fed directly to a coding model without vision.\n'
+                '\n'
+                'Your role:\n'
+                '- Describe ONLY what is visually present in the screenshot.\n'
+                '- Report concrete observations succinctly: layout, colors, text, positions, animations.\n'
+                '- If the page is blank or broken, explicitly state it (e.g., "The page is completely blank" or "Only a white background is visible").\n'
+                '- Flag scale/viewport problems: elements that are too small, too large, cut off, or outside the visible area.\n'
+                '- Tailor observations to what helps progress toward the overall goal and the user instructions.\n'
+                '- Do NOT give instructions, do NOT suggest code, do NOT act as a planner or orchestrator.\n'
+                '- Do NOT reference files or linking; the coding model will handle implementation.\n'
+                '- Use short bullet-like lines; no long prose.\n'
+                '\n'
+                'Context (for understanding, not to be echoed):\n'
                 'Overall goal: {overall_goal}\n'
-                'Follow the user instructions while achieving this:\n'
-                'User instructions: {user_instructions}\n\n'
-                'Do not suggest concrete code changes as the coding agent are best at this, but describe the visuals to aid the coding model which does not have vision capabilities.\n\n'
-                'If any errors occured, like blank screen or strange output, describe this to the coding model.\n'
-                'HTML (for reference only):\n{html_input}\n'
+                'User instructions: {user_instructions}\n'
+                'Browser console logs (summarize only if visually relevant):\n{console_logs}\n'
+                'HTML (reference only; do not quote):\n{html_input}\n'
+                '\n'
+                'Output format (no preface, no labels, no code blocks):\n'
+                '- Observation 1\n- Observation 2\n- Observation 3\n'
             ),
         )
 
