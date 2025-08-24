@@ -80,11 +80,17 @@ class NiceGUIView(IterationEventListener):
             vision_instructions='',
             overall_goal=overall_goal,
             code_template=(
-                'Improve the following HTML while adhering to the goal.\n'
+                'You are a code generator that must output ONLY a complete, standalone HTML document.\n'
+                '- Do NOT include any explanations, comments, markdown, backticks, or fences.\n'
+                '- Output must begin with <!DOCTYPE html> and contain <html>, <head>, and <body>.\n'
+                '- Self-contained only: no external network assets; inline CSS/JS permitted.\n'
+                '- Do not echo this instruction or the prompt.\n'
+                '\n'
                 'Goal: {overall_goal}\n'
-                'Vision analysis: {vision_output}\n'
-                'Instructions: {code_instructions}\n'
-                'HTML:\n{html_input}\n'
+                'Vision findings (for guidance only, do not render as text):\n{vision_output}\n'
+                'Implement the following instructions in the HTML (do not render these as comments):\n{code_instructions}\n'
+                '\n'
+                'Existing HTML (may be empty) for reference and incremental improvement:\n{html_input}\n'
             ),
             vision_template=(
                 'Analyze the screenshot and give concrete suggestions to the coding model on how we can get closer to the overall user goal.\n\n'
@@ -132,10 +138,37 @@ class NiceGUIView(IterationEventListener):
             html_in = ui.expansion('HTML Input')
             with html_in:
                 ui.code(node.html_input or '(empty)').classes('w-full')
+                # Open source HTML in new tab if available (served from /artifacts)
+                try:
+                    from pathlib import Path as _P
+                    # Detect candidate input html file by matching png name -> html
+                    input_html_url = ''
+                    if node.parent_id:
+                        # For non-root nodes, the input is the parent's output. Locate parent's screenshot and map to html.
+                        parent = self.controller.get_node(node.parent_id)
+                        if parent and parent.artifacts.screenshot_filename:
+                            p = _P(parent.artifacts.screenshot_filename)
+                            html_candidate = p.with_suffix('.html')
+                            if html_candidate.exists():
+                                input_html_url = '/artifacts/' + html_candidate.name
+                    if input_html_url:
+                        ui.link('Open input HTML in new tab', input_html_url, new_tab=True)
+                except Exception:
+                    pass
 
             html_out = ui.expansion('HTML Output')
             with html_out:
                 ui.code(node.html_output or '(empty)').classes('w-full')
+                try:
+                    from pathlib import Path as _P
+                    out_png = node.artifacts.screenshot_filename
+                    if out_png:
+                        p = _P(out_png)
+                        html_candidate = p.with_suffix('.html')
+                        if html_candidate.exists():
+                            ui.link('Open output HTML in new tab', '/artifacts/' + html_candidate.name, new_tab=True)
+                except Exception:
+                    pass
 
             # Screenshot
             image_area = ui.expansion('Screenshot')
