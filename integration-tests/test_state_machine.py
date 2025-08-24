@@ -70,21 +70,20 @@ def default_settings(overall_goal: str = ""):
     vision_model = os.getenv("VIBES_VISION_MODEL", "vision-model")
     return TransitionSettings(
         code_model=code_model,
-        code_instructions="",
         vision_model=vision_model,
-        vision_instructions="",
         overall_goal=overall_goal,
+        user_steering="",
         code_template=(
             "Improve the following HTML while adhering to the goal.\n"
             "Goal: {overall_goal}\n"
             "Vision analysis: {vision_output}\n"
-            "Instructions: {code_instructions}\n"
+            "User steering: {user_steering}\n"
             "HTML:\n{html_input}\n"
         ),
         vision_template=(
             "Analyze the HTML and its rendering to provide guidance.\n"
             "Goal: {overall_goal}\n"
-            "Instructions: {vision_instructions}\n"
+            "User steering: {user_steering}\n"
             "HTML:\n{html_input}\n"
         ),
     )
@@ -163,6 +162,7 @@ async def test_prompt_placeholders() -> Tuple[bool, str]:
     from src.controller import IterationController
     from src.interfaces import AICodeService, TransitionSettings
     from src.services import PlaywrightBrowserService
+    from src.controller import _build_template_context
 
     class RecordingAICodeService(AICodeService):
         def __init__(self) -> None:
@@ -197,12 +197,12 @@ async def test_prompt_placeholders() -> Tuple[bool, str]:
     if not (root and child):
         return False, "nodes missing"
 
-    expected_prompt = settings.code_template.format(
+    expected_prompt = settings.code_template.format(**_build_template_context(
         html_input=root.html_output,
-        code_instructions=settings.code_instructions,
-        overall_goal=settings.overall_goal,
+        settings=settings,
         vision_output=child.artifacts.vision_output,
-    )
+        console_logs=child.artifacts.console_logs,
+    ))
 
     if ai.last_prompt != expected_prompt:
         return False, "code prompt did not include expected placeholder substitutions"

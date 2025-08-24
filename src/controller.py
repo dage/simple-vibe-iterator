@@ -17,6 +17,27 @@ from .interfaces import (
 
 
 # Pure transition function δ(html_input, settings) -> (html_output, artifacts)
+def _build_template_context(
+    html_input: str,
+    settings: TransitionSettings,
+    vision_output: str = "",
+    console_logs: list[str] | None = None,
+) -> dict:
+    # Prepare a unified mapping for both templates, exposing all settings fields
+    # plus common dynamic fields.
+    from dataclasses import asdict
+
+    raw = asdict(settings).copy()
+    # Do not expose template strings themselves to avoid nested, unsubstituted placeholders
+    raw.pop("code_template", None)
+    raw.pop("vision_template", None)
+    ctx = raw
+    ctx.update({
+        "html_input": html_input or "",
+        "vision_output": vision_output or "",
+        "console_logs": "\n".join(console_logs or []),
+    })
+    return ctx
 async def δ(
     html_input: str,
     settings: TransitionSettings,
@@ -28,13 +49,8 @@ async def δ(
     in_screenshot_path, in_console_logs = await browser_service.render_and_capture(html_input)
 
     # 2) Build vision prompt from template for the current state and analyze once
-    vision_prompt = settings.vision_template.format(
-        html_input=html_input,
-        console_logs="\n".join(in_console_logs or []),
-        overall_goal=settings.overall_goal,
-        user_instructions=settings.vision_instructions,
-        vision_instructions=settings.vision_instructions,
-    )
+    vision_ctx = _build_template_context(html_input=html_input, settings=settings, vision_output="", console_logs=in_console_logs)
+    vision_prompt = settings.vision_template.format(**vision_ctx)
     in_vision_output = await vision_service.analyze_screenshot(
         vision_prompt,
         in_screenshot_path,
@@ -42,12 +58,8 @@ async def δ(
     )
 
     # 3) Build code-model prompt from template + analysis of current state
-    code_prompt = settings.code_template.format(
-        html_input=html_input,
-        code_instructions=settings.code_instructions,
-        overall_goal=settings.overall_goal,
-        vision_output=in_vision_output,
-    )
+    code_ctx = _build_template_context(html_input=html_input, settings=settings, vision_output=in_vision_output, console_logs=in_console_logs)
+    code_prompt = settings.code_template.format(**code_ctx)
 
     # 4) Call code model to produce html_output
     html_output = await ai_service.generate_html(code_prompt)
@@ -111,22 +123,11 @@ class IterationController:
             if env_vision:
                 settings.vision_model = env_vision
         # Build initial code prompt without html_input/vision_output
-        code_prompt = settings.code_template.format(
-            html_input="",
-            code_instructions=settings.code_instructions,
-            overall_goal=settings.overall_goal,
-            vision_output="",
-        )
+        code_prompt = settings.code_template.format(**_build_template_context(html_input="", settings=settings, vision_output="", console_logs=[]))
         html_output = await self._ai_service.generate_html(code_prompt)
         screenshot_path, console_logs = await self._browser_service.render_and_capture(html_output)
         # For the root, there is no html_input; vision should analyze the initial output using the template
-        vision_prompt = settings.vision_template.format(
-            html_input="",
-            console_logs="\n".join(console_logs or []),
-            overall_goal=settings.overall_goal,
-            user_instructions=settings.vision_instructions,
-            vision_instructions=settings.vision_instructions,
-        )
+        vision_prompt = settings.vision_template.format(**_build_template_context(html_input="", settings=settings, vision_output="", console_logs=console_logs))
         vision_output = await self._vision_service.analyze_screenshot(vision_prompt, screenshot_path, console_logs)
 
         node_id = str(uuid.uuid4())

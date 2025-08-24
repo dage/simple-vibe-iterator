@@ -75,21 +75,20 @@ async def run_ping() -> Tuple[bool, str]:
 
     settings = TransitionSettings(
         code_model=code_model,
-        code_instructions="",
         vision_model=vision_model,
-        vision_instructions="",
         overall_goal="Ping E2E (OpenRouter)",
+        user_steering="",
         code_template=(
             "Improve the following HTML while adhering to the goal.\n"
             "Goal: {overall_goal}\n"
             "Vision analysis: {vision_output}\n"
-            "Instructions: {code_instructions}\n"
+            "User steering: {user_steering}\n"
             "HTML:\n{html_input}\n"
         ),
         vision_template=(
             "Analyze the HTML and its rendering to provide guidance.\n"
             "Goal: {overall_goal}\n"
-            "Instructions: {vision_instructions}\n"
+            "User steering: {user_steering}\n"
             "HTML:\n{html_input}\n"
         ),
     )

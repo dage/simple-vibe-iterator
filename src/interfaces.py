@@ -10,10 +10,9 @@ from typing import List, Optional, Protocol
 @dataclass
 class TransitionSettings:
     code_model: str
-    code_instructions: str
     vision_model: str
-    vision_instructions: str
     overall_goal: str
+    user_steering: str
     code_template: str
     vision_template: str
 

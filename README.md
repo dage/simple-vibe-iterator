@@ -42,7 +42,7 @@ This will:
 - Validate linear chains and correct parent-child links
 - Verify re-running mid-chain deletes descendants and applies updated settings
 - Ensure artifacts exist (screenshot, console logs, vision output)
-- Verify prompt template substitution uses `{html_input}`, `{code_instructions}`, `{overall_goal}`, `{vision_output}`
+- Verify prompt template substitution uses `{html_input}`, `{user_steering}`, `{overall_goal}`, `{vision_output}`
 
 ### Run OpenRouter integration checks
 Execute:

@@ -75,20 +75,21 @@ class NiceGUIView(IterationEventListener):
         vision_model = os.getenv('VIBES_VISION_MODEL', 'vision-model')
         return TransitionSettings(
             code_model=code_model,
-            code_instructions='',
             vision_model=vision_model,
-            vision_instructions='',
             overall_goal=overall_goal,
+            user_steering='',
             code_template=(
                 'You are a code generator that must output ONLY a complete, standalone HTML document.\n'
                 '- Do NOT include any explanations, comments, markdown, backticks, or fences.\n'
                 '- Output must begin with <!DOCTYPE html> and contain <html>, <head>, and <body>.\n'
                 '- Self-contained only: no external network assets; inline CSS/JS permitted.\n'
+                '- You may use console.log() to get feedback from the browser for your next iteration.\n'
                 '- Do not echo this instruction or the prompt.\n'
                 '\n'
                 'Goal: {overall_goal}\n'
+                'User steering (guidance; do not render as text):\n{user_steering}\n'
                 'Vision findings (for guidance only, do not render as text):\n{vision_output}\n'
-                'Implement the following instructions in the HTML (do not render these as comments):\n{code_instructions}\n'
+                'Console logs (for guidance only, do not render as text):\n{console_logs}\n'
                 '\n'
                 'Existing HTML (may be empty) for reference and incremental improvement:\n{html_input}\n'
             ),
@@ -100,14 +101,16 @@ class NiceGUIView(IterationEventListener):
                 '- Report concrete observations succinctly: layout, colors, text, positions, animations.\n'
                 '- If the page is blank or broken, explicitly state it (e.g., "The page is completely blank" or "Only a white background is visible").\n'
                 '- Flag scale/viewport problems: elements that are too small, too large, cut off, or outside the visible area.\n'
-                '- Tailor observations to what helps progress toward the overall goal and the user instructions.\n'
+                '- Tailor observations to what helps progress toward the overall goal and user steering.\n'
                 '- Do NOT give instructions, do NOT suggest code, do NOT act as a planner or orchestrator.\n'
                 '- Do NOT reference files or linking; the coding model will handle implementation.\n'
                 '- Use short bullet-like lines; no long prose.\n'
                 '\n'
                 'Context (for understanding, not to be echoed):\n'
                 'Overall goal: {overall_goal}\n'
-                'User instructions: {user_instructions}\n'
+                'User steering: {user_steering}\n'
+                'Code model: {code_model}\n'
+                'Vision model: {vision_model}\n'
                 'Browser console logs (summarize only if visually relevant):\n{console_logs}\n'
                 'HTML (reference only; do not quote):\n{html_input}\n'
                 '\n'
@@ -203,10 +206,9 @@ class NiceGUIView(IterationEventListener):
 
             # Flat settings inputs (pre-filled with node.settings)
             code_model = ui.input(label='code_model', value=node.settings.code_model).classes('w-full')
-            code_instr = ui.textarea(label='code_instructions', value=node.settings.code_instructions).classes('w-full')
             vision_model = ui.input(label='vision_model', value=node.settings.vision_model).classes('w-full')
-            vision_instr = ui.textarea(label='vision_instructions', value=node.settings.vision_instructions).classes('w-full')
             overall_goal = ui.textarea(label='overall_goal', value=node.settings.overall_goal).classes('w-full')
+            user_steering = ui.textarea(label='user_steering', value=node.settings.user_steering).classes('w-full')
             code_tmpl = ui.textarea(label='code_template', value=node.settings.code_template).classes('w-full')
             vision_tmpl = ui.textarea(label='vision_template', value=node.settings.vision_template).classes('w-full')
 
@@ -216,10 +218,9 @@ class NiceGUIView(IterationEventListener):
                 try:
                     updated = TransitionSettings(
                         code_model=code_model.value or '',
-                        code_instructions=code_instr.value or '',
                         vision_model=vision_model.value or '',
-                        vision_instructions=vision_instr.value or '',
                         overall_goal=overall_goal.value or '',
+                        user_steering=user_steering.value or '',
                         code_template=code_tmpl.value or '',
                         vision_template=vision_tmpl.value or '',
                     )

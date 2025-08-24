@@ -77,24 +77,24 @@ async def run_iterate_number() -> Tuple[bool, str]:
     # Root: render a single huge centered number '1'
     root_settings = TransitionSettings(
         code_model=code_model,
-        code_instructions=(
-            "Return standalone HTML for a white page showing a single very large, centered number '1'. "
-            "Use minimal CSS; avoid extra text; body should contain only the number."
-        ),
         vision_model=vision_model,
-        vision_instructions="Identify the number rendered on the page.",
         overall_goal="Show a large centered number '1'",
+        user_steering=(
+            "Return standalone HTML for a white page showing a single extremely large, centered number '1'. "
+            "Use very high contrast: pure black text on white background, font-weight 900, font-size at least 800px, "
+            "no shadows, no outlines, and center both vertically and horizontally. Body must contain only the number."
+        ),
         code_template=(
             "Improve or create the HTML per the goal and instructions.\n"
             "Goal: {overall_goal}\n"
             "Vision analysis: {vision_output}\n"
-            "Instructions: {code_instructions}\n"
+            "User steering: {user_steering}\n"
             "HTML:\n{html_input}\n"
         ),
         vision_template=(
             "Analyze the rendered page. Identify the number visibly shown.\n"
             "Goal: {overall_goal}\n"
-            "Instructions: {vision_instructions}\n"
+            "User steering: {user_steering}\n"
             "HTML:\n{html_input}\n"
         ),
     )
@@ -107,13 +107,12 @@ async def run_iterate_number() -> Tuple[bool, str]:
     # Iteration: change the number to '2'
     iter_settings = TransitionSettings(
         code_model=code_model,
-        code_instructions=(
-            "Modify the HTML so the displayed number is now '2' (not '1'). "
-            "Keep layout, style, and centering the same."
-        ),
         vision_model=vision_model,
-        vision_instructions="Identify the number shown; expect '2'.",
         overall_goal="Change the number to '2'",
+        user_steering=(
+            "Modify the HTML so the displayed number is now '2' (not '1'). Keep the page as only a single, extremely large, high-contrast numeral '2' "
+            "(pure black on white, font-weight 900, font-size at least 800px), centered both vertically and horizontally."
+        ),
         code_template=root_settings.code_template,
         vision_template=root_settings.vision_template,
     )
@@ -142,20 +141,27 @@ async def run_iterate_number() -> Tuple[bool, str]:
         return False, "child screenshot equals root (output not re-rendered)"
 
     # Require a robust direct single-image vision ping to be '2'
-    direct = await or_client.vision_single(
-        prompt=(
-            "Identify the single large number in this image. "
-            "Respond with exactly one character: 0-9."
-        ),
-        image=child.artifacts.screenshot_filename,
-        temperature=0,
-    )
-    dt = (direct or "").strip().lower()
-    strip_chars = ".,!?:;()[]{}\"'`"
-    words = [w.strip(strip_chars) for w in dt.split() if w.strip(strip_chars)]
-    alpha = [w for w in words if w]
-    if not (len(alpha) >= 1 and alpha[0] == "2"):
-        return False, f"direct vision on child screenshot not '2': {direct!r}"
+    # Small retry to reduce flakiness of remote vision model
+    success = False
+    last = ""
+    for _ in range(2):
+        direct = await or_client.vision_single(
+            prompt=(
+                "Identify the single large number in this image. Respond with exactly one character: 0-9."
+            ),
+            image=child.artifacts.screenshot_filename,
+            temperature=0,
+        )
+        last = direct
+        dt = (direct or "").strip().lower()
+        strip_chars = ".,!?:;()[]{}\"'`"
+        words = [w.strip(strip_chars) for w in dt.split() if w.strip(strip_chars)]
+        alpha = [w for w in words if w]
+        if len(alpha) >= 1 and alpha[0] == "2":
+            success = True
+            break
+    if not success:
+        return False, f"direct vision on child screenshot not '2': {last!r}"
 
     return True, "iteration changed number to 2 and vision recognized it"
 
