@@ -175,16 +175,13 @@ class NiceGUIView(IterationEventListener):
                             ui.label('INPUT SCREENSHOT').classes('text-sm font-semibold')
                             try:
                                 from pathlib import Path as _P
-                                input_png = ''
+                                input_png = node.artifacts.input_screenshot_filename or ''
                                 input_html_url = ''
-                                if node.parent_id:
-                                    parent = self.controller.get_node(node.parent_id)
-                                    if parent and parent.artifacts.screenshot_filename:
-                                        input_png = parent.artifacts.screenshot_filename
-                                        p = _P(input_png)
-                                        html_candidate = p.with_suffix('.html')
-                                        if html_candidate.exists():
-                                            input_html_url = '/artifacts/' + html_candidate.name
+                                if input_png:
+                                    p = _P(input_png)
+                                    html_candidate = p.with_suffix('.html')
+                                    if html_candidate.exists():
+                                        input_html_url = '/artifacts/' + html_candidate.name
                             except Exception:
                                 input_png = ''
                                 input_html_url = ''
@@ -194,8 +191,26 @@ class NiceGUIView(IterationEventListener):
                                 ui.label('(no input screenshot)')
                             if input_html_url:
                                 ui.link('Open input HTML', input_html_url, new_tab=True)
-                            ui.label('Vision Analysis').classes('text-sm font-semibold mt-2')
-                            ui.markdown(node.artifacts.vision_output or '(pending)')
+                            # Console logs (INPUT): from this node's input artifacts
+                            in_logs = list(getattr(node.artifacts, 'input_console_logs', []) or [])
+                            in_title = f"Console logs ({'empty' if len(in_logs) == 0 else len(in_logs)})"
+                            with ui.expansion(in_title):
+                                if in_logs:
+                                    in_logs_text = '\n'.join(in_logs)
+                                    ui.code(in_logs_text).classes('w-full')
+                                else:
+                                    ui.label('(no console logs)')
+                            # Vision Analysis label with line count from raw output
+                            _va_raw = node.artifacts.vision_output or ''
+                            _va_lines = [l for l in _va_raw.splitlines() if l.strip()]
+                            va_title = f"Vision Analysis ({'empty' if len(_va_lines) == 0 else len(_va_lines)})"
+                            with ui.expansion(va_title):
+                                va_text = node.artifacts.vision_output or ''
+                                if not (getattr(node.artifacts, 'input_screenshot_filename', '') or '').strip():
+                                    va_text = '(no input screenshot)'
+                                elif not (va_text or '').strip():
+                                    va_text = '(pending)'
+                                ui.markdown(va_text)
 
                         # Center arrow
                         with ui.column().classes('basis-[60px] items-center justify-center'):
@@ -218,6 +233,15 @@ class NiceGUIView(IterationEventListener):
                                         ui.link('Open output HTML', '/artifacts/' + html_candidate.name, new_tab=True)
                             except Exception:
                                 pass
+                            # Console logs (OUTPUT): logs from this node's render
+                            out_logs = list(node.artifacts.console_logs or [])
+                            out_title = f"Console logs ({'empty' if len(out_logs) == 0 else len(out_logs)})"
+                            with ui.expansion(out_title):
+                                if out_logs:
+                                    out_logs_text = '\n'.join(out_logs)
+                                    ui.code(out_logs_text).classes('w-full')
+                                else:
+                                    ui.label('(no console logs)')
 
                     # Bottom-right iterate button
                     with ui.row().classes('w-full justify-end'):

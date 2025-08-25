@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
 from playwright.sync_api import sync_playwright
+import time
 
 
 def parse_viewport(s: str | None) -> tuple[int, int]:
@@ -42,6 +43,11 @@ def capture_html(html_path: Path, out_png: Path, viewport: Tuple[int, int] = (12
 
             page.on("console", _on_console)
             page.goto(url, wait_until="load")
+            # Give the page time to run scripts and emit console logs before capture
+            try:
+                time.sleep(1.0)
+            except Exception:
+                pass
             page.screenshot(path=str(out_png), full_page=False)
         finally:
             browser.close()

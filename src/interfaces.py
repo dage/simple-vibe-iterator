@@ -23,6 +23,8 @@ class TransitionArtifacts:
     screenshot_filename: str
     console_logs: List[str]
     vision_output: str
+    input_screenshot_filename: str
+    input_console_logs: List[str]
 
 
 @dataclass

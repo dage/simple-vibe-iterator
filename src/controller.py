@@ -48,6 +48,7 @@ async def δ(
     # Prepare defaults
     in_console_logs: list[str] = []
     in_vision_output: str = ""
+    in_screenshot_path: str = ""
 
     # Optional input render + vision when html_input is present
     if (html_input or "").strip():
@@ -72,6 +73,8 @@ async def δ(
         screenshot_filename=out_screenshot_path,
         console_logs=out_console_logs,
         vision_output=in_vision_output,
+        input_screenshot_filename=in_screenshot_path,
+        input_console_logs=in_console_logs,
     )
     return html_output, artifacts
 
