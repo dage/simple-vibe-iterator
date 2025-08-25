@@ -10,8 +10,6 @@ Tiny OpenRouter client + stateful Conversation.
 Env (from .env or process):
   OPENROUTER_BASE_URL  - required; OpenRouter API endpoint
   VIBES_API_KEY        - required
-  VIBES_CODE_MODEL     - required default code model slug
-  VIBES_VISION_MODEL   - required default vision model slug
 
 Docs: OpenRouter is OpenAI-compatible; images accept base64 data URLs; attribution headers required.
 """
@@ -52,16 +50,26 @@ def _slug(s: str) -> str:
 
 @lru_cache
 def _settings() -> _Settings:
+    # Models are sourced from YAML config (single source of truth)
     api_key = os.getenv("VIBES_API_KEY")
-    code_model = os.getenv("VIBES_CODE_MODEL")
-    vision_model = os.getenv("VIBES_VISION_MODEL")
     base_url = os.getenv("OPENROUTER_BASE_URL")
+
+    # Import here to support both package import (src.or_client) and
+    # top-level import (tests add src/ to sys.path). YAML is the single source of truth.
+    try:
+        try:
+            from . import config as app_config  # type: ignore
+        except Exception:
+            import config as app_config  # type: ignore
+        cfg = app_config.get_config()
+        code_model = cfg.code_model
+        vision_model = cfg.vision_model
+    except Exception as exc:
+        raise RuntimeError(f"Failed to load models from config.yaml: {exc}")
 
     missing = [
         name for name, val in [
             ("VIBES_API_KEY", api_key),
-            ("VIBES_CODE_MODEL", code_model),
-            ("VIBES_VISION_MODEL", vision_model),
             ("OPENROUTER_BASE_URL", base_url),
         ] if not val
     ]

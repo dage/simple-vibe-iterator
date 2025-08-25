@@ -65,9 +65,11 @@ async def build_controller():
 
 def default_settings(overall_goal: str = ""):
     from src.interfaces import TransitionSettings
+    from src import config as app_config
 
-    code_model = os.getenv("VIBES_CODE_MODEL", "code-model")
-    vision_model = os.getenv("VIBES_VISION_MODEL", "vision-model")
+    cfg = app_config.get_config()
+    code_model = cfg.code_model
+    vision_model = cfg.vision_model
     return TransitionSettings(
         code_model=code_model,
         vision_model=vision_model,

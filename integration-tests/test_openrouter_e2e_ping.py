@@ -48,8 +48,6 @@ def env_ready(dotenv: Dict[str, str]) -> Tuple[bool, str]:
     need = [
         "OPENROUTER_BASE_URL",
         "VIBES_API_KEY",
-        "VIBES_CODE_MODEL",
-        "VIBES_VISION_MODEL",
     ]
     missing = [k for k in need if not get_env_value(k, dotenv)]
     if missing:
@@ -70,8 +68,10 @@ async def run_ping() -> Tuple[bool, str]:
     vision = OpenRouterVisionService()
     browser = PlaywrightBrowserService()
 
-    code_model = os.getenv("VIBES_CODE_MODEL", "code-model")
-    vision_model = os.getenv("VIBES_VISION_MODEL", "vision-model")
+    from src import config as app_config
+    cfg = app_config.get_config()
+    code_model = cfg.code_model
+    vision_model = cfg.vision_model
 
     settings = TransitionSettings(
         code_model=code_model,

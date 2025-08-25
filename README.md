@@ -29,9 +29,22 @@ pip install -r requirements.txt
 python -m playwright install
 ```
 4. Create `.env` from `.env_template` and fill values:
-   - Required: `OPENROUTER_BASE_URL`, `VIBES_API_KEY`, `VIBES_CODE_MODEL`, `VIBES_VISION_MODEL`
+   - Required: `OPENROUTER_BASE_URL` (default provided), `VIBES_API_KEY`
 
-We automatically load `.env` at app startup (`load_dotenv()` in `src/main.py`) and in the OpenRouter client. You do not need to `export` variables in your shell.
+5. The committed `config.yaml` at the project root is the default configuration for every new session. Edit it to change default models and templates:
+```
+models:
+  code: z-ai/glm-4.5-air
+  vision: meta-llama/llama-3.2-90b-vision-instruct
+
+templates:
+  code: |
+    ...
+  vision: |
+    ...
+```
+
+We automatically load `.env` and `config.yaml` at app startup. You do not need to `export` variables in your shell.
 
 ### Run state-machine tests
 Execute:
@@ -74,7 +87,7 @@ Then open `http://localhost:8080`.
 Workflow:
 - Create a root node: enter the overall goal, then click "Create root" (the coding agent creates the initial HTML).
 - Each node card shows: HTML Input (empty for root), HTML Output, Screenshot, Console Logs, and Vision Analysis.
-- Edit settings for the next iteration (model slugs default from `VIBES_CODE_MODEL`/`VIBES_VISION_MODEL`, plus instructions/templates/overall goal).
+- Edit settings for the next iteration (model slugs default from `config.yaml`, plus instructions/templates/overall goal).
 - Click "Iterate" on any node to create its next child; descendants of that node are replaced by the new chain.
  - While an operation is running, the status shows the current phase and seconds elapsed; other actions are temporarily blocked.
 
@@ -82,8 +95,9 @@ Workflow:
 - `src/interfaces.py`: dataclasses and service/controller interfaces (no UI deps)
 - `src/controller.py`: framework-agnostic iteration controller
 - `src/services.py`: OpenRouter AI services + Playwright browser service
-- `src/view.py`: NiceGUI view (UI only)
+- `src/view.py`: NiceGUI view (UI only); reads defaults from `config.yaml` via `src/config.py`
 - `src/main.py`: dependency wiring and app entry (OpenRouter-only)
 
 Notes:
 - Screenshots/HTML are written to `artifacts/` (ignored by Git).
+- Configuration is read from `config.yaml`; templates are not duplicated in code.

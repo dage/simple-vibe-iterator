@@ -126,22 +126,20 @@ async def main() -> int:
 
     # Gather required environment values
     api_key = get_env_value("VIBES_API_KEY", dotenv)
-    code_model = get_env_value("VIBES_CODE_MODEL", dotenv)
-    vision_model = get_env_value("VIBES_VISION_MODEL", dotenv)
+    base_url = get_env_value("OPENROUTER_BASE_URL", dotenv)
 
-    # Check presence of required variables first
-    presence_ok = bool(api_key and code_model and vision_model)
+    # Check presence of required variables first (YAML provides models)
+    presence_ok = bool(api_key and base_url)
     missing = [
         name
         for name, present in [
             ("VIBES_API_KEY", api_key),
-            ("VIBES_CODE_MODEL", code_model),
-            ("VIBES_VISION_MODEL", vision_model),
+            ("OPENROUTER_BASE_URL", base_url),
         ]
         if not present
     ]
     presence_details = "all present" if presence_ok else f"missing: {', '.join(missing)}"
-    print(f"[ {'OK' if presence_ok else 'FAIL'} ] Environment variables set: {presence_details}")
+    print(f"[ {'OK' if presence_ok else 'FAIL'} ] API env set: {presence_details}")
     if not presence_ok:
         return 1
 

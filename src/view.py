@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from typing import Dict, List
 
 from nicegui import ui
@@ -10,6 +9,7 @@ from nicegui import ui
 from .controller import IterationController
 from .interfaces import IterationEventListener, IterationNode, TransitionSettings
 from . import op_status
+from . import config as app_config
 
 
 class NiceGUIView(IterationEventListener):
@@ -71,52 +71,14 @@ class NiceGUIView(IterationEventListener):
             self._end_operation()
 
     def _default_settings(self, overall_goal: str) -> TransitionSettings:
-        code_model = os.getenv('VIBES_CODE_MODEL', 'code-model')
-        vision_model = os.getenv('VIBES_VISION_MODEL', 'vision-model')
+        cfg = app_config.get_config()
         return TransitionSettings(
-            code_model=code_model,
-            vision_model=vision_model,
+            code_model=cfg.code_model,
+            vision_model=cfg.vision_model,
             overall_goal=overall_goal,
             user_steering='',
-            code_template=(
-                'You are a code generator that must output ONLY a complete, standalone HTML document.\n'
-                '- Do NOT include any explanations, comments, markdown, backticks, or fences.\n'
-                '- Output must begin with <!DOCTYPE html> and contain <html>, <head>, and <body>.\n'
-                '- Self-contained only: no external network assets; inline CSS/JS permitted.\n'
-                '- You may use console.log() to get feedback from the browser for your next iteration.\n'
-                '- Do not echo this instruction or the prompt.\n'
-                '\n'
-                'Goal: {overall_goal}\n'
-                'User steering (guidance; do not render as text):\n{user_steering}\n'
-                'Vision findings (for guidance only, do not render as text):\n{vision_output}\n'
-                'Console logs (for guidance only, do not render as text):\n{console_logs}\n'
-                '\n'
-                'Existing HTML (may be empty) for reference and incremental improvement:\n{html_input}\n'
-            ),
-            vision_template=(
-                'You are a vision analyzer. Your output will be fed directly to a coding model without vision.\n'
-                '\n'
-                'Your role:\n'
-                '- Describe ONLY what is visually present in the screenshot.\n'
-                '- Report concrete observations succinctly: layout, colors, text, positions, animations.\n'
-                '- If the page is blank or broken, explicitly state it (e.g., "The page is completely blank" or "Only a white background is visible").\n'
-                '- Flag scale/viewport problems: elements that are too small, too large, cut off, or outside the visible area.\n'
-                '- Tailor observations to what helps progress toward the overall goal and user steering.\n'
-                '- Do NOT give instructions, do NOT suggest code, do NOT act as a planner or orchestrator.\n'
-                '- Do NOT reference files or linking; the coding model will handle implementation.\n'
-                '- Use short bullet-like lines; no long prose.\n'
-                '\n'
-                'Context (for understanding, not to be echoed):\n'
-                'Overall goal: {overall_goal}\n'
-                'User steering: {user_steering}\n'
-                'Code model: {code_model}\n'
-                'Vision model: {vision_model}\n'
-                'Browser console logs (summarize only if visually relevant):\n{console_logs}\n'
-                'HTML (reference only; do not quote):\n{html_input}\n'
-                '\n'
-                'Output format (no preface, no labels, no code blocks):\n'
-                '- Observation 1\n- Observation 2\n- Observation 3\n'
-            ),
+            code_template=cfg.code_template,
+            vision_template=cfg.vision_template,
         )
 
     # IterationEventListener
