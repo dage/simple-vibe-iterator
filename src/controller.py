@@ -59,12 +59,13 @@ async def δ(
             vision_prompt,
             in_screenshot_path,
             in_console_logs,
+            settings.vision_model,
         )
 
     # Build code-model prompt and generate output
     code_ctx = _build_template_context(html_input=html_input, settings=settings, vision_output=in_vision_output, console_logs=in_console_logs)
     code_prompt = settings.code_template.format(**code_ctx)
-    html_output = await ai_service.generate_html(code_prompt)
+    html_output = await ai_service.generate_html(code_prompt, settings.code_model)
 
     # Render the NEW html_output to produce artifacts
     out_screenshot_path, out_console_logs = await browser_service.render_and_capture(html_output)

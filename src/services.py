@@ -38,29 +38,29 @@ class PlaywrightBrowserService(BrowserService):
 # ---- OpenRouter-backed services ----
 
 class OpenRouterAICodeService(AICodeService):
-    async def generate_html(self, prompt: str) -> str:
+    async def generate_html(self, prompt: str, model: str) -> str:
         # Defer import to avoid requiring env when using stubs/tests
         from . import or_client
 
         # Minimal call: the controller provides a full prompt with context
-        s = or_client._settings()
-        op_status.set_phase(f"Code: {s.code_model}")
+        op_status.set_phase(f"Code: {model}")
         reply = await or_client.chat(
             messages=[{"role": "user", "content": prompt}],
+            model=model,
         )
         op_status.clear_phase()
         return reply or ""
 
 
 class OpenRouterVisionService(VisionService):
-    async def analyze_screenshot(self, prompt: str, screenshot_path: str, console_logs: List[str]) -> str:
+    async def analyze_screenshot(self, prompt: str, screenshot_path: str, console_logs: List[str], model: str) -> str:
         from . import or_client
 
-        s = or_client._settings()
-        op_status.set_phase(f"Vision: {s.vision_model}")
+        op_status.set_phase(f"Vision: {model}")
         reply = await or_client.vision_single(
             prompt=prompt,
             image=screenshot_path,
+            model=model,
             temperature=0,
         )
         op_status.clear_phase()

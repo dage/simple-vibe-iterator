@@ -44,31 +44,38 @@ class NiceGUIView(IterationEventListener):
             self._status_timer = ui.timer(0.25, self._refresh_phase)
             self._update_status_ui()
 
-            # Root creation area (overall goal only)
-            with ui.card().classes('w-full p-4'):
-                self.initial_goal_input = ui.textarea(
-                    placeholder='Overall goal...',
-                ).classes('w-full mb-3')
-                ui.button('Create root', on_click=self._on_create_root_click).classes('w-full')
-
             with ui.scroll_area().classes('flex-grow w-full') as scroll:
-                self.chat_container = ui.column().classes('w-full gap-4')
                 self.scroll_area = scroll
+                with ui.column().classes('w-full gap-4'):
+                    # Start area with full settings editor (scrollable like normal cards)
+                    with ui.card().classes('w-full p-4'):
+                        init_settings = self._default_settings(overall_goal='')
+                        inputs = self._render_settings_editor(init_settings)
+                        async def _start() -> None:
+                            og = (inputs['overall_goal'].value or '').strip()
+                            if not og:
+                                ui.notify('Please enter an overall goal', color='negative')
+                                return
+                            if not self._begin_operation('Start'):
+                                return
+                            try:
+                                settings = TransitionSettings(
+                                    code_model=inputs['code_model'].value or '',
+                                    vision_model=inputs['vision_model'].value or '',
+                                    overall_goal=og,
+                                    user_steering=inputs['user_steering'].value or '',
+                                    code_template=inputs['code_template'].value or '',
+                                    vision_template=inputs['vision_template'].value or '',
+                                )
+                                await self.controller.apply_transition(None, settings)
+                            except Exception as exc:
+                                ui.notify(f'Start failed: {exc}', color='negative')
+                            finally:
+                                self._end_operation()
+                        ui.button('Start', on_click=_start).classes('w-full')
 
-    async def _on_create_root_click(self) -> None:
-        overall_goal = (self.initial_goal_input.value or '').strip() if self.initial_goal_input else ''
-        if not overall_goal:
-            ui.notify('Please enter an overall goal', color='negative')
-            return
-        if not self._begin_operation('Create root'):
-            return
-        try:
-            settings = self._default_settings(overall_goal)
-            await self.controller.apply_transition(None, settings)
-        except Exception as exc:
-            ui.notify(f'Create root failed: {exc}', color='negative')
-        finally:
-            self._end_operation()
+                    # Iteration chain container
+                    self.chat_container = ui.column().classes('w-full gap-4')
 
     def _default_settings(self, overall_goal: str) -> TransitionSettings:
         cfg = app_config.get_config()
@@ -106,6 +113,28 @@ class NiceGUIView(IterationEventListener):
                 card = self._create_node_card(idx, node)
                 self.node_cards[node.id] = card
 
+    def _render_settings_editor(self, initial: TransitionSettings) -> Dict[str, ui.element]:
+        # Left-side settings editor used in both Start area and iteration cards
+        user_steering = ui.textarea(label='Optional user steering', value=initial.user_steering).classes('w-full')
+        overall_goal = ui.textarea(label='Overall goal', value=initial.overall_goal).classes('w-full')
+
+        with ui.expansion(f'Coding ({initial.code_model})').classes('w-full'):
+            code_model = ui.input(label='model', value=initial.code_model).classes('w-full')
+            code_tmpl = ui.textarea(label='coding template', value=initial.code_template).classes('w-full')
+
+        with ui.expansion(f'Vision ({initial.vision_model})').classes('w-full'):
+            vision_model = ui.input(label='model', value=initial.vision_model).classes('w-full')
+            vision_tmpl = ui.textarea(label='vision template', value=initial.vision_template).classes('w-full')
+
+        return {
+            'user_steering': user_steering,
+            'overall_goal': overall_goal,
+            'code_model': code_model,
+            'vision_model': vision_model,
+            'code_template': code_tmpl,
+            'vision_template': vision_tmpl,
+        }
+
     def _create_node_card(self, index: int, node: IterationNode) -> ui.card:
         with ui.card().classes('w-full p-4') as card:
             with ui.row().classes('items-center justify-between w-full'):
@@ -115,19 +144,7 @@ class NiceGUIView(IterationEventListener):
             with ui.row().classes('w-full items-start gap-6 flex-nowrap'):
                 # Left: steering, goal, coding/vision expanders with templates
                 with ui.column().classes('basis-5/12 min-w-0 gap-3'):
-                    # User steering and Overall goal (order per sketch)
-                    user_steering = ui.textarea(label='User steering', value=node.settings.user_steering).classes('w-full')
-                    overall_goal = ui.textarea(label='Overall goal', value=node.settings.overall_goal).classes('w-full')
-
-                    # Coding settings (model + template)
-                    with ui.expansion(f'Coding ({node.settings.code_model})').classes('w-full'):
-                        code_model = ui.input(label='model', value=node.settings.code_model).classes('w-full')
-                        code_tmpl = ui.textarea(label='coding template', value=node.settings.code_template).classes('w-full')
-
-                    # Vision settings (model + template)
-                    with ui.expansion(f'Vision ({node.settings.vision_model})').classes('w-full'):
-                        vision_model = ui.input(label='model', value=node.settings.vision_model).classes('w-full')
-                        vision_tmpl = ui.textarea(label='vision template', value=node.settings.vision_template).classes('w-full')
+                    inputs = self._render_settings_editor(node.settings)
 
                 # Right: input/output screenshots with links and vision analysis under input
                 with ui.column().classes('basis-7/12 min-w-0 gap-4'):
@@ -212,12 +229,12 @@ class NiceGUIView(IterationEventListener):
                                 return
                             try:
                                 updated = TransitionSettings(
-                                    code_model=code_model.value or '',
-                                    vision_model=vision_model.value or '',
-                                    overall_goal=overall_goal.value or '',
-                                    user_steering=user_steering.value or '',
-                                    code_template=code_tmpl.value or '',
-                                    vision_template=vision_tmpl.value or '',
+                                    code_model=inputs['code_model'].value or '',
+                                    vision_model=inputs['vision_model'].value or '',
+                                    overall_goal=inputs['overall_goal'].value or '',
+                                    user_steering=inputs['user_steering'].value or '',
+                                    code_template=inputs['code_template'].value or '',
+                                    vision_template=inputs['vision_template'].value or '',
                                 )
                                 await self.controller.apply_transition(nid, updated)
                             except Exception as exc:

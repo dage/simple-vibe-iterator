@@ -36,7 +36,7 @@ class RecordingAICodeService:
         self.last_prompt: str = ""
         self._script_lines: list[str] = list(script_lines or [])
 
-    async def generate_html(self, prompt: str) -> str:
+    async def generate_html(self, prompt: str, model: str) -> str:
         self.last_prompt = prompt
         return _html_with_scripts(self._script_lines)
 
@@ -45,7 +45,7 @@ class RecordingVisionService:
     def __init__(self) -> None:
         self.last_prompt: str = ""
 
-    async def analyze_screenshot(self, prompt: str, screenshot_path: str, console_logs: List[str]) -> str:
+    async def analyze_screenshot(self, prompt: str, screenshot_path: str, console_logs: List[str], model: str) -> str:
         self.last_prompt = prompt
         return "vision: ok"
 

@@ -26,7 +26,7 @@ def inject_src_into_syspath(project_root: Path) -> None:
 
 # Test-local stub services (do not rely on network)
 class _TestStubAICodeService:
-    async def generate_html(self, prompt: str) -> str:
+    async def generate_html(self, prompt: str, model: str) -> str:
         await asyncio.sleep(0.05)
         safe = (prompt or "").strip()[:200]
         return (
@@ -41,7 +41,7 @@ class _TestStubAICodeService:
 
 
 class _TestStubVisionService:
-    async def analyze_screenshot(self, prompt: str, screenshot_path: str, console_logs: List[str]) -> str:
+    async def analyze_screenshot(self, prompt: str, screenshot_path: str, console_logs: List[str], model: str) -> str:
         await asyncio.sleep(0.01)
         name = Path(screenshot_path).name
         lines = [
@@ -49,6 +49,7 @@ class _TestStubVisionService:
             f"Screenshot: {name}",
             f"Console entries: {len(console_logs)}",
             f"Prompt bytes: {len((prompt or '').encode('utf-8'))}",
+            f"Model: {model}",
         ]
         return "\n".join(lines)
 
@@ -170,7 +171,7 @@ async def test_prompt_placeholders() -> Tuple[bool, str]:
     class RecordingAICodeService(AICodeService):
         def __init__(self) -> None:
             self.last_prompt: str = ""
-        async def generate_html(self, prompt: str) -> str:
+        async def generate_html(self, prompt: str, model: str) -> str:
             self.last_prompt = prompt
             safe = (prompt or "").strip()[:200]
             return (
