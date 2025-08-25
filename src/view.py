@@ -29,18 +29,23 @@ class NiceGUIView(IterationEventListener):
         self._status_detail: ui.label | None = None
         self._status_timer: ui.timer | None = None
 
+        # Set some default styling
+        ui.dark_mode().enable()
+
     def render(self) -> None:
         with ui.column().classes('w-full h-screen p-4 gap-3'):
             ui.label('Simple Vibe Iterator').classes('text-2xl font-bold')
 
             # Sticky top-right operation status (two lines, system-like font)
-            with ui.row().classes('fixed top-2 right-2 z-50 items-start gap-2 bg-white/90 border border-gray-300 rounded px-3 py-2 shadow') as sc:
+            # Light theme keeps subtle white card; dark theme gets a gentle indigo tint to stand out
+            base_classes = 'fixed top-2 right-2 z-50 items-start gap-2 bg-white/90 border border-gray-300 rounded px-3 py-2 shadow dark:bg-indigo-600/20 dark:border-indigo-400/30 dark:text-indigo-100 backdrop-blur-sm'
+            with ui.row().classes(base_classes) as sc:
                 self._status_container = sc
-                self._status_spinner = ui.spinner('dots').classes('w-5 h-5')
+                self._status_spinner = ui.spinner('dots', color='indigo').classes('w-5 h-5')
                 self._status_ok_icon = ui.icon('check_circle', color='green').classes('w-5 h-5')
                 with ui.column().classes('leading-none gap-0'):
                     self._status_title = ui.label('No operation running').classes('font-mono text-sm')
-                    self._status_detail = ui.label('').classes('font-mono text-xs text-gray-600')
+                    self._status_detail = ui.label('').classes('font-mono text-xs text-gray-600 dark:text-indigo-200')
             self._status_timer = ui.timer(0.25, self._refresh_phase)
             self._update_status_ui()
 
