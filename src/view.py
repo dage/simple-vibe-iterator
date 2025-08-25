@@ -145,92 +145,101 @@ class NiceGUIView(IterationEventListener):
                 self.node_cards[node.id] = card
 
     def _create_node_card(self, index: int, node: IterationNode) -> ui.card:
-        with ui.card().classes('w-full p-3') as card:
+        with ui.card().classes('w-full p-4') as card:
             with ui.row().classes('items-center justify-between w-full'):
                 ui.label(f'Iteration {index}').classes('text-lg font-semibold')
 
-            # HTML input and output
-            html_in = ui.expansion('HTML Input')
-            with html_in:
-                ui.code(node.html_input or '(empty)').classes('w-full')
-                # Open source HTML in new tab if available (served from /artifacts)
-                try:
-                    from pathlib import Path as _P
-                    # Detect candidate input html file by matching png name -> html
-                    input_html_url = ''
-                    if node.parent_id:
-                        # For non-root nodes, the input is the parent's output. Locate parent's screenshot and map to html.
-                        parent = self.controller.get_node(node.parent_id)
-                        if parent and parent.artifacts.screenshot_filename:
-                            p = _P(parent.artifacts.screenshot_filename)
-                            html_candidate = p.with_suffix('.html')
-                            if html_candidate.exists():
-                                input_html_url = '/artifacts/' + html_candidate.name
-                    if input_html_url:
-                        ui.link('Open input HTML in new tab', input_html_url, new_tab=True)
-                except Exception:
-                    pass
+            # --- Two-pane layout matching sketch ---
+            with ui.row().classes('w-full items-start gap-6 flex-nowrap'):
+                # Left: steering, goal, coding/vision expanders with templates
+                with ui.column().classes('basis-5/12 min-w-0 gap-3'):
+                    # User steering and Overall goal (order per sketch)
+                    user_steering = ui.textarea(label='User steering', value=node.settings.user_steering).classes('w-full')
+                    overall_goal = ui.textarea(label='Overall goal', value=node.settings.overall_goal).classes('w-full')
 
-            html_out = ui.expansion('HTML Output')
-            with html_out:
-                ui.code(node.html_output or '(empty)').classes('w-full')
-                try:
-                    from pathlib import Path as _P
-                    out_png = node.artifacts.screenshot_filename
-                    if out_png:
-                        p = _P(out_png)
-                        html_candidate = p.with_suffix('.html')
-                        if html_candidate.exists():
-                            ui.link('Open output HTML in new tab', '/artifacts/' + html_candidate.name, new_tab=True)
-                except Exception:
-                    pass
+                    # Coding settings (model + template)
+                    with ui.expansion(f'Coding ({node.settings.code_model})').classes('w-full'):
+                        code_model = ui.input(label='model', value=node.settings.code_model).classes('w-full')
+                        code_tmpl = ui.textarea(label='coding template', value=node.settings.code_template).classes('w-full')
 
-            # Screenshot
-            image_area = ui.expansion('Screenshot')
-            with image_area:
-                if node.artifacts.screenshot_filename:
-                    ui.image(node.artifacts.screenshot_filename).classes('w-[1600px] h-auto max-w-none')
-                else:
-                    ui.label('(no screenshot yet)')
+                    # Vision settings (model + template)
+                    with ui.expansion(f'Vision ({node.settings.vision_model})').classes('w-full'):
+                        vision_model = ui.input(label='model', value=node.settings.vision_model).classes('w-full')
+                        vision_tmpl = ui.textarea(label='vision template', value=node.settings.vision_template).classes('w-full')
 
-            # Console Logs
-            logs_area = ui.expansion('Console Logs')
-            with logs_area:
-                logs_text = '\n'.join(node.artifacts.console_logs or []) or '(no logs)'
-                ui.code(logs_text).classes('w-full')
+                # Right: input/output screenshots with links and vision analysis under input
+                with ui.column().classes('basis-7/12 min-w-0 gap-4'):
+                    with ui.row().classes('w-full items-start gap-6 flex-nowrap'):
+                        # INPUT side
+                        with ui.column().classes('basis-1/2 min-w-0 gap-2'):
+                            ui.label('INPUT SCREENSHOT').classes('text-sm font-semibold')
+                            try:
+                                from pathlib import Path as _P
+                                input_png = ''
+                                input_html_url = ''
+                                if node.parent_id:
+                                    parent = self.controller.get_node(node.parent_id)
+                                    if parent and parent.artifacts.screenshot_filename:
+                                        input_png = parent.artifacts.screenshot_filename
+                                        p = _P(input_png)
+                                        html_candidate = p.with_suffix('.html')
+                                        if html_candidate.exists():
+                                            input_html_url = '/artifacts/' + html_candidate.name
+                            except Exception:
+                                input_png = ''
+                                input_html_url = ''
+                            if input_png:
+                                ui.image(input_png).classes('w-full h-auto max-w-full border rounded')
+                            else:
+                                ui.label('(no input screenshot)')
+                            if input_html_url:
+                                ui.link('Open input HTML', input_html_url, new_tab=True)
+                            ui.label('Vision Analysis').classes('text-sm font-semibold mt-2')
+                            ui.markdown(node.artifacts.vision_output or '(pending)')
 
-            # Vision Analysis
-            vision_area = ui.expansion('Vision Analysis')
-            with vision_area:
-                ui.markdown(node.artifacts.vision_output or '(pending)')
+                        # Center arrow
+                        with ui.column().classes('basis-[60px] items-center justify-center'):
+                            ui.icon('arrow_forward').classes('text-5xl text-gray-600 mt-16')
 
-            # Flat settings inputs (pre-filled with node.settings)
-            code_model = ui.input(label='code_model', value=node.settings.code_model).classes('w-full')
-            vision_model = ui.input(label='vision_model', value=node.settings.vision_model).classes('w-full')
-            overall_goal = ui.textarea(label='overall_goal', value=node.settings.overall_goal).classes('w-full')
-            user_steering = ui.textarea(label='user_steering', value=node.settings.user_steering).classes('w-full')
-            code_tmpl = ui.textarea(label='code_template', value=node.settings.code_template).classes('w-full')
-            vision_tmpl = ui.textarea(label='vision_template', value=node.settings.vision_template).classes('w-full')
+                        # OUTPUT side
+                        with ui.column().classes('basis-1/2 min-w-0 gap-2'):
+                            ui.label('OUTPUT SCREENSHOT').classes('text-sm font-semibold')
+                            out_png = node.artifacts.screenshot_filename
+                            if out_png:
+                                ui.image(out_png).classes('w-full h-auto max-w-full border rounded')
+                            else:
+                                ui.label('(no output screenshot)')
+                            try:
+                                from pathlib import Path as _P
+                                if out_png:
+                                    p = _P(out_png)
+                                    html_candidate = p.with_suffix('.html')
+                                    if html_candidate.exists():
+                                        ui.link('Open output HTML', '/artifacts/' + html_candidate.name, new_tab=True)
+                            except Exception:
+                                pass
 
-            async def _iterate_from_node(nid: str) -> None:
-                if not self._begin_operation('Iterate'):
-                    return
-                try:
-                    updated = TransitionSettings(
-                        code_model=code_model.value or '',
-                        vision_model=vision_model.value or '',
-                        overall_goal=overall_goal.value or '',
-                        user_steering=user_steering.value or '',
-                        code_template=code_tmpl.value or '',
-                        vision_template=vision_tmpl.value or '',
-                    )
-                    await self.controller.apply_transition(nid, updated)
-                except Exception as exc:
-                    ui.notify(f'Iterate failed: {exc}', color='negative')
-                finally:
-                    self._end_operation()
+                    # Bottom-right iterate button
+                    with ui.row().classes('w-full justify-end'):
+                        async def _iterate_from_node(nid: str) -> None:
+                            if not self._begin_operation('Iterate'):
+                                return
+                            try:
+                                updated = TransitionSettings(
+                                    code_model=code_model.value or '',
+                                    vision_model=vision_model.value or '',
+                                    overall_goal=overall_goal.value or '',
+                                    user_steering=user_steering.value or '',
+                                    code_template=code_tmpl.value or '',
+                                    vision_template=vision_tmpl.value or '',
+                                )
+                                await self.controller.apply_transition(nid, updated)
+                            except Exception as exc:
+                                ui.notify(f'Iterate failed: {exc}', color='negative')
+                            finally:
+                                self._end_operation()
 
-            ui.button('Iterate', on_click=lambda nid=node.id: asyncio.create_task(_iterate_from_node(nid))).classes('')
+                        ui.button('Iterate', on_click=lambda nid=node.id: asyncio.create_task(_iterate_from_node(nid))).classes('')
         return card
 
     # --- Operation status helpers ---
