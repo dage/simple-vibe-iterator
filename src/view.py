@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Dict, List
 
 from nicegui import ui
@@ -174,7 +175,10 @@ class NiceGUIView(IterationEventListener):
                             else:
                                 ui.label('(no input screenshot)')
                             if input_html_url:
-                                ui.link('Open input HTML', input_html_url, new_tab=True)
+                                with ui.row().classes('items-center gap-2'):
+                                    ui.icon('content_copy').classes('text-sm cursor-pointer').on('click', lambda html=node.html_input: self._copy_to_clipboard(html))
+                                    ui.label('HTML:').classes('text-sm')
+                                    ui.link('Open', input_html_url, new_tab=True).classes('text-sm')
                             # Console logs (INPUT): from this node's input artifacts
                             in_logs = list(getattr(node.artifacts, 'input_console_logs', []) or [])
                             in_title = f"Console logs ({'empty' if len(in_logs) == 0 else len(in_logs)})"
@@ -208,15 +212,21 @@ class NiceGUIView(IterationEventListener):
                                 ui.image(out_png).classes('w-full h-auto max-w-full border rounded')
                             else:
                                 ui.label('(no output screenshot)')
+                            out_html_url = ''
                             try:
                                 from pathlib import Path as _P
                                 if out_png:
                                     p = _P(out_png)
                                     html_candidate = p.with_suffix('.html')
                                     if html_candidate.exists():
-                                        ui.link('Open output HTML', '/artifacts/' + html_candidate.name, new_tab=True)
+                                        out_html_url = '/artifacts/' + html_candidate.name
                             except Exception:
                                 pass
+                            if out_html_url:
+                                with ui.row().classes('items-center gap-2'):
+                                    ui.icon('content_copy').classes('text-sm cursor-pointer').on('click', lambda html=node.html_output: self._copy_to_clipboard(html))
+                                    ui.label('HTML:').classes('text-sm')
+                                    ui.link('Open', out_html_url, new_tab=True).classes('text-sm')
                             # Console logs (OUTPUT): logs from this node's render
                             out_logs = list(node.artifacts.console_logs or [])
                             out_title = f"Console logs ({'empty' if len(out_logs) == 0 else len(out_logs)})"
@@ -285,5 +295,15 @@ class NiceGUIView(IterationEventListener):
             self._status_detail.text = f"{phase} · {elapsed:.1f}s"
         else:
             self._status_detail.text = ''
+
+
+    # --- Utilities ---
+    def _copy_to_clipboard(self, text: str) -> None:
+        try:
+            js_text = json.dumps(text)
+            ui.run_javascript(f'navigator.clipboard.writeText({js_text});')
+            ui.notify('HTML copied to clipboard')
+        except Exception as exc:
+            ui.notify(f'Copy failed: {exc}', color='negative')
 
 
