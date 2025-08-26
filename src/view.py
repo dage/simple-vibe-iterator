@@ -309,6 +309,15 @@ class NiceGUIView(IterationEventListener):
 
     def _end_operation(self) -> None:
         self._op_busy = False
+        # Ensure UI resets cleanly on success or error
+        try:
+            op_status.clear_phase()
+        except Exception:
+            pass
+        if self._status_detail is not None:
+            self._status_detail.text = ''
+        if self._status_title is not None:
+            self._status_title.text = 'No operation running'
         self._update_status_ui()
 
     def _refresh_phase(self) -> None:
