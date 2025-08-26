@@ -120,8 +120,8 @@ class NiceGUIView(IterationEventListener):
 
     def _render_settings_editor(self, initial: TransitionSettings) -> Dict[str, ui.element]:
         # Left-side settings editor used in both Start area and iteration cards
-        user_steering = ui.textarea(label='Optional user steering', value=initial.user_steering).classes('w-full')
         overall_goal = ui.textarea(label='Overall goal', value=initial.overall_goal).classes('w-full')
+        user_steering = ui.textarea(label='Optional user steering', value=initial.user_steering).classes('w-full')
 
         with ui.expansion(f'Coding ({initial.code_model})').classes('w-full'):
             code_model = ui.input(label='model', value=initial.code_model).classes('w-full')
