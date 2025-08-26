@@ -6,6 +6,8 @@ import json
 from typing import Dict, List
 
 from nicegui import ui
+from diff_match_patch import diff_match_patch
+import html as _html
 
 from .controller import IterationController
 from .interfaces import IterationEventListener, IterationNode, TransitionSettings
@@ -200,9 +202,31 @@ class NiceGUIView(IterationEventListener):
                                     va_text = '(pending)'
                                 ui.markdown(va_text)
 
-                        # Center arrow
-                        with ui.column().classes('basis-[60px] items-center justify-center'):
+                        # Center arrow + Diff action
+                        with ui.column().classes('basis-[60px] items-center justify-center gap-2'):
                             ui.icon('arrow_forward').classes('text-5xl text-gray-600 mt-16')
+                            diff_html = self._create_visual_diff(node.html_input or '', node.html_output or '')
+                            with ui.dialog() as diff_dialog:
+                                diff_dialog.props('persistent')
+                                with ui.card().classes('w-[90vw] max-w-[1200px]'):
+                                    with ui.row().classes('items-center justify-between w-full'):
+                                        ui.label('HTML Diff').classes('text-lg font-semibold')
+                                        ui.button(icon='close', on_click=diff_dialog.close).props('flat round dense')
+                                    ui.html('''<style>
+                                    .diff-container { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; background: #0b0f17; color: #e5e7eb; border: 1px solid #334155; border-radius: 6px; padding: 16px; max-height: 70vh; overflow: auto; }
+                                    .diff-content { white-space: pre-wrap; word-break: break-word; }
+                                    .diff-insert { background-color: rgba(34,197,94,0.25); border-radius: 2px; }
+                                    .diff-delete { background-color: rgba(239,68,68,0.25); text-decoration: line-through; border-radius: 2px; }
+                                    .diff-legend { gap: 8px; align-items: center; }
+                                    .legend-chip { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+                                    .legend-insert { background-color: rgba(34,197,94,0.25); color: #86efac; }
+                                    .legend-delete { background-color: rgba(239,68,68,0.25); color: #fca5a5; }
+                                    </style>''')
+                                    with ui.row().classes('diff-legend'):
+                                        ui.html('<span class="legend-chip legend-insert">Insert</span>')
+                                        ui.html('<span class="legend-chip legend-delete">Delete</span>')
+                                    ui.html(f"<div class='diff-container'><pre class='diff-content'>{diff_html or _html.escape('(no differences)')}</pre></div>")
+                            ui.button('Diff', on_click=diff_dialog.open).props('outline dense').classes('mt-2')
 
                         # OUTPUT side
                         with ui.column().classes('basis-1/2 min-w-0 gap-2'):
@@ -306,4 +330,32 @@ class NiceGUIView(IterationEventListener):
         except Exception as exc:
             ui.notify(f'Copy failed: {exc}', color='negative')
 
+
+
+    def _create_visual_diff(self, text1: str, text2: str) -> str:
+        """Return HTML for a modern-looking inline diff between two texts.
+        The HTML tags within inputs are escaped so they render as text.
+        """
+        try:
+            dmp = diff_match_patch()
+            diffs = dmp.diff_main(text1 or '', text2 or '')
+            dmp.diff_cleanupSemantic(diffs)
+        except Exception:
+            # Fallback: plain escaped output if diffing fails
+            safe1 = _html.escape(text1 or '')
+            safe2 = _html.escape(text2 or '')
+            if safe1 == safe2:
+                return safe2
+            return safe1 + ' -> ' + safe2
+
+        html_parts: List[str] = []
+        for op, segment in diffs:
+            escaped = _html.escape(segment)
+            if op == 1:  # Insert
+                html_parts.append(f'<span class="diff-insert">{escaped}</span>')
+            elif op == -1:  # Delete
+                html_parts.append(f'<span class="diff-delete">{escaped}</span>')
+            else:  # Equal
+                html_parts.append(escaped)
+        return ''.join(html_parts)
 
