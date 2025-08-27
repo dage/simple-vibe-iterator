@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 from typing import Dict, List
+from pathlib import Path
 
 from nicegui import ui
 from diff_match_patch import diff_match_patch
@@ -13,6 +14,7 @@ from .controller import IterationController
 from .interfaces import IterationEventListener, IterationNode, TransitionSettings
 from . import op_status
 from . import config as app_config
+from . import prefs
 
 
 class NiceGUIView(IterationEventListener):
@@ -80,6 +82,8 @@ class NiceGUIView(IterationEventListener):
                                     code_template=inputs['code_template'].value or '',
                                     vision_template=inputs['vision_template'].value or '',
                                 )
+                                prefs.set('model.code', settings.code_model)
+                                prefs.set('model.vision', settings.vision_model)
                                 await self.controller.apply_transition(None, settings)
                             except Exception as exc:
                                 ui.notify(f'Start failed: {exc}', color='negative', timeout=0, close_button=True)
@@ -93,8 +97,8 @@ class NiceGUIView(IterationEventListener):
     def _default_settings(self, overall_goal: str) -> TransitionSettings:
         cfg = app_config.get_config()
         return TransitionSettings(
-            code_model=cfg.code_model,
-            vision_model=cfg.vision_model,
+            code_model=prefs.get('model.code', cfg.code_model),
+            vision_model=prefs.get('model.vision', cfg.vision_model),
             overall_goal=overall_goal,
             user_steering='',
             code_template=cfg.code_template,
@@ -282,6 +286,8 @@ class NiceGUIView(IterationEventListener):
                                     code_template=inputs['code_template'].value or '',
                                     vision_template=inputs['vision_template'].value or '',
                                 )
+                                prefs.set('model.code', updated.code_model)
+                                prefs.set('model.vision', updated.vision_model)
                                 await self.controller.apply_transition(nid, updated)
                             except Exception as exc:
                                 ui.notify(f'Iterate failed: {exc}', color='negative', timeout=0, close_button=True)
