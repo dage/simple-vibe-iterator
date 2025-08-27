@@ -28,26 +28,88 @@ def capture_html(html_path: Path, out_png: Path, viewport: Tuple[int, int] = (12
         try:
             page = browser.new_page(viewport={"width": viewport[0], "height": viewport[1]})
 
+            # Track last time we saw an event to implement a short "quiet period" wait
+            last_event_ts = time.monotonic()
+
+            def _bump_event_ts() -> None:
+                nonlocal last_event_ts
+                last_event_ts = time.monotonic()
+
             def _on_console(msg):
                 try:
                     loc = msg.location or {}
-                    logs.append({
+                    entry = {
                         "type": getattr(msg, "type", None) if not callable(getattr(msg, "type", None)) else msg.type(),
                         "text": getattr(msg, "text", None) if not callable(getattr(msg, "text", None)) else msg.text(),
                         "url": loc.get("url"),
                         "line": loc.get("lineNumber"),
                         "column": loc.get("columnNumber"),
-                    })
+                    }
+                    logs.append(entry)
+                    _bump_event_ts()
                 except Exception:
                     pass
 
+            def _on_page_error(err):
+                try:
+                    entry = {
+                        "type": "pageerror",
+                        "text": str(err),
+                        "url": None,
+                        "line": None,
+                        "column": None,
+                    }
+                    logs.append(entry)
+                    _bump_event_ts()
+                except Exception:
+                    pass
+
+            def _on_request_failed(request):
+                try:
+                    # request.failure() returns { 'errorText': ... }
+                    failure = request.failure() if callable(getattr(request, "failure", None)) else None
+                    error_text = (failure or {}).get("errorText") if isinstance(failure, dict) else None
+                    method = request.method if not callable(getattr(request, "method", None)) else request.method()
+                    url_s = request.url if not callable(getattr(request, "url", None)) else request.url()
+                    text = f"{method} {url_s} - {error_text or 'failed'}"
+                    entry = {
+                        "type": "requestfailed",
+                        "text": text,
+                        "url": url_s,
+                        "line": None,
+                        "column": None,
+                    }
+                    logs.append(entry)
+                    _bump_event_ts()
+                except Exception:
+                    pass
+
+            # Attach listeners BEFORE navigation so we don't miss early errors
             page.on("console", _on_console)
+            page.on("pageerror", _on_page_error)
+            page.on("requestfailed", _on_request_failed)
+
             page.goto(url, wait_until="load")
-            # Give the page time to run scripts and emit console logs before capture
+
+            # Prefer smarter waits over a fixed sleep:
+            # 1) Wait briefly for network to go idle (if applicable)
             try:
-                time.sleep(1.0)
+                page.wait_for_load_state("networkidle", timeout=2000)
             except Exception:
                 pass
+
+            # 2) Wait for a short quiet period without new events (up to a small cap)
+            start_ts = time.monotonic()
+            QUIET_S = 0.3
+            MAX_WAIT_S = 2.5
+            while True:
+                now = time.monotonic()
+                if (now - last_event_ts) >= QUIET_S:
+                    break
+                if (now - start_ts) >= MAX_WAIT_S:
+                    break
+                time.sleep(0.05)
+
             page.screenshot(path=str(out_png), full_page=False)
         finally:
             browser.close()
