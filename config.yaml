@@ -21,6 +21,9 @@ templates:
 
     Existing HTML (may be empty) for reference and incremental improvement:
     {html_input}
+    
+    HTML changes from previous iteration (for context):
+    {html_diff}
 
   vision: |
     You are a vision analyzer. Your output will be fed directly to a coding model without vision.
@@ -44,6 +47,8 @@ templates:
     {console_logs}
     HTML (reference only; do not quote):
     {html_input}
+    HTML changes from previous iteration (reference only):
+    {html_diff}
 
     Output format (no preface, no labels, no code blocks):
     - Observation 1

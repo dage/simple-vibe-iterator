@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import difflib
 import uuid
 from typing import Dict, List, Optional
 
@@ -16,12 +17,36 @@ from .interfaces import (
 )
 
 
+def _compute_html_diff(html_input: str, html_output: str) -> str:
+    """Compute a unified diff between html_input and html_output."""
+    if not html_input.strip() and not html_output.strip():
+        return ""
+    if not html_input.strip():
+        return f"+ Added {len(html_output.splitlines())} lines"
+    if not html_output.strip():
+        return f"- Removed {len(html_input.splitlines())} lines"
+    
+    input_lines = html_input.splitlines(keepends=True)
+    output_lines = html_output.splitlines(keepends=True)
+    
+    diff = list(difflib.unified_diff(
+        input_lines, 
+        output_lines, 
+        fromfile="previous", 
+        tofile="current",
+        n=3
+    ))
+    
+    return "".join(diff)
+
+
 # Pure transition function δ(html_input, settings) -> (html_output, artifacts)
 def _build_template_context(
     html_input: str,
     settings: TransitionSettings,
     vision_output: str = "",
     console_logs: list[str] | None = None,
+    html_diff: str = "",
 ) -> dict:
     # Prepare a unified mapping for both templates, exposing all settings fields
     # plus common dynamic fields.
@@ -36,6 +61,7 @@ def _build_template_context(
         "html_input": html_input or "",
         "vision_output": vision_output or "",
         "console_logs": "\n".join(console_logs or []),
+        "html_diff": html_diff or "",
     })
     return ctx
 async def δ(
@@ -44,17 +70,27 @@ async def δ(
     ai_service: AICodeService,
     browser_service: BrowserService,
     vision_service: VisionService,
+    parent_node: Optional['IterationNode'] = None,
 ) -> tuple[str, TransitionArtifacts]:
     # Prepare defaults
     in_console_logs: list[str] = []
     in_vision_output: str = ""
     in_screenshot_path: str = ""
+    
+    # Compute HTML diff from parent node (changes made in previous iteration)
+    html_diff = ""
+    if parent_node:
+        html_diff = _compute_html_diff(parent_node.html_input, parent_node.html_output)
 
     # Optional input render + vision when html_input is present
     if (html_input or "").strip():
         in_screenshot_path, in_console_logs = await browser_service.render_and_capture(html_input)
-        vision_ctx = _build_template_context(html_input=html_input, settings=settings, vision_output="", console_logs=in_console_logs)
+        vision_ctx = _build_template_context(html_input=html_input, settings=settings, vision_output="", console_logs=in_console_logs, html_diff=html_diff)
         vision_prompt = settings.vision_template.format(**vision_ctx)
+        print("=== VISION PROMPT ===")
+        print(vision_prompt)
+        print("=== END VISION PROMPT ===")
+        print()
         in_vision_output = await vision_service.analyze_screenshot(
             vision_prompt,
             in_screenshot_path,
@@ -63,8 +99,12 @@ async def δ(
         )
 
     # Build code-model prompt and generate output
-    code_ctx = _build_template_context(html_input=html_input, settings=settings, vision_output=in_vision_output, console_logs=in_console_logs)
+    code_ctx = _build_template_context(html_input=html_input, settings=settings, vision_output=in_vision_output, console_logs=in_console_logs, html_diff=html_diff)
     code_prompt = settings.code_template.format(**code_ctx)
+    print("=== CODE PROMPT ===")
+    print(code_prompt)
+    print("=== END CODE PROMPT ===")
+    print()
     html_output = await ai_service.generate_html(code_prompt, settings.code_model)
 
     # Render the NEW html_output to produce artifacts
@@ -134,6 +174,9 @@ class IterationController:
         if parent_id is not None:
             self._delete_descendants(parent_id)
 
+        # Get parent node for HTML diff context
+        parent_node_obj = self._nodes.get(parent_id) if parent_id else None
+        
         # Run transition
         html_output, artifacts = await δ(
             html_input=html_input,
@@ -141,6 +184,7 @@ class IterationController:
             ai_service=self._ai_service,
             browser_service=self._browser_service,
             vision_service=self._vision_service,
+            parent_node=parent_node_obj,
         )
 
         # Create and store node
