@@ -84,6 +84,8 @@ class NiceGUIView(IterationEventListener):
                                 )
                                 prefs.set('model.code', settings.code_model)
                                 prefs.set('model.vision', settings.vision_model)
+                                prefs.set('template.code', settings.code_template)
+                                prefs.set('template.vision', settings.vision_template)
                                 await self.controller.apply_transition(None, settings)
                             except Exception as exc:
                                 ui.notify(f'Start failed: {exc}', color='negative', timeout=0, close_button=True)
@@ -101,8 +103,8 @@ class NiceGUIView(IterationEventListener):
             vision_model=prefs.get('model.vision', cfg.vision_model),
             overall_goal=overall_goal,
             user_steering='',
-            code_template=cfg.code_template,
-            vision_template=cfg.vision_template,
+            code_template=prefs.get('template.code', cfg.code_template),
+            vision_template=prefs.get('template.vision', cfg.vision_template),
         )
 
     # IterationEventListener
@@ -288,6 +290,8 @@ class NiceGUIView(IterationEventListener):
                                 )
                                 prefs.set('model.code', updated.code_model)
                                 prefs.set('model.vision', updated.vision_model)
+                                prefs.set('template.code', updated.code_template)
+                                prefs.set('template.vision', updated.vision_template)
                                 await self.controller.apply_transition(nid, updated)
                             except Exception as exc:
                                 ui.notify(f'Iterate failed: {exc}', color='negative', timeout=0, close_button=True)
