@@ -36,6 +36,11 @@ class NiceGUIView(IterationEventListener):
         ui.dark_mode().enable()
 
     def render(self) -> None:
+        # Scoped CSS: Make the default CLOSE button text black on error notifications
+        ui.html('''<style>
+        .q-notification.bg-negative .q-btn--flat,
+        .q-notification.text-negative .q-btn--flat { color: black !important; }
+        </style>''')
         with ui.column().classes('w-full h-screen p-4 gap-3'):
             ui.label('Simple Vibe Iterator').classes('text-2xl font-bold')
 
@@ -62,7 +67,7 @@ class NiceGUIView(IterationEventListener):
                         async def _start() -> None:
                             og = (inputs['overall_goal'].value or '').strip()
                             if not og:
-                                ui.notify('Please enter an overall goal', color='negative')
+                                ui.notify('Please enter an overall goal', color='negative', timeout=0, close_button=True)
                                 return
                             if not self._begin_operation('Start'):
                                 return
@@ -77,7 +82,7 @@ class NiceGUIView(IterationEventListener):
                                 )
                                 await self.controller.apply_transition(None, settings)
                             except Exception as exc:
-                                ui.notify(f'Start failed: {exc}', color='negative')
+                                ui.notify(f'Start failed: {exc}', color='negative', timeout=0, close_button=True)
                             finally:
                                 self._end_operation()
                         ui.button('Start', on_click=_start).classes('w-full')
@@ -279,7 +284,7 @@ class NiceGUIView(IterationEventListener):
                                 )
                                 await self.controller.apply_transition(nid, updated)
                             except Exception as exc:
-                                ui.notify(f'Iterate failed: {exc}', color='negative')
+                                ui.notify(f'Iterate failed: {exc}', color='negative', timeout=0, close_button=True)
                             finally:
                                 self._end_operation()
 
@@ -339,7 +344,7 @@ class NiceGUIView(IterationEventListener):
             ui.run_javascript(f'navigator.clipboard.writeText({js_text});')
             ui.notify('HTML copied to clipboard')
         except Exception as exc:
-            ui.notify(f'Copy failed: {exc}', color='negative')
+            ui.notify(f'Copy failed: {exc}', color='negative', timeout=0, close_button=True)
 
 
 
