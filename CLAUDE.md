@@ -79,17 +79,17 @@ Each iteration follows: `render → screenshot/console → vision analysis → c
 
 When asked to suggest a commit message, always:
 
-1. **First analyze recent commit history**: Run `git log -5` to examine the last 5 full commit messages (including multiline bodies) and understand the existing style, tone, and level of detail used in this repository.
+1. **First analyze recent commit history**: Run `git log -5` (not --oneline) to examine the last 5 full commit messages (including multiline bodies) and understand the existing style, tone, and level of detail used in this repository.
 
-2. **Follow Conventional Commits 1.0.0 format**:
+2. **Follow this repository's simplified conventional format**:
    ```
-   type(scope): imperative summary ≤50 characters
+   type: imperative summary ≤50 characters
    
-   Optional body explaining what and why, not how.
+   Optional body with bullet points explaining what was done.
    Wrap at 72 characters per line.
-   
-   BREAKING CHANGE: description if API breaking changes
    ```
+   
+   **Important**: Do NOT use scope in parentheses (no `type(scope):`). Use simple `type:` format.
 
 3. **Use these commit types**:
    - `feat`: new feature
@@ -104,9 +104,7 @@ When asked to suggest a commit message, always:
    - `chore`: maintenance tasks
    - `revert`: reverting previous commit
 
-4. **Breaking changes**: Add `!` after type and include `BREAKING CHANGE:` footer for API-breaking changes.
-
-5. **One logical change per commit**: Each commit should represent a single, cohesive change.
+4. **One logical change per commit**: Each commit should represent a single, cohesive change.
 
 ## Development Notes
 
