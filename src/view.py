@@ -199,8 +199,8 @@ class NiceGUIView(IterationEventListener):
                             in_title = f"Console logs ({'empty' if len(in_logs) == 0 else len(in_logs)})"
                             with ui.expansion(in_title):
                                 if in_logs:
-                                    in_logs_text = '\n'.join(in_logs)
-                                    ui.code(in_logs_text).classes('w-full')
+                                    in_logs_text = '\n\n'.join(in_logs)
+                                    ui.markdown(in_logs_text)
                                 else:
                                     ui.label('(no console logs)')
                             # Vision Analysis label with line count from raw output
@@ -213,6 +213,8 @@ class NiceGUIView(IterationEventListener):
                                     va_text = '(no input screenshot)'
                                 elif not (va_text or '').strip():
                                     va_text = '(pending)'
+                                else:
+                                    va_text = va_text.replace('\n', '\n\n')
                                 ui.markdown(va_text)
 
                         # Center arrow + Diff action
@@ -269,8 +271,8 @@ class NiceGUIView(IterationEventListener):
                             out_title = f"Console logs ({'empty' if len(out_logs) == 0 else len(out_logs)})"
                             with ui.expansion(out_title):
                                 if out_logs:
-                                    out_logs_text = '\n'.join(out_logs)
-                                    ui.code(out_logs_text).classes('w-full')
+                                    out_logs_text = '\n\n'.join(out_logs)
+                                    ui.markdown(out_logs_text)
                                 else:
                                     ui.label('(no console logs)')
 
