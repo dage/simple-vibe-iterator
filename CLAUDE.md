@@ -113,3 +113,9 @@ When asked to suggest a commit message, always:
 - Re-running mid-chain operations automatically delete descendants
 - Operation locking prevents concurrent user actions during processing
 - Comprehensive integration test suite validates state machine behavior and OpenRouter connectivity
+
+## Critical Development Rules
+
+- **NEVER add hardcoded fallback data or mock data** - always use real API responses. If API fails after all retries, throw an error instead of returning fallback values (including empty data).
+- **NEVER add fields or functionality that wasn't explicitly requested** - avoid scope creep.
+- **Do what has been asked; nothing more, nothing less.**
