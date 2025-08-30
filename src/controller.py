@@ -87,10 +87,6 @@ async def δ(
         in_screenshot_path, in_console_logs = await browser_service.render_and_capture(html_input)
         vision_ctx = _build_template_context(html_input=html_input, settings=settings, vision_output="", console_logs=in_console_logs, html_diff=html_diff)
         vision_prompt = settings.vision_template.format(**vision_ctx)
-        print("=== VISION PROMPT ===")
-        print(vision_prompt)
-        print("=== END VISION PROMPT ===")
-        print()
         in_vision_output = await vision_service.analyze_screenshot(
             vision_prompt,
             in_screenshot_path,
@@ -101,10 +97,6 @@ async def δ(
     # Build code-model prompt and generate output
     code_ctx = _build_template_context(html_input=html_input, settings=settings, vision_output=in_vision_output, console_logs=in_console_logs, html_diff=html_diff)
     code_prompt = settings.code_template.format(**code_ctx)
-    print("=== CODE PROMPT ===")
-    print(code_prompt)
-    print("=== END CODE PROMPT ===")
-    print()
     html_output = await ai_service.generate_html(code_prompt, settings.code_model)
 
     # Render the NEW html_output to produce artifacts
