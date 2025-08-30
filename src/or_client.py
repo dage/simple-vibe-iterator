@@ -9,7 +9,7 @@ Tiny OpenRouter client + stateful Conversation.
 
 Env (from .env or process):
   OPENROUTER_BASE_URL  - required; OpenRouter API endpoint
-  VIBES_API_KEY        - required
+  OPENROUTER_API_KEY   - required
 
 Docs: OpenRouter is OpenAI-compatible; images accept base64 data URLs; attribution headers required.
 """
@@ -61,7 +61,7 @@ class ModelInfo:
 @lru_cache
 def _settings() -> _Settings:
     # Models are sourced from YAML config (single source of truth)
-    api_key = os.getenv("VIBES_API_KEY")
+    api_key = os.getenv("OPENROUTER_API_KEY")
     base_url = os.getenv("OPENROUTER_BASE_URL")
 
     # Import here to support both package import (src.or_client) and
@@ -79,7 +79,7 @@ def _settings() -> _Settings:
 
     missing = [
         name for name, val in [
-            ("VIBES_API_KEY", api_key),
+            ("OPENROUTER_API_KEY", api_key),
             ("OPENROUTER_BASE_URL", base_url),
         ] if not val
     ]

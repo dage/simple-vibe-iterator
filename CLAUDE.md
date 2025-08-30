@@ -17,7 +17,7 @@ pip install -r requirements.txt
 python -m playwright install
 
 # Setup environment variables
-cp .env_template .env  # Fill in OPENROUTER_BASE_URL and VIBES_API_KEY
+cp .env_template .env  # Fill in OPENROUTER_BASE_URL and OPENROUTER_API_KEY
 ```
 
 ### Running the Application

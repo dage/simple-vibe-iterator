@@ -125,7 +125,7 @@ async def main() -> int:
     dotenv = parse_dotenv(dotenv_path)
 
     # Gather required environment values
-    api_key = get_env_value("VIBES_API_KEY", dotenv)
+    api_key = get_env_value("OPENROUTER_API_KEY", dotenv)
     base_url = get_env_value("OPENROUTER_BASE_URL", dotenv)
 
     # Check presence of required variables first (YAML provides models)
@@ -133,7 +133,7 @@ async def main() -> int:
     missing = [
         name
         for name, present in [
-            ("VIBES_API_KEY", api_key),
+            ("OPENROUTER_API_KEY", api_key),
             ("OPENROUTER_BASE_URL", base_url),
         ]
         if not present

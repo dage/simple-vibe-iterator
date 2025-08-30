@@ -29,7 +29,7 @@ pip install -r requirements.txt
 python -m playwright install
 ```
 4. Create `.env` from `.env_template` and fill values:
-   - Required: `OPENROUTER_BASE_URL` (default provided), `VIBES_API_KEY`
+   - Required: `OPENROUTER_BASE_URL` (default provided), `OPENROUTER_API_KEY`
 
 5. The committed `config.yaml` at the project root is the default configuration for every new session. Edit it to change default models and templates:
 ```

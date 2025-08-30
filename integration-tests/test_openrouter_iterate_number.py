@@ -46,7 +46,7 @@ def get_env_value(name: str, dotenv: Dict[str, str]) -> Optional[str]:
 def env_ready(dotenv: Dict[str, str]) -> Tuple[bool, str]:
     need = [
         "OPENROUTER_BASE_URL",
-        "VIBES_API_KEY",
+        "OPENROUTER_API_KEY",
     ]
     missing = [k for k in need if not get_env_value(k, dotenv)]
     if missing:

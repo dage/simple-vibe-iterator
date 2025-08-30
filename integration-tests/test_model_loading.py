@@ -233,7 +233,7 @@ async def run_integration_tests():
 
 if __name__ == "__main__":
     # Check environment
-    required_vars = ['OPENROUTER_BASE_URL', 'VIBES_API_KEY']
+    required_vars = ['OPENROUTER_BASE_URL', 'OPENROUTER_API_KEY']
     missing_vars = [var for var in required_vars if not os.getenv(var)]
     
     if missing_vars:
