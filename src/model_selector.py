@@ -18,15 +18,17 @@ class ModelSelector:
     Interactive, dropdown-style multi-select for OpenRouter models.
 
     - Read-only input toggles a dropdown below it
-    - Multi-select; comma-separated slugs (model.id) displayed in input
+    - Multi-select by default; comma-separated slugs (model.id) displayed in input
+    - Shows error message when no models are selected
     - Scrollable grid (~10 rows) with:
-      * first column checkbox
+      * first column checkbox (or radio button if single_selection=True)
       * columns: name (with secondary id line), has_text_input, has_image_input, prompt_price, completion_price
     - Live filtering via or_client.list_models(query=...) on each keystroke
     - Keyboard navigation: ArrowUp/ArrowDown to change focus, Space to toggle,
       Enter to apply & close, Escape to cancel & close
     - Exposes get_value()/set_value(); on_change called when selection is applied
     - vision_only=True filters to models with image input capability
+    - single_selection=True uses radio buttons and replaces selection instead of adding
     """
 
     def __init__(
@@ -36,10 +38,12 @@ class ModelSelector:
         vision_only: bool,
         label: str = 'model',
         on_change: Optional[Callable[[str], None]] = None,
+        single_selection: bool = False,
     ) -> None:
         self.label = label
         self.vision_only = vision_only
         self.on_change = on_change
+        self.single_selection = single_selection
 
         self._selected_ids: Set[str] = self._parse_value(initial_value)
         self._applied_value: str = self._format_value(sorted(self._selected_ids))
@@ -79,6 +83,7 @@ class ModelSelector:
                 with ui.column().classes('w-full gap-1'):
                     ui.label('Selected').classes('text-xs text-gray-500 dark:text-gray-300')
                     self._chips_row = ui.row().classes('w-full items-center gap-2 flex-wrap')
+                    self._error_message = ui.label('No models selected').classes('text-xs text-red-500 dark:text-red-400')
 
                 self._header = ui.row().classes(
                     'w-full text-xs text-gray-500 dark:text-gray-300 px-2 select-none'
@@ -205,7 +210,10 @@ class ModelSelector:
                     row.classes('bg-indigo-600/10')
 
                 with row:
-                    cb = ui.checkbox(value=is_checked).classes('justify-self-start self-start').props('dense')
+                    if self.single_selection:
+                        cb = ui.radio(value=m.id if is_checked else None, options={m.id: ''}).classes('justify-self-start self-start').props('dense')
+                    else:
+                        cb = ui.checkbox(value=is_checked).classes('justify-self-start self-start').props('dense')
                     with ui.column().classes('truncate gap-0'):
                         ui.label(m.name).classes('text-sm truncate')
                         ui.label(m.id).classes('text-[10px] text-gray-500 dark:text-gray-400 truncate')
@@ -220,16 +228,37 @@ class ModelSelector:
                 # Row click: focus only (no selection change)
                 row.on('click', lambda _, i=idx: self._set_focus(i))
 
-                # Checkbox change: selection = checkbox.value
+                # Checkbox/radio change: selection = checkbox.value or radio.value
                 async def _handle_cb_change(_=None, mid=m.id, cb_ref=cb):
                     try:
-                        is_checked = bool(getattr(cb_ref, 'value', False))
+                        if self.single_selection:
+                            # Radio button: value is the selected option or None
+                            selected_value = getattr(cb_ref, 'value', None)
+                            if selected_value == mid:
+                                # Clear all selections and select only this one
+                                self._selected_ids.clear()
+                                self._selected_ids.add(mid)
+                                # Update all other radio buttons to be unselected
+                                for entry in self._row_entries:
+                                    other_cb = entry.get('checkbox')
+                                    other_id = entry.get('id')
+                                    if other_cb and other_id != mid:
+                                        try:
+                                            other_cb.value = None
+                                        except Exception:
+                                            pass
+                            else:
+                                # Deselect this one
+                                self._selected_ids.discard(mid)
+                        else:
+                            # Checkbox: value is boolean
+                            is_checked = bool(getattr(cb_ref, 'value', False))
+                            if is_checked:
+                                self._selected_ids.add(mid)
+                            else:
+                                self._selected_ids.discard(mid)
                     except Exception:
-                        is_checked = False
-                    if is_checked:
-                        self._selected_ids.add(mid)
-                    else:
-                        self._selected_ids.discard(mid)
+                        pass
                     self._preview_selection_update()
                     # Apply immediately so parent expansion header updates too
                     await self._apply_immediately()
@@ -278,12 +307,30 @@ class ModelSelector:
         mid = str(self._row_entries[self._focused_index]['id'])
         cb = self._row_entries[self._focused_index]['checkbox']
         assert isinstance(cb, ui.element)
-        if mid in self._selected_ids:
-            self._selected_ids.remove(mid)
-            cb.value = False
-        else:
+        
+        if self.single_selection:
+            # Radio button behavior: always select this one (clearing others)
+            self._selected_ids.clear()
             self._selected_ids.add(mid)
-            cb.value = True
+            cb.value = mid
+            # Update all other radio buttons to be unselected
+            for entry in self._row_entries:
+                other_cb = entry.get('checkbox')
+                other_id = entry.get('id')
+                if other_cb and other_id != mid:
+                    try:
+                        other_cb.value = None
+                    except Exception:
+                        pass
+        else:
+            # Checkbox behavior: toggle
+            if mid in self._selected_ids:
+                self._selected_ids.remove(mid)
+                cb.value = False
+            else:
+                self._selected_ids.add(mid)
+                cb.value = True
+        
         self._preview_selection_update()
         try:
             asyncio.create_task(self._apply_immediately())
@@ -313,7 +360,9 @@ class ModelSelector:
         try:
             self._chips_row.clear()
             selected_sorted = sorted(self._selected_ids)
-            self._chips_row.visible = bool(selected_sorted)
+            has_selection = bool(selected_sorted)
+            self._chips_row.visible = has_selection
+            self._error_message.visible = not has_selection
             for mid in selected_sorted:
                 with self._chips_row:
                     with ui.row().classes('items-center gap-1 px-2 py-1 rounded bg-gray-100 dark:bg-gray-800 text-sm'):

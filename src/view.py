@@ -155,6 +155,7 @@ class NiceGUIView(IterationEventListener):
                 vision_only=True,
                 label='model',
                 on_change=lambda v: None,
+                single_selection=True,
             )
             vision_model = vision_selector.input
             vision_tmpl = ui.textarea(label='vision template', value=initial.vision_template).classes('w-full')
