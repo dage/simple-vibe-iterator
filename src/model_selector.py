@@ -42,33 +42,29 @@ class ModelSelector:
 
         self._selected_ids: Set[str] = self._parse_value(initial_value)
         self._applied_value: str = self._format_value(sorted(self._selected_ids))
-        self._open: bool = False
-
         self._models: List[orc.ModelInfo] = []
         self._focused_index: int = -1
         self._row_entries: List[Dict[str, object]] = []
-        self._snapshot_selected_ids: Set[str] = set(self._selected_ids)
 
         with ui.column().classes('w-full gap-1') as root:
             self.root = root
+            # Hidden value holder input for binding compatibility
             self.input = ui.input(
                 label=self.label,
                 value=self._applied_value,
-            ).classes('w-full cursor-pointer').props('readonly dense clearable')
-            self.input.on('click', self._on_toggle_click)
-            self.input.on('clear', lambda: self._apply_new_selection(set()))
+            ).classes('hidden')
 
-            with ui.column().classes('w-full gap-2') as dropdown:
-                self._dropdown = dropdown
-                self._dropdown.visible = False
-
+            # Nested expander that always exists in DOM; header mirrors selected slugs
+            with ui.expansion(self._applied_value).classes('w-full') as exp:
+                self._expander = exp
+                # Keep header text in sync with the selected value
+                self._expander.bind_text_from(self.input, 'value', lambda v: v or '')
                 self._filter = ui.input(
                     label='Filter models',
                     placeholder='type to filter (by name or id)...',
                     value='',
                 ).classes('w-full').props('dense clearable')
                 self._filter.on('input', self._on_filter_input)
-                # Some NiceGUI versions prefer keyup / update:model-value for realtime typing
                 self._filter.on('keyup', self._on_filter_keyup)
                 self._filter.on('update:model-value', self._on_filter_input)
                 self._filter.on('keydown', self._on_filter_key)
@@ -99,23 +95,12 @@ class ModelSelector:
         self._selected_ids = self._parse_value(value)
         self._applied_value = self._format_value(sorted(self._selected_ids))
         self._set_input_value(self._applied_value)
-        if self._open:
-            self._render_rows()
-
-    # --- Events ---
-
-    async def _on_toggle_click(self, _) -> None:
-        if self._open:
-            await self._apply_and_close()
-            return
-        self._snapshot_selected_ids = set(self._selected_ids)
-        self._open = True
-        self._dropdown.visible = True
-        await self._load_and_render(self._filter.value or '')
         try:
-            self._filter.run_method('focus')
+            self._render_rows()
         except Exception:
             pass
+
+    # --- Events ---
 
     async def _on_filter_input(self, e) -> None:
         query = (self._filter.value or '').strip()
@@ -141,41 +126,30 @@ class ModelSelector:
         elif key in (' ', 'Spacebar', 'Space'):
             self._toggle_focused_selection()
         elif key in ('Enter', 'NumpadEnter'):
-            await self._apply_and_close()
+            await self._apply_immediately()
         elif key in ('Escape', 'Esc'):
-            await self._cancel_and_close()
+            # Clear filter and reload full list
+            try:
+                self._filter.value = ''
+            except Exception:
+                pass
+            await self._load_and_render('')
 
     # --- Apply / Cancel ---
 
-    async def _apply_and_close(self) -> None:
+    async def _apply_immediately(self) -> None:
         new_value = self._format_value(sorted(self._selected_ids))
         self._applied_value = new_value
         self._set_input_value(new_value)
-        self._open = False
-        self._dropdown.visible = False
         if self.on_change:
             try:
                 self.on_change(new_value)
             except Exception:
                 pass
 
-    async def _cancel_and_close(self) -> None:
-        self._selected_ids = set(self._snapshot_selected_ids)
-        self._open = False
-        self._dropdown.visible = False
-        # Revert input preview to last applied value
-        self._set_input_value(self._applied_value)
-
     def _apply_new_selection(self, new_ids: Set[str]) -> None:
         self._selected_ids = set(new_ids)
-        new_val = self._format_value(sorted(self._selected_ids))
-        self._set_input_value(new_val)
-        self._applied_value = new_val
-        if self.on_change:
-            try:
-                self.on_change(self._applied_value)
-            except Exception:
-                pass
+        asyncio.create_task(self._apply_immediately())
 
     # --- Load and render ---
 
@@ -224,7 +198,7 @@ class ModelSelector:
                 row.on('click', lambda _, i=idx: self._set_focus(i))
 
                 # Checkbox change: selection = checkbox.value
-                def _handle_cb_change(_=None, mid=m.id, cb_ref=cb):
+                async def _handle_cb_change(_=None, mid=m.id, cb_ref=cb):
                     try:
                         is_checked = bool(getattr(cb_ref, 'value', False))
                     except Exception:
@@ -234,17 +208,19 @@ class ModelSelector:
                     else:
                         self._selected_ids.discard(mid)
                     self._preview_selection_update()
+                    # Apply immediately so parent expansion header updates too
+                    await self._apply_immediately()
 
                 # Prefer dedicated value-change; fall back to generic events
                 wired = False
                 try:
-                    cb.on_value_change(lambda v, mid=m.id, cb_ref=cb: _handle_cb_change(mid=mid, cb_ref=cb_ref))
+                    cb.on_value_change(lambda v, mid=m.id, cb_ref=cb: asyncio.create_task(_handle_cb_change(mid=mid, cb_ref=cb_ref)))
                     wired = True
                 except Exception:
                     pass
                 if not wired:
-                    cb.on('change', lambda e, mid=m.id, cb_ref=cb: _handle_cb_change(mid=mid, cb_ref=cb_ref))
-                    cb.on('update:model-value', lambda v, mid=m.id, cb_ref=cb: _handle_cb_change(mid=mid, cb_ref=cb_ref))
+                    cb.on('change', lambda e, mid=m.id, cb_ref=cb: asyncio.create_task(_handle_cb_change(mid=mid, cb_ref=cb_ref)))
+                    cb.on('update:model-value', lambda v, mid=m.id, cb_ref=cb: asyncio.create_task(_handle_cb_change(mid=mid, cb_ref=cb_ref)))
 
                 self._row_entries.append({'row': row, 'checkbox': cb, 'id': m.id})
 
@@ -286,6 +262,10 @@ class ModelSelector:
             self._selected_ids.add(mid)
             cb.value = True
         self._preview_selection_update()
+        try:
+            asyncio.create_task(self._apply_immediately())
+        except Exception:
+            pass
 
     @staticmethod
     def _parse_value(value: str) -> Set[str]:
