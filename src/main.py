@@ -1,6 +1,7 @@
 # src/main.py
 from __future__ import annotations
 
+import subprocess
 from nicegui import ui
 from nicegui import app
 from pathlib import Path
@@ -13,6 +14,31 @@ from .services import (
     OpenRouterVisionService,
 )
 from .view import NiceGUIView
+
+
+def kill_port_process(port: int) -> None:
+    """Kill any process using the specified port (except current process)"""
+    import os
+    import time
+    current_pid = os.getpid()
+    
+    try:
+        result = subprocess.run(['lsof', '-ti', f':{port}'], 
+                              capture_output=True, text=True, check=False)
+        if result.returncode == 0 and result.stdout.strip():
+            pids = result.stdout.strip().split('\n')
+            killed_any = False
+            for pid in pids:
+                if pid and pid != str(current_pid):
+                    subprocess.run(['kill', '-9', pid], check=False)
+                    print(f"Killed process {pid} using port {port}")
+                    killed_any = True
+            
+            # Wait a moment for the port to be freed
+            if killed_any:
+                time.sleep(0.5)
+    except Exception as e:
+        print(f"Could not kill process on port {port}: {e}")
 
 
 def create_app() -> NiceGUIView:
@@ -37,7 +63,10 @@ def create_app() -> NiceGUIView:
 
 
 if __name__ in {"__main__", "__mp_main__"}:
+    PORT = 8055
+    
+    # Kill any process using the port before starting
+    kill_port_process(PORT)
+    
     _ = create_app()
-    ui.run(title='AI Code Generator')
-
-
+    ui.run(title='AI Code Generator', port=PORT)

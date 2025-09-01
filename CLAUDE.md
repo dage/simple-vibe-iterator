@@ -24,7 +24,7 @@ cp .env_template .env  # Fill in OPENROUTER_BASE_URL and OPENROUTER_API_KEY
 ```bash
 # Start the GUI application
 python -m src.main
-# Access at http://localhost:8080
+# Access at http://localhost:8055
 ```
 
 ### Testing
