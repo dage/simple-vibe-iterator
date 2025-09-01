@@ -15,6 +15,7 @@ from .interfaces import IterationEventListener, IterationNode, TransitionSetting
 from . import op_status
 from . import config as app_config
 from . import prefs
+from .model_selector import ModelSelector
 
 
 class NiceGUIView(IterationEventListener):
@@ -138,11 +139,23 @@ class NiceGUIView(IterationEventListener):
         user_steering = ui.textarea(label='Optional user steering', value=initial.user_steering).classes('w-full')
 
         with ui.expansion(f'Coding ({initial.code_model})').classes('w-full') as code_exp:
-            code_model = ui.input(label='model', value=initial.code_model).classes('w-full')
+            code_selector = ModelSelector(
+                initial_value=initial.code_model,
+                vision_only=False,
+                label='model',
+                on_change=lambda v: None,
+            )
+            code_model = code_selector.input
             code_tmpl = ui.textarea(label='coding template', value=initial.code_template).classes('w-full')
 
         with ui.expansion(f'Vision ({initial.vision_model})').classes('w-full') as vision_exp:
-            vision_model = ui.input(label='model', value=initial.vision_model).classes('w-full')
+            vision_selector = ModelSelector(
+                initial_value=initial.vision_model,
+                vision_only=True,
+                label='model',
+                on_change=lambda v: None,
+            )
+            vision_model = vision_selector.input
             vision_tmpl = ui.textarea(label='vision template', value=initial.vision_template).classes('w-full')
         code_exp.bind_text_from(code_model, 'value', lambda v: f'Coding ({v})')
         vision_exp.bind_text_from(vision_model, 'value', lambda v: f'Vision ({v})')
