@@ -43,6 +43,7 @@ class NiceGUIView(IterationEventListener):
         ui.html('''<style>
         .q-notification.bg-negative .q-btn--flat,
         .q-notification.text-negative .q-btn--flat { color: black !important; }
+        .q-expansion-item.nicegui-expansion { border: 1px solid #555 !important; border-radius: 6px !important; }
         </style>''')
         with ui.column().classes('w-full h-screen p-4 gap-3'):
             ui.label('Simple Vibe Iterator').classes('text-2xl font-bold')
