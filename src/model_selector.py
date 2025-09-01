@@ -80,15 +80,13 @@ class ModelSelector:
                     self._chips_row = ui.row().classes('w-full items-center gap-2 flex-wrap')
 
                 self._header = ui.row().classes(
-                    'w-full grid grid-cols-6 gap-2 text-xs text-gray-500 dark:text-gray-300 px-2 select-none'
+                    'w-full grid grid-cols-4 gap-2 text-xs text-gray-500 dark:text-gray-300 px-2 select-none'
                 )
                 with self._header:
                     ui.label('')
                     ui.label('Name')
-                    ui.label('Text')
-                    ui.label('Vision')
-                    ui.label('Prompt $/M')
-                    ui.label('Completion $/M')
+                    ui.label('T/V').classes('text-center')
+                    ui.label('Pricing ($/M)').classes('text-center')
 
                 with ui.element('div').classes('w-full max-h-[360px] overflow-auto') as scroll:
                     self._scroll = scroll
@@ -180,17 +178,17 @@ class ModelSelector:
         self._rows_container.clear()
         self._row_entries.clear()
 
-        def format_price(v: float) -> str:
+        def format_price(prompt: float, completion: float) -> str:
             try:
-                return f'${v:,.2f}/M'
+                return f'${prompt:,.2f} / ${completion:,.2f}'
             except Exception:
-                return '$0.00/M'
+                return '$0.00 / $0.00'
 
         with self._rows_container:
             for idx, m in enumerate(self._models):
                 is_checked = m.id in self._selected_ids
                 row = ui.element('div').classes(
-                    'w-full grid grid-cols-6 gap-2 items-center px-2 py-1 rounded cursor-default hover:bg-gray-100 dark:hover:bg-gray-800'
+                    'w-full grid grid-cols-4 gap-2 items-center px-2 py-1 rounded cursor-default hover:bg-gray-100 dark:hover:bg-gray-800'
                 )
                 if idx == self._focused_index:
                     row.classes('bg-indigo-600/10')
@@ -200,12 +198,12 @@ class ModelSelector:
                     with ui.column().classes('truncate'):
                         ui.label(m.name).classes('text-sm truncate')
                         ui.label(m.id).classes('text-[10px] text-gray-500 dark:text-gray-400 truncate')
-                    ui.icon('check_circle' if m.has_text_input else 'cancel',
-                            color='green' if m.has_text_input else 'grey').classes('text-sm')
-                    ui.icon('check_circle' if m.has_image_input else 'cancel',
-                            color='green' if m.has_image_input else 'grey').classes('text-sm')
-                    ui.label(format_price(m.prompt_price)).classes('text-sm')
-                    ui.label(format_price(m.completion_price)).classes('text-sm')
+                    with ui.row().classes('gap-1 justify-center'):
+                        ui.icon('check_circle' if m.has_text_input else 'cancel',
+                                color='green' if m.has_text_input else 'grey').classes('text-sm')
+                        ui.icon('check_circle' if m.has_image_input else 'cancel',
+                                color='green' if m.has_image_input else 'grey').classes('text-sm')
+                    ui.label(format_price(m.prompt_price, m.completion_price)).classes('text-sm text-center')
 
                 # Row click: focus only (no selection change)
                 row.on('click', lambda _, i=idx: self._set_focus(i))
