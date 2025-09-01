@@ -80,8 +80,8 @@ class ModelSelector:
                     self._chips_row = ui.row().classes('w-full items-center gap-2 flex-wrap')
 
                 self._header = ui.row().classes(
-                    'w-full grid grid-cols-4 gap-2 text-xs text-gray-500 dark:text-gray-300 px-2 select-none'
-                )
+                    'w-full text-xs text-gray-500 dark:text-gray-300 px-2 select-none'
+                ).style('display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 0.5rem;')
                 with self._header:
                     ui.label('')
                     ui.label('Name')
@@ -188,14 +188,14 @@ class ModelSelector:
             for idx, m in enumerate(self._models):
                 is_checked = m.id in self._selected_ids
                 row = ui.element('div').classes(
-                    'w-full grid grid-cols-4 gap-2 items-center px-2 py-1 rounded cursor-default hover:bg-gray-100 dark:hover:bg-gray-800'
-                )
+                    'w-full px-2 py-1 rounded cursor-default hover:bg-gray-100 dark:hover:bg-gray-800'
+                ).style('display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 0.5rem; align-items: center;')
                 if idx == self._focused_index:
                     row.classes('bg-indigo-600/10')
 
                 with row:
-                    cb = ui.checkbox(value=is_checked).classes('justify-self-start').props('dense')
-                    with ui.column().classes('truncate'):
+                    cb = ui.checkbox(value=is_checked).classes('justify-self-start self-start').props('dense')
+                    with ui.column().classes('truncate gap-0'):
                         ui.label(m.name).classes('text-sm truncate')
                         ui.label(m.id).classes('text-[10px] text-gray-500 dark:text-gray-400 truncate')
                     with ui.row().classes('gap-1 justify-center'):
