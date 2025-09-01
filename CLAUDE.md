@@ -89,7 +89,9 @@ When asked to suggest a commit message, always:
    Each bullet point must be on a single line without any explicit lines breaks
    ```
    
-   **Important**: Do NOT use scope in parentheses (no `type(scope):`). Use simple `type:` format.
+   **Important**: 
+   - Do NOT use scope in parentheses (no `type(scope):`). Use simple `type:` format.
+   - Do NOT indent bullet points - start them at the beginning of the line (no leading spaces).
 
 3. **Use these commit types**:
    - `feat`: new feature
