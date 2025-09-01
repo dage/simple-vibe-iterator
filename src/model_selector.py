@@ -54,11 +54,16 @@ class ModelSelector:
                 value=self._applied_value,
             ).classes('hidden')
 
-            # Nested expander that always exists in DOM; header mirrors selected slugs
-            with ui.expansion(self._applied_value).classes('w-full') as exp:
+            # Nested expander that always exists in DOM; header mirrors selected slugs (with empty fallback)
+            _initial_header = self._applied_value if (self._applied_value or '').strip() else '(no models selected)'
+            with ui.expansion(_initial_header).classes('w-full') as exp:
                 self._expander = exp
                 # Keep header text in sync with the selected value
-                self._expander.bind_text_from(self.input, 'value', lambda v: v or '')
+                self._expander.bind_text_from(
+                    self.input,
+                    'value',
+                    lambda v: (v if (v or '').strip() else '(no models selected)')
+                )
                 self._filter = ui.input(
                     label='Filter models',
                     placeholder='type to filter (by name or id)...',
@@ -68,6 +73,11 @@ class ModelSelector:
                 self._filter.on('keyup', self._on_filter_keyup)
                 self._filter.on('update:model-value', self._on_filter_input)
                 self._filter.on('keydown', self._on_filter_key)
+
+                # Selected chips summary
+                with ui.column().classes('w-full gap-1'):
+                    ui.label('Selected').classes('text-xs text-gray-500 dark:text-gray-300')
+                    self._chips_row = ui.row().classes('w-full items-center gap-2 flex-wrap')
 
                 self._header = ui.row().classes(
                     'w-full grid grid-cols-6 gap-2 text-xs text-gray-500 dark:text-gray-300 px-2 select-none'
@@ -85,6 +95,8 @@ class ModelSelector:
                     self._rows_container = ui.column().classes('w-full gap-0')
 
         ui.timer(0.05, lambda: asyncio.create_task(self._load_and_render('')), once=True)
+        # Initial chips render
+        self._render_chips()
 
     # --- Public API ---
 
@@ -141,6 +153,7 @@ class ModelSelector:
         new_value = self._format_value(sorted(self._selected_ids))
         self._applied_value = new_value
         self._set_input_value(new_value)
+        self._render_chips()
         if self.on_change:
             try:
                 self.on_change(new_value)
@@ -283,6 +296,39 @@ class ModelSelector:
         # Update the read-only input text to reflect current (not-yet-applied) selection
         try:
             self._set_input_value(self._format_value(sorted(self._selected_ids)))
+        except Exception:
+            pass
+
+    def _render_chips(self) -> None:
+        try:
+            self._chips_row.clear()
+            selected_sorted = sorted(self._selected_ids)
+            self._chips_row.visible = bool(selected_sorted)
+            for mid in selected_sorted:
+                with self._chips_row:
+                    with ui.row().classes('items-center gap-1 px-2 py-1 rounded bg-gray-100 dark:bg-gray-800 text-sm'):
+                        ui.label(mid).classes('truncate max-w-[240px]')
+                        # close icon to remove selection
+                        def _mk_remove(mid_str: str):
+                            async def _remove(_=None):
+                                try:
+                                    if mid_str in self._selected_ids:
+                                        self._selected_ids.remove(mid_str)
+                                    # if row is visible, also uncheck its checkbox
+                                    try:
+                                        for entry in self._row_entries:
+                                            if entry.get('id') == mid_str:
+                                                cb = entry.get('checkbox')
+                                                if cb is not None:
+                                                    cb.value = False
+                                                break
+                                    except Exception:
+                                        pass
+                                    await self._apply_immediately()
+                                except Exception:
+                                    pass
+                            return _remove
+                        ui.icon('close').classes('cursor-pointer text-gray-500 hover:text-gray-700').on('click', _mk_remove(mid))
         except Exception:
             pass
 
