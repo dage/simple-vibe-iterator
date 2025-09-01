@@ -83,10 +83,10 @@ When asked to suggest a commit message, always:
 
 2. **Follow this repository's simplified conventional format**:
    ```
-   type: imperative summary ≤50 characters
+   type: imperative summary ≤50 characters. No line breaks.
    
    Optional body with bullet points explaining what was done.
-   Wrap at 72 characters per line.
+   Each bullet point must be on a single line without any explicit lines breaks
    ```
    
    **Important**: Do NOT use scope in parentheses (no `type(scope):`). Use simple `type:` format.
