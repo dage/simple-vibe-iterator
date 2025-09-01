@@ -18,7 +18,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Union
 from pathlib import Path
-import base64, mimetypes, asyncio, random, os
+import base64, mimetypes, asyncio, random, os, time
 
 from openai import (
     AsyncOpenAI,
@@ -118,11 +118,11 @@ def _client() -> AsyncOpenAI:
 _MODELS_CACHE: Optional[List[ModelInfo]] = None
 _CACHE_TIMESTAMP: Optional[float] = None
 _CACHE_DURATION = 3600.0  # 1 hour
+_FETCH_LOCK = asyncio.Lock()
 
 
 async def _fetch_all_models() -> List[ModelInfo]:
     """Fetch all available models from OpenRouter API using the existing client."""
-    print("🔄 Fetching available models from OpenRouter API...")
     
     async def api_call():
         # Use the existing OpenAI client which already has proper headers and auth
@@ -134,10 +134,8 @@ async def _fetch_all_models() -> List[ModelInfo]:
     try:
         data = await _retry(api_call)
         models = [_parse_model_data(m) for m in data.get("data", []) if _parse_model_data(m)]
-        print(f"✅ Successfully loaded {len(models)} available models")
         return models
     except Exception as e:
-        print(f"❌ Failed to fetch models from API: {e}")
         raise RuntimeError(f"Failed to fetch models from OpenRouter API: {e}")
 
 
@@ -192,13 +190,20 @@ async def list_models(query: str = "", vision_only: bool = False, limit: int = 2
     """
     global _MODELS_CACHE, _CACHE_TIMESTAMP
     
-    # Load models with caching
-    now = time.monotonic()
-    cache_expired = (_CACHE_TIMESTAMP is None or (now - _CACHE_TIMESTAMP) > _CACHE_DURATION)
-    
-    if force_refresh or _MODELS_CACHE is None or cache_expired:
-        _MODELS_CACHE = await _fetch_all_models()
-        _CACHE_TIMESTAMP = now
+    # Load models with caching and locking to prevent concurrent fetches
+    async with _FETCH_LOCK:
+        now = time.monotonic()
+        cache_expired = (_CACHE_TIMESTAMP is None or (now - _CACHE_TIMESTAMP) > _CACHE_DURATION)
+        
+        if force_refresh or _MODELS_CACHE is None or cache_expired:
+            print("🔄 Fetching available models from OpenRouter API...")
+            try:
+                _MODELS_CACHE = await _fetch_all_models()
+                _CACHE_TIMESTAMP = now
+                print(f"✅ Successfully loaded {len(_MODELS_CACHE)} available models")
+            except Exception as e:
+                print(f"❌ Failed to fetch models from API: {e}")
+                raise
     
     models = _MODELS_CACHE or []
     
