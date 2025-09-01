@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Callable, Dict, List, Optional, Set
 import asyncio
+import datetime
 
 from nicegui import ui
 
@@ -81,12 +82,13 @@ class ModelSelector:
 
                 self._header = ui.row().classes(
                     'w-full text-xs text-gray-500 dark:text-gray-300 px-2 select-none'
-                ).style('display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 0.5rem;')
+                ).style('display: grid; grid-template-columns: auto 2fr auto 1fr auto; gap: 0.5rem;')
                 with self._header:
                     ui.label('')
-                    ui.label('Name')
+                    ui.label('')
                     ui.label('T/V').classes('text-center')
                     ui.label('Pricing ($/M)').classes('text-center')
+                    ui.label('Created').classes('text-center')
 
                 with ui.element('div').classes('w-full max-h-[360px] overflow-auto') as scroll:
                     self._scroll = scroll
@@ -183,13 +185,22 @@ class ModelSelector:
                 return f'${prompt:,.2f} / ${completion:,.2f}'
             except Exception:
                 return '$0.00 / $0.00'
+        
+        def format_date(timestamp: int) -> str:
+            try:
+                if timestamp == 0:
+                    return 'N/A'
+                dt = datetime.datetime.fromtimestamp(timestamp)
+                return dt.strftime('%m/%d/%y')
+            except Exception:
+                return 'N/A'
 
         with self._rows_container:
             for idx, m in enumerate(self._models):
                 is_checked = m.id in self._selected_ids
                 row = ui.element('div').classes(
                     'w-full px-2 py-1 rounded cursor-default hover:bg-gray-100 dark:hover:bg-gray-800'
-                ).style('display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 0.5rem; align-items: center;')
+                ).style('display: grid; grid-template-columns: auto 2fr auto 1fr auto; gap: 0.5rem; align-items: center;')
                 if idx == self._focused_index:
                     row.classes('bg-indigo-600/10')
 
@@ -204,6 +215,7 @@ class ModelSelector:
                         ui.icon('check_circle' if m.has_image_input else 'cancel',
                                 color='green' if m.has_image_input else 'grey').classes('text-sm')
                     ui.label(format_price(m.prompt_price, m.completion_price)).classes('text-sm text-center')
+                    ui.label(format_date(m.created)).classes('text-sm text-center')
 
                 # Row click: focus only (no selection change)
                 row.on('click', lambda _, i=idx: self._set_focus(i))

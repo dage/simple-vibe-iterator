@@ -56,6 +56,7 @@ class ModelInfo:
     has_image_input: bool      # Supports image input (vision capability)
     prompt_price: float        # Price per million input tokens ($)
     completion_price: float    # Price per million output tokens ($)
+    created: int               # Unix timestamp when model was created
 
 
 @lru_cache
@@ -160,6 +161,9 @@ def _parse_model_data(data: Dict[str, Any]) -> Optional[ModelInfo]:
         prompt_price = float(pricing.get("prompt", "0")) * 1_000_000
         completion_price = float(pricing.get("completion", "0")) * 1_000_000
         
+        # Parse created timestamp (defaults to 0 if not provided)
+        created = int(data.get("created", 0))
+        
         return ModelInfo(
             id=model_id,
             name=name,
@@ -167,6 +171,7 @@ def _parse_model_data(data: Dict[str, Any]) -> Optional[ModelInfo]:
             has_image_input=has_image_input,
             prompt_price=prompt_price,
             completion_price=completion_price,
+            created=created,
         )
     except Exception as e:
         print(f"⚠️  Failed to parse model data: {e}")
