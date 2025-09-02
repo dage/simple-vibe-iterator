@@ -188,7 +188,12 @@ class NiceGUIView(IterationEventListener):
                             ui.label('INPUT SCREENSHOT').classes('text-sm font-semibold')
                             try:
                                 from pathlib import Path as _P
-                                input_png = node.artifacts.input_screenshot_filename or ''
+                                # Get input artifacts from first output (shared across all outputs)
+                                if node.outputs:
+                                    first_output = next(iter(node.outputs.values()))
+                                    input_png = first_output.artifacts.input_screenshot_filename or ''
+                                else:
+                                    input_png = ''
                                 input_html_url = ''
                                 if input_png:
                                     p = _P(input_png)
@@ -207,8 +212,11 @@ class NiceGUIView(IterationEventListener):
                                     ui.icon('content_copy').classes('text-sm cursor-pointer').on('click', lambda html=node.html_input: self._copy_to_clipboard(html))
                                     ui.label('HTML:').classes('text-sm')
                                     ui.link('Open', input_html_url, new_tab=True).classes('text-sm')
-                            # Console logs (INPUT): from this node's input artifacts
-                            in_logs = list(getattr(node.artifacts, 'input_console_logs', []) or [])
+                            # Console logs (INPUT): from shared input artifacts
+                            in_logs = []
+                            if node.outputs:
+                                first_output = next(iter(node.outputs.values()))
+                                in_logs = list(getattr(first_output.artifacts, 'input_console_logs', []) or [])
                             in_title = f"Console logs ({'empty' if len(in_logs) == 0 else len(in_logs)})"
                             with ui.expansion(in_title):
                                 if in_logs:
@@ -217,12 +225,19 @@ class NiceGUIView(IterationEventListener):
                                 else:
                                     ui.label('(no console logs)')
                             # Vision Analysis label with line count from raw output
-                            _va_raw = node.artifacts.vision_output or ''
+                            _va_raw = ''
+                            if node.outputs:
+                                first_output = next(iter(node.outputs.values()))
+                                _va_raw = first_output.artifacts.vision_output or ''
                             _va_lines = [l for l in _va_raw.splitlines() if l.strip()]
                             va_title = f"Vision Analysis ({'empty' if len(_va_lines) == 0 else len(_va_lines)})"
                             with ui.expansion(va_title):
-                                va_text = node.artifacts.vision_output or ''
-                                if not (getattr(node.artifacts, 'input_screenshot_filename', '') or '').strip():
+                                va_text = _va_raw or ''
+                                input_screenshot = ''
+                                if node.outputs:
+                                    first_output = next(iter(node.outputs.values()))
+                                    input_screenshot = getattr(first_output.artifacts, 'input_screenshot_filename', '') or ''
+                                if not input_screenshot.strip():
                                     va_text = '(no input screenshot)'
                                 elif not (va_text or '').strip():
                                     va_text = '(pending)'
@@ -233,7 +248,12 @@ class NiceGUIView(IterationEventListener):
                         # Center arrow + Diff action
                         with ui.column().classes('basis-[60px] items-center justify-center gap-2'):
                             ui.icon('arrow_forward').classes('text-5xl text-gray-600 mt-16')
-                            diff_html = self._create_visual_diff(node.html_input or '', node.html_output or '')
+                            # For multi-output, use first output for diff computation
+                            first_html_output = ''
+                            if node.outputs:
+                                first_output = next(iter(node.outputs.values()))
+                                first_html_output = first_output.html_output
+                            diff_html = self._create_visual_diff(node.html_input or '', first_html_output or '')
                             with ui.dialog() as diff_dialog:
                                 diff_dialog.props('persistent')
                                 with ui.card().classes('w-[90vw] max-w-[1200px]'):
@@ -256,64 +276,81 @@ class NiceGUIView(IterationEventListener):
                                     ui.html(f"<div class='diff-container'><pre class='diff-content'>{diff_html or _html.escape('(no differences)')}</pre></div>")
                             ui.button('Diff', on_click=diff_dialog.open).props('outline dense').classes('mt-2')
 
-                        # OUTPUT side
-                        with ui.column().classes('basis-1/2 min-w-0 gap-2'):
-                            ui.label('OUTPUT SCREENSHOT').classes('text-sm font-semibold')
-                            out_png = node.artifacts.screenshot_filename
-                            if out_png:
-                                ui.image(out_png).classes('w-full h-auto max-w-full border rounded')
+                        # OUTPUT side - multiple outputs for multi-model support
+                        with ui.column().classes('basis-1/2 min-w-0 gap-4'):
+                            if node.outputs:
+                                for idx, (model_slug, model_output) in enumerate(node.outputs.items()):
+                                    # Each output gets its own section
+                                    with ui.card().classes('w-full p-3 border-l-4 border-indigo-500'):
+                                        with ui.row().classes('items-center justify-between w-full mb-2'):
+                                            ui.label(f'OUTPUT: {model_slug}').classes('text-sm font-semibold text-indigo-600')
+                                            
+                                        out_png = model_output.artifacts.screenshot_filename
+                                        if out_png:
+                                            ui.image(out_png).classes('w-full h-auto max-w-full border rounded')
+                                        else:
+                                            ui.label('(no output screenshot)')
+                                            
+                                        out_html_url = ''
+                                        try:
+                                            from pathlib import Path as _P
+                                            if out_png:
+                                                p = _P(out_png)
+                                                html_candidate = p.with_suffix('.html')
+                                                if html_candidate.exists():
+                                                    out_html_url = '/artifacts/' + html_candidate.name
+                                        except Exception:
+                                            pass
+                                            
+                                        if out_html_url:
+                                            with ui.row().classes('items-center gap-2 mt-2'):
+                                                # Capture the html_output value in the lambda closure properly
+                                                html_output_copy = model_output.html_output
+                                                ui.icon('content_copy').classes('text-sm cursor-pointer').on('click', lambda html=html_output_copy: self._copy_to_clipboard(html))
+                                                ui.label('HTML:').classes('text-sm')
+                                                ui.link('Open', out_html_url, new_tab=True).classes('text-sm')
+                                                
+                                        # Console logs for this output
+                                        out_logs = list(model_output.artifacts.console_logs or [])
+                                        out_title = f"Console logs ({'empty' if len(out_logs) == 0 else len(out_logs)})"
+                                        with ui.expansion(out_title).classes('mt-2'):
+                                            if out_logs:
+                                                out_logs_text = '\n\n'.join(out_logs)
+                                                ui.markdown(out_logs_text)
+                                            else:
+                                                ui.label('(no console logs)')
+                                        
+                                        # Iterate button for this specific model output
+                                        async def _iterate_from_model_output(nid: str, target_model: str) -> None:
+                                            if not self._begin_operation('Iterate'):
+                                                return
+                                            try:
+                                                updated = TransitionSettings(
+                                                    code_model=target_model,  # Use only the selected model
+                                                    vision_model=inputs['vision_model'].value or '',
+                                                    overall_goal=inputs['overall_goal'].value or '',
+                                                    user_steering=inputs['user_steering'].value or '',
+                                                    code_template=inputs['code_template'].value or '',
+                                                    vision_template=inputs['vision_template'].value or '',
+                                                )
+                                                prefs.set('model.code', updated.code_model)
+                                                prefs.set('model.vision', updated.vision_model)
+                                                prefs.set('template.code', updated.code_template)
+                                                prefs.set('template.vision', updated.vision_template)
+                                                await self.controller.apply_transition(nid, updated)
+                                            except Exception as exc:
+                                                ui.notify(f'Iterate from {target_model} failed: {exc}', color='negative', timeout=0, close_button=True)
+                                            finally:
+                                                self._end_operation()
+                                        
+                                        ui.button(
+                                            f'Iterate with {model_slug}', 
+                                            on_click=lambda nid=node.id, model=model_slug: asyncio.create_task(_iterate_from_model_output(nid, model))
+                                        ).classes('w-full mt-3')
                             else:
-                                ui.label('(no output screenshot)')
-                            out_html_url = ''
-                            try:
-                                from pathlib import Path as _P
-                                if out_png:
-                                    p = _P(out_png)
-                                    html_candidate = p.with_suffix('.html')
-                                    if html_candidate.exists():
-                                        out_html_url = '/artifacts/' + html_candidate.name
-                            except Exception:
-                                pass
-                            if out_html_url:
-                                with ui.row().classes('items-center gap-2'):
-                                    ui.icon('content_copy').classes('text-sm cursor-pointer').on('click', lambda html=node.html_output: self._copy_to_clipboard(html))
-                                    ui.label('HTML:').classes('text-sm')
-                                    ui.link('Open', out_html_url, new_tab=True).classes('text-sm')
-                            # Console logs (OUTPUT): logs from this node's render
-                            out_logs = list(node.artifacts.console_logs or [])
-                            out_title = f"Console logs ({'empty' if len(out_logs) == 0 else len(out_logs)})"
-                            with ui.expansion(out_title):
-                                if out_logs:
-                                    out_logs_text = '\n\n'.join(out_logs)
-                                    ui.markdown(out_logs_text)
-                                else:
-                                    ui.label('(no console logs)')
+                                ui.label('(no outputs available)').classes('text-sm text-gray-500')
 
-                    # Bottom-right iterate button
-                    with ui.row().classes('w-full justify-end'):
-                        async def _iterate_from_node(nid: str) -> None:
-                            if not self._begin_operation('Iterate'):
-                                return
-                            try:
-                                updated = TransitionSettings(
-                                    code_model=inputs['code_model'].value or '',
-                                    vision_model=inputs['vision_model'].value or '',
-                                    overall_goal=inputs['overall_goal'].value or '',
-                                    user_steering=inputs['user_steering'].value or '',
-                                    code_template=inputs['code_template'].value or '',
-                                    vision_template=inputs['vision_template'].value or '',
-                                )
-                                prefs.set('model.code', updated.code_model)
-                                prefs.set('model.vision', updated.vision_model)
-                                prefs.set('template.code', updated.code_template)
-                                prefs.set('template.vision', updated.vision_template)
-                                await self.controller.apply_transition(nid, updated)
-                            except Exception as exc:
-                                ui.notify(f'Iterate failed: {exc}', color='negative', timeout=0, close_button=True)
-                            finally:
-                                self._end_operation()
-
-                        ui.button('Iterate', on_click=lambda nid=node.id: asyncio.create_task(_iterate_from_node(nid))).classes('')
+                    # Multi-output iteration buttons are now embedded in each output card above
         return card
 
     # --- Operation status helpers ---

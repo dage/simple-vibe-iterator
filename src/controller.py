@@ -11,6 +11,7 @@ from .interfaces import (
     BrowserService,
     IterationEventListener,
     IterationNode,
+    ModelOutput,
     TransitionArtifacts,
     TransitionSettings,
     VisionService,
@@ -71,7 +72,7 @@ async def δ(
     browser_service: BrowserService,
     vision_service: VisionService,
     parent_node: Optional['IterationNode'] = None,
-) -> tuple[str, TransitionArtifacts]:
+) -> Dict[str, ModelOutput]:
     # Prepare defaults
     in_console_logs: list[str] = []
     in_vision_output: str = ""
@@ -79,8 +80,10 @@ async def δ(
     
     # Compute HTML diff from parent node (changes made in previous iteration)
     html_diff = ""
-    if parent_node:
-        html_diff = _compute_html_diff(parent_node.html_input, parent_node.html_output)
+    if parent_node and parent_node.outputs:
+        # Use first output for diff computation
+        first_output = next(iter(parent_node.outputs.values()))
+        html_diff = _compute_html_diff(parent_node.html_input, first_output.html_output)
 
     # Optional input render + vision when html_input is present
     if (html_input or "").strip():
@@ -94,22 +97,38 @@ async def δ(
             settings.vision_model,
         )
 
-    # Build code-model prompt and generate output
+    # Parse comma-separated models and generate outputs for each
+    model_slugs = [slug.strip() for slug in settings.code_model.split(',') if slug.strip()]
+    if not model_slugs:
+        raise ValueError("No valid code models specified")
+    
+    outputs: Dict[str, ModelOutput] = {}
+    
+    # Build shared code-model prompt context
     code_ctx = _build_template_context(html_input=html_input, settings=settings, vision_output=in_vision_output, console_logs=in_console_logs, html_diff=html_diff)
     code_prompt = settings.code_template.format(**code_ctx)
-    html_output = await ai_service.generate_html(code_prompt, settings.code_model)
-
-    # Render the NEW html_output to produce artifacts
-    out_screenshot_path, out_console_logs = await browser_service.render_and_capture(html_output)
-
-    artifacts = TransitionArtifacts(
-        screenshot_filename=out_screenshot_path,
-        console_logs=out_console_logs,
-        vision_output=in_vision_output,
-        input_screenshot_filename=in_screenshot_path,
-        input_console_logs=in_console_logs,
-    )
-    return html_output, artifacts
+    
+    for model_slug in model_slugs:
+        # Generate HTML for this model
+        html_output = await ai_service.generate_html(code_prompt, model_slug)
+        
+        # Render the html_output to produce artifacts
+        out_screenshot_path, out_console_logs = await browser_service.render_and_capture(html_output)
+        
+        artifacts = TransitionArtifacts(
+            screenshot_filename=out_screenshot_path,
+            console_logs=out_console_logs,
+            vision_output=in_vision_output,
+            input_screenshot_filename=in_screenshot_path,
+            input_console_logs=in_console_logs,
+        )
+        
+        outputs[model_slug] = ModelOutput(
+            html_output=html_output,
+            artifacts=artifacts
+        )
+    
+    return outputs
 
 
 class IterationController:
@@ -160,7 +179,20 @@ class IterationController:
         else:
             parent_id = from_node_id
             from_node = self._nodes[from_node_id]
-            html_input = from_node.html_output or from_node.html_input
+            # For multi-output nodes, use the HTML from the specific model that matches settings.code_model
+            if not from_node.outputs:
+                raise ValueError(f"Node {from_node_id} has no outputs")
+            
+            target_models = [slug.strip() for slug in settings.code_model.split(',') if slug.strip()]
+            if not target_models:
+                raise ValueError(f"Invalid code_model: '{settings.code_model}'")
+            
+            target_model = target_models[0]
+            if target_model not in from_node.outputs:
+                available_models = list(from_node.outputs.keys())
+                raise ValueError(f"Model '{target_model}' not found in node outputs. Available: {available_models}")
+            
+            html_input = from_node.outputs[target_model].html_output or from_node.html_input
 
         # Delete descendants only when iterating from an existing node
         if parent_id is not None:
@@ -170,7 +202,7 @@ class IterationController:
         parent_node_obj = self._nodes.get(parent_id) if parent_id else None
         
         # Run transition
-        html_output, artifacts = await δ(
+        outputs = await δ(
             html_input=html_input,
             settings=settings,
             ai_service=self._ai_service,
@@ -183,9 +215,8 @@ class IterationController:
         node = IterationNode(
             parent_id=parent_id,
             html_input=html_input,
-            html_output=html_output,
+            outputs=outputs,
             settings=settings,
-            artifacts=artifacts,
         )
         self._nodes[node.id] = node
         await self._notify_node_created(node)

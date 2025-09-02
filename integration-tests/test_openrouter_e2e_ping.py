@@ -99,16 +99,21 @@ async def run_ping() -> Tuple[bool, str]:
     if not node:
         return False, "root node missing"
 
-    if not (node.html_output or "").strip():
+    # Get first output for single-model test
+    if not node.outputs:
+        return False, "node has no outputs"
+    first_output = next(iter(node.outputs.values()))
+    
+    if not (first_output.html_output or "").strip():
         return False, "html_output is empty"
 
-    shot = Path(node.artifacts.screenshot_filename)
+    shot = Path(first_output.artifacts.screenshot_filename)
     if not shot.exists():
         return False, f"screenshot missing: {shot}"
 
     # Root may skip vision analysis; do not require it here
 
-    if not isinstance(node.artifacts.console_logs, list):
+    if not isinstance(first_output.artifacts.console_logs, list):
         return False, "console_logs not a list"
 
     return True, "end-to-end ping ok"

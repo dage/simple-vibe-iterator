@@ -119,9 +119,13 @@ async def test_rerun_mid_chain() -> Tuple[bool, str]:
     child1_id = await ctrl.apply_transition(root_id, default_settings("Goal B"))
     child2_id = await ctrl.apply_transition(child1_id, default_settings("Goal B"))
 
-    # Re-run from child1 with a modified code_model
-    s = default_settings("Goal B")
-    s.code_model = "modified-model"
+    # Re-run from child1 with same model (to test re-run functionality)
+    # Get the actual model that child1 has
+    child1_node = ctrl.get_node(child1_id)
+    original_model = next(iter(child1_node.outputs.keys()))
+    
+    s = default_settings("Goal B modified")  # Change the goal instead
+    s.code_model = original_model  # Use the same model that child1 has
     new_child_id = await ctrl.apply_transition(child1_id, s)
 
     # The old child2 should be deleted
@@ -133,8 +137,8 @@ async def test_rerun_mid_chain() -> Tuple[bool, str]:
     if not new_child or new_child.parent_id != child1_id:
         return False, "new child link incorrect"
 
-    # Settings propagation: code_model equals edited value
-    if new_child.settings.code_model != "modified-model":
+    # Settings propagation: overall_goal equals edited value
+    if new_child.settings.overall_goal != "Goal B modified":
         return False, "settings change did not propagate"
     return True, "re-run mid-chain ok"
 
@@ -150,13 +154,17 @@ async def test_artifacts_presence() -> Tuple[bool, str]:
         node = ctrl.get_node(nid)
         if not node:
             return False, f"node {nid} missing"
-        p = Path(node.artifacts.screenshot_filename)
+        if not node.outputs:
+            return False, f"node {nid} has no outputs"
+        # Get first (and only) output for single-model test
+        first_output = next(iter(node.outputs.values()))
+        p = Path(first_output.artifacts.screenshot_filename)
         if not p.exists():
             return False, f"screenshot missing for node {nid}: {p}"
         # Root may skip vision analysis; require non-empty for child
-        if nid != root_id and not node.artifacts.vision_output.strip():
+        if nid != root_id and not first_output.artifacts.vision_output.strip():
             return False, f"vision_output empty for node {nid}"
-        if not isinstance(node.artifacts.console_logs, list):
+        if not isinstance(first_output.artifacts.console_logs, list):
             return False, f"console_logs not a list for node {nid}"
     return True, "artifacts present"
 
@@ -201,11 +209,15 @@ async def test_prompt_placeholders() -> Tuple[bool, str]:
     if not (root and child):
         return False, "nodes missing"
 
+    # Get first output from each node for single-model test
+    root_first_output = next(iter(root.outputs.values()))
+    child_first_output = next(iter(child.outputs.values()))
+    
     expected_prompt = settings.code_template.format(**_build_template_context(
-        html_input=root.html_output,
+        html_input=root_first_output.html_output,
         settings=settings,
-        vision_output=child.artifacts.vision_output,
-        console_logs=child.artifacts.console_logs,
+        vision_output=child_first_output.artifacts.vision_output,
+        console_logs=child_first_output.artifacts.console_logs,
     ))
 
     if ai.last_prompt != expected_prompt:

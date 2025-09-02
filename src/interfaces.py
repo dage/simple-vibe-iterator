@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import uuid
-from typing import List, Optional, Protocol
+from typing import Dict, List, Optional, Protocol
 
 
 # ---- Data model for state-machine iterations ----
@@ -28,12 +28,17 @@ class TransitionArtifacts:
 
 
 @dataclass
+class ModelOutput:
+    html_output: str
+    artifacts: TransitionArtifacts
+
+
+@dataclass
 class IterationNode:
     parent_id: Optional[str]
     html_input: str
-    html_output: str
+    outputs: Dict[str, ModelOutput]
     settings: TransitionSettings
-    artifacts: TransitionArtifacts
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
 
