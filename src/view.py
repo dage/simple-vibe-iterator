@@ -268,20 +268,20 @@ class NiceGUIView(IterationEventListener):
                                             ui.markdown(out_logs_text)
                                         else:
                                             ui.label('(no console logs)')
-                                    async def _iterate(model_slug=model_slug) -> None:
+                                    async def _iterate() -> None:
                                         if not self._begin_operation('Iterate'):
                                             return
                                         try:
+                                            selected_model = inputs['code_model'].value or model_slug
                                             updated = TransitionSettings(
-                                                code_model=inputs['code_model'].value or '',
+                                                code_model=selected_model,
                                                 vision_model=inputs['vision_model'].value or '',
                                                 overall_goal=inputs['overall_goal'].value or '',
                                                 user_steering=inputs['user_steering'].value or '',
                                                 code_template=inputs['code_template'].value or '',
                                                 vision_template=inputs['vision_template'].value or '',
                                             )
-
-                                            prefs.set('model.code', updated.code_model)
+                                            prefs.set('model.code', selected_model)
                                             prefs.set('model.vision', updated.vision_model)
                                             prefs.set('template.code', updated.code_template)
                                             prefs.set('template.vision', updated.vision_template)
@@ -291,7 +291,7 @@ class NiceGUIView(IterationEventListener):
                                         finally:
                                             self._end_operation()
 
-                                    ui.button('Iterate', on_click=lambda m=model_slug: asyncio.create_task(_iterate(m))).classes('w-full')
+                                    ui.button('Iterate', on_click=lambda: asyncio.create_task(_iterate())).classes('w-full')
         return card
 
     # --- Operation status helpers ---
