@@ -268,19 +268,20 @@ class NiceGUIView(IterationEventListener):
                                             ui.markdown(out_logs_text)
                                         else:
                                             ui.label('(no console logs)')
-                                    async def _iterate(model_slug=model_slug) -> None:
+                                    async def _iterate(current_slug=model_slug) -> None:
                                         if not self._begin_operation('Iterate'):
                                             return
                                         try:
+                                            selected_model = inputs['code_model'].value or current_slug
                                             updated = TransitionSettings(
-                                                code_model=model_slug,
+                                                code_model=selected_model,
                                                 vision_model=inputs['vision_model'].value or '',
                                                 overall_goal=inputs['overall_goal'].value or '',
                                                 user_steering=inputs['user_steering'].value or '',
                                                 code_template=inputs['code_template'].value or '',
                                                 vision_template=inputs['vision_template'].value or '',
                                             )
-                                            prefs.set('model.code', model_slug)
+                                            prefs.set('model.code', selected_model)
                                             prefs.set('model.vision', updated.vision_model)
                                             prefs.set('template.code', updated.code_template)
                                             prefs.set('template.vision', updated.vision_template)
