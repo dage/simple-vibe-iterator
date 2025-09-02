@@ -123,8 +123,10 @@ async def run_iterate_number() -> Tuple[bool, str]:
         return False, "child missing"
 
     # Basic HTML assertions
-    r_html = (root.html_output or "").lower()
-    c_html = (child.html_output or "").lower()
+    root_out = root.outputs[code_model]
+    child_out = child.outputs[code_model]
+    r_html = (root_out.html_output or "").lower()
+    c_html = (child_out.html_output or "").lower()
     if not c_html.strip():
         return False, "child html empty"
     if c_html == r_html:
@@ -133,11 +135,11 @@ async def run_iterate_number() -> Tuple[bool, str]:
         return False, "child html does not include '2'"
 
     # Screenshot files exist and should differ between root and child
-    if not Path(root.artifacts.screenshot_filename).exists():
+    if not Path(root_out.artifacts.screenshot_filename).exists():
         return False, "root screenshot missing"
-    if not Path(child.artifacts.screenshot_filename).exists():
+    if not Path(child_out.artifacts.screenshot_filename).exists():
         return False, "child screenshot missing"
-    if child.artifacts.screenshot_filename == root.artifacts.screenshot_filename:
+    if child_out.artifacts.screenshot_filename == root_out.artifacts.screenshot_filename:
         return False, "child screenshot equals root (output not re-rendered)"
 
     # Require a robust direct single-image vision ping to be '2'
@@ -149,7 +151,7 @@ async def run_iterate_number() -> Tuple[bool, str]:
             prompt=(
                 "Identify the single large number in this image. Respond with exactly one character: 0-9."
             ),
-            image=child.artifacts.screenshot_filename,
+            image=child_out.artifacts.screenshot_filename,
             temperature=0,
         )
         last = direct
