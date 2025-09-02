@@ -81,7 +81,7 @@ async def δ(
     
     # Optional input render + vision when html_input is present
     if (html_input or "").strip():
-        in_screenshot_path, in_console_logs = await browser_service.render_and_capture(html_input)
+        in_screenshot_path, in_console_logs = await browser_service.render_and_capture(html_input, worker="input")
         vision_ctx = _build_template_context(html_input=html_input, settings=settings, vision_output="", console_logs=in_console_logs, html_diff=html_diff)
         vision_prompt = settings.vision_template.format(**vision_ctx)
         in_vision_output = await vision_service.analyze_screenshot(
@@ -89,6 +89,7 @@ async def δ(
             in_screenshot_path,
             in_console_logs,
             settings.vision_model,
+            worker="vision",
         )
 
     # Build code-model prompt once

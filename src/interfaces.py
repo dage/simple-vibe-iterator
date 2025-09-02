@@ -45,15 +45,22 @@ class IterationNode:
 # ---- Service protocols (unchanged public surface) ----
 
 class AICodeService(Protocol):
-    async def generate_html(self, prompt: str, model: str) -> str: ...
+    async def generate_html(self, prompt: str, model: str, worker: str = "main") -> str: ...
 
 
 class BrowserService(Protocol):
-    async def render_and_capture(self, html_code: str) -> tuple[str, List[str]]: ...
+    async def render_and_capture(self, html_code: str, worker: str = "main") -> tuple[str, List[str]]: ...
 
 
 class VisionService(Protocol):
-    async def analyze_screenshot(self, prompt: str, screenshot_path: str, console_logs: List[str], model: str) -> str: ...
+    async def analyze_screenshot(
+        self,
+        prompt: str,
+        screenshot_path: str,
+        console_logs: List[str],
+        model: str,
+        worker: str = "main",
+    ) -> str: ...
 
 
 # ---- Iteration event listener for UI ----

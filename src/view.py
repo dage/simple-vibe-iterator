@@ -29,10 +29,6 @@ class NiceGUIView(IterationEventListener):
         # --- Operation status & lock ---
         self._op_busy: bool = False
         self._status_container: ui.element | None = None
-        self._status_spinner: ui.element | None = None
-        self._status_ok_icon: ui.element | None = None
-        self._status_title: ui.label | None = None
-        self._status_detail: ui.label | None = None
         self._status_timer: ui.timer | None = None
 
         # Set some default styling
@@ -48,18 +44,11 @@ class NiceGUIView(IterationEventListener):
         with ui.column().classes('w-full h-screen p-4 gap-3'):
             ui.label('Simple Vibe Iterator').classes('text-2xl font-bold')
 
-            # Sticky top-right operation status (two lines, system-like font)
-            # Light theme keeps subtle white card; dark theme gets a gentle indigo tint to stand out
-            base_classes = 'fixed top-2 right-2 z-50 items-start gap-2 bg-white/90 border border-gray-300 rounded px-3 py-2 shadow dark:bg-indigo-600/20 dark:border-indigo-400/30 dark:text-indigo-100 backdrop-blur-sm'
-            with ui.row().classes(base_classes) as sc:
+            # Container for worker status boxes
+            with ui.column().classes('fixed top-2 right-2 z-50 gap-2 items-end') as sc:
                 self._status_container = sc
-                self._status_spinner = ui.spinner('dots', color='indigo').classes('w-5 h-5')
-                self._status_ok_icon = ui.icon('check_circle', color='green').classes('w-5 h-5')
-                with ui.column().classes('leading-none gap-0'):
-                    self._status_title = ui.label('No operation running').classes('font-mono text-sm')
-                    self._status_detail = ui.label('').classes('font-mono text-xs text-gray-600 dark:text-indigo-200')
             self._status_timer = ui.timer(0.25, self._refresh_phase)
-            self._update_status_ui()
+            self._refresh_phase()
 
             with ui.scroll_area().classes('flex-grow w-full') as scroll:
                 self.scroll_area = scroll
@@ -291,6 +280,7 @@ class NiceGUIView(IterationEventListener):
                                                 code_template=inputs['code_template'].value or '',
                                                 vision_template=inputs['vision_template'].value or '',
                                             )
+
                                             prefs.set('model.code', updated.code_model)
                                             prefs.set('model.vision', updated.vision_model)
                                             prefs.set('template.code', updated.code_template)
@@ -300,53 +290,55 @@ class NiceGUIView(IterationEventListener):
                                             ui.notify(f'Iterate failed: {exc}', color='negative', timeout=0, close_button=True)
                                         finally:
                                             self._end_operation()
+
                                     ui.button('Iterate', on_click=lambda m=model_slug: asyncio.create_task(_iterate(m))).classes('w-full')
         return card
 
     # --- Operation status helpers ---
-    def _update_status_ui(self) -> None:
-        busy = self._op_busy
-        if self._status_spinner is not None:
-            self._status_spinner.visible = busy
-        if self._status_ok_icon is not None:
-            self._status_ok_icon.visible = not busy
-        if not busy:
-            if self._status_title is not None:
-                self._status_title.text = 'No operation running'
-
     def _begin_operation(self, title: str) -> bool:
         if self._op_busy:
             ui.notify('Another operation is running. Please wait until it finishes.', color='warning')
             return False
         self._op_busy = True
-        if self._status_title is not None:
-            self._status_title.text = title
-        if self._status_detail is not None:
-            self._status_detail.text = 'Starting'
-        self._update_status_ui()
+        op_status.clear_all()
+        self._refresh_phase()
         return True
 
     def _end_operation(self) -> None:
         self._op_busy = False
         # Ensure UI resets cleanly on success or error
         try:
-            op_status.clear_phase()
+            op_status.clear_all()
         except Exception:
             pass
-        if self._status_detail is not None:
-            self._status_detail.text = ''
-        if self._status_title is not None:
-            self._status_title.text = 'No operation running'
-        self._update_status_ui()
+        self._refresh_phase()
 
     def _refresh_phase(self) -> None:
-        if self._status_detail is None:
+        if self._status_container is None:
             return
-        phase, elapsed = op_status.get_phase_and_elapsed()
-        if phase:
-            self._status_detail.text = f"{phase} · {elapsed:.1f}s"
-        else:
-            self._status_detail.text = ''
+        self._status_container.clear()
+        phases = op_status.get_all_phases()
+        box_classes = (
+            'items-start gap-2 bg-white/90 border border-gray-300 rounded px-3 py-2 shadow '
+            'dark:bg-indigo-600/20 dark:border-indigo-400/30 dark:text-indigo-100 backdrop-blur-sm'
+        )
+        if not phases:
+            with self._status_container:
+                with ui.row().classes(box_classes):
+                    if self._op_busy:
+                        ui.spinner('dots', color='indigo').classes('w-5 h-5')
+                        ui.label('Starting...').classes('font-mono text-sm')
+                    else:
+                        ui.icon('check_circle', color='green').classes('w-5 h-5')
+                        ui.label('No operation running').classes('font-mono text-sm')
+            return
+        for worker, (phase, elapsed) in phases.items():
+            with self._status_container:
+                with ui.row().classes(box_classes):
+                    ui.spinner('dots', color='indigo').classes('w-5 h-5')
+                    with ui.column().classes('leading-none gap-0'):
+                        ui.label('Iterate').classes('font-mono text-sm')
+                        ui.label(f"{phase} · {elapsed:.1f}s").classes('font-mono text-xs text-gray-600 dark:text-indigo-200')
 
 
     # --- Utilities ---

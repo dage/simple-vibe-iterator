@@ -26,7 +26,7 @@ def inject_src_into_syspath(project_root: Path) -> None:
 
 # Test-local stub services (do not rely on network)
 class _TestStubAICodeService:
-    async def generate_html(self, prompt: str, model: str) -> str:
+    async def generate_html(self, prompt: str, model: str, worker: str = "main") -> str:
         await asyncio.sleep(0.05)
         safe = (prompt or "").strip()[:200]
         return (
@@ -41,7 +41,14 @@ class _TestStubAICodeService:
 
 
 class _TestStubVisionService:
-    async def analyze_screenshot(self, prompt: str, screenshot_path: str, console_logs: List[str], model: str) -> str:
+    async def analyze_screenshot(
+        self,
+        prompt: str,
+        screenshot_path: str,
+        console_logs: List[str],
+        model: str,
+        worker: str = "main",
+    ) -> str:
         await asyncio.sleep(0.01)
         name = Path(screenshot_path).name
         lines = [
@@ -172,7 +179,7 @@ async def test_prompt_placeholders() -> Tuple[bool, str]:
     class RecordingAICodeService(AICodeService):
         def __init__(self) -> None:
             self.last_prompt: str = ""
-        async def generate_html(self, prompt: str, model: str) -> str:
+        async def generate_html(self, prompt: str, model: str, worker: str = "main") -> str:
             self.last_prompt = prompt
             safe = (prompt or "").strip()[:200]
             return (
@@ -240,6 +247,37 @@ async def test_multi_model_outputs() -> Tuple[bool, str]:
     return True, "multi model outputs ok"
 
 
+async def test_shared_input_capture() -> Tuple[bool, str]:
+    from src.interfaces import BrowserService
+    from src.controller import IterationController
+
+    class _CountingBrowserService(BrowserService):
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        async def render_and_capture(self, html_code: str, worker: str = "main") -> tuple[str, List[str]]:
+            self.calls.append(worker)
+            return (f"{worker}.png", [f"log-{worker}"])
+
+    ai = _TestStubAICodeService()
+    browser = _CountingBrowserService()
+    vision = _TestStubVisionService()
+    ctrl = IterationController(ai, browser, vision)
+
+    s1 = default_settings("One")
+    s1.code_model = "modelA"
+    root_id = await ctrl.apply_transition(None, s1)
+
+    s2 = default_settings("Two")
+    s2.code_model = "modelA,modelB"
+    await ctrl.apply_transition(root_id, s2)
+
+    expected = ["modelA", "input", "modelA", "modelB"]
+    if browser.calls != expected:
+        return False, f"render sequence {browser.calls} != {expected}"
+    return True, "shared input capture ok"
+
+
 async def main() -> int:
     project_root = ensure_cwd_project_root()
     inject_src_into_syspath(project_root)
@@ -250,6 +288,7 @@ async def main() -> int:
         ("Artifact Presence", test_artifacts_presence),
         ("Prompt Placeholders", test_prompt_placeholders),
         ("Multi Model Outputs", test_multi_model_outputs),
+        ("Shared Input Capture", test_shared_input_capture),
     ]
 
     ok_all = True
