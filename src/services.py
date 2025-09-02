@@ -16,39 +16,41 @@ class PlaywrightBrowserService(BrowserService):
         self._out_dir = Path(out_dir or "artifacts").resolve()
         self._out_dir.mkdir(parents=True, exist_ok=True)
         self._viewport = parse_viewport(viewport)
+        self._lock = asyncio.Lock()
 
-    async def render_and_capture(self, html_code: str) -> tuple[str, List[str]]:
+    async def render_and_capture(self, html_code: str, worker: str) -> tuple[str, List[str]]:
         # Persist HTML to temp file for Playwright to open via file://
         digest = hashlib.sha1(html_code.encode("utf-8")).hexdigest()[:12]
         html_path = self._out_dir / f"page_{digest}.html"
         png_path = self._out_dir / f"page_{digest}.png"
         html_path.write_text(html_code, encoding="utf-8")
-        op_status.set_phase("Playwright: Capture screenshot")
-        logs = await asyncio.to_thread(capture_html, html_path, png_path, self._viewport)
+        async with self._lock:
+            op_status.set_phase(worker, "Playwright: Capture screenshot")
+            logs = await asyncio.to_thread(capture_html, html_path, png_path, self._viewport)
+            op_status.clear_phase(worker)
         # Flatten console texts for now to meet interface
         flat_logs: List[str] = []
         for entry in logs:
             t = str(entry.get("type") or "log")
             msg = str(entry.get("text") or "")
             flat_logs.append(f"[{t}] {msg}")
-        op_status.clear_phase()
         return (str(png_path), flat_logs)
 
 
 # ---- OpenRouter-backed services ----
 
 class OpenRouterAICodeService(AICodeService):
-    async def generate_html(self, prompt: str, model: str) -> str:
+    async def generate_html(self, prompt: str, model: str, worker: str) -> str:
         # Defer import to avoid requiring env when using stubs/tests
         from . import or_client
 
         # Minimal call: the controller provides a full prompt with context
-        op_status.set_phase(f"Code: {model}")
+        op_status.set_phase(worker, f"Code: {model}")
         reply = await or_client.chat(
             messages=[{"role": "user", "content": prompt}],
             model=model,
         )
-        op_status.clear_phase()
+        op_status.clear_phase(worker)
         return reply or ""
 
 
@@ -56,14 +58,14 @@ class OpenRouterVisionService(VisionService):
     async def analyze_screenshot(self, prompt: str, screenshot_path: str, console_logs: List[str], model: str) -> str:
         from . import or_client
 
-        op_status.set_phase(f"Vision: {model}")
+        op_status.set_phase('vision', f"Vision: {model}")
         reply = await or_client.vision_single(
             prompt=prompt,
             image=screenshot_path,
             model=model,
             temperature=0,
         )
-        op_status.clear_phase()
+        op_status.clear_phase('vision')
         return reply or ""
 
 

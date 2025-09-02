@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import difflib
 import uuid
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from .interfaces import (
     AICodeService,
@@ -14,6 +14,7 @@ from .interfaces import (
     TransitionArtifacts,
     TransitionSettings,
     VisionService,
+    ModelOutput,
 )
 
 
@@ -40,7 +41,7 @@ def _compute_html_diff(html_input: str, html_output: str) -> str:
     return "".join(diff)
 
 
-# Pure transition function δ(html_input, settings) -> (html_output, artifacts)
+# Pure transition function δ(html_input, settings) -> mapping of model -> (html_output, artifacts)
 def _build_template_context(
     html_input: str,
     settings: TransitionSettings,
@@ -67,24 +68,20 @@ def _build_template_context(
 async def δ(
     html_input: str,
     settings: TransitionSettings,
+    models: List[str],
     ai_service: AICodeService,
     browser_service: BrowserService,
     vision_service: VisionService,
-    parent_node: Optional['IterationNode'] = None,
-) -> tuple[str, TransitionArtifacts]:
+    html_diff: str = "",
+) -> Dict[str, Tuple[str, TransitionArtifacts]]:
     # Prepare defaults
     in_console_logs: list[str] = []
     in_vision_output: str = ""
     in_screenshot_path: str = ""
     
-    # Compute HTML diff from parent node (changes made in previous iteration)
-    html_diff = ""
-    if parent_node:
-        html_diff = _compute_html_diff(parent_node.html_input, parent_node.html_output)
-
     # Optional input render + vision when html_input is present
     if (html_input or "").strip():
-        in_screenshot_path, in_console_logs = await browser_service.render_and_capture(html_input)
+        in_screenshot_path, in_console_logs = await browser_service.render_and_capture(html_input, worker="input")
         vision_ctx = _build_template_context(html_input=html_input, settings=settings, vision_output="", console_logs=in_console_logs, html_diff=html_diff)
         vision_prompt = settings.vision_template.format(**vision_ctx)
         in_vision_output = await vision_service.analyze_screenshot(
@@ -94,22 +91,24 @@ async def δ(
             settings.vision_model,
         )
 
-    # Build code-model prompt and generate output
+    # Build code-model prompt once
     code_ctx = _build_template_context(html_input=html_input, settings=settings, vision_output=in_vision_output, console_logs=in_console_logs, html_diff=html_diff)
     code_prompt = settings.code_template.format(**code_ctx)
-    html_output = await ai_service.generate_html(code_prompt, settings.code_model)
 
-    # Render the NEW html_output to produce artifacts
-    out_screenshot_path, out_console_logs = await browser_service.render_and_capture(html_output)
+    async def _run_model(model: str) -> tuple[str, Tuple[str, TransitionArtifacts]]:
+        html_output = await ai_service.generate_html(code_prompt, model, worker=model)
+        out_screenshot_path, out_console_logs = await browser_service.render_and_capture(html_output, worker=model)
+        artifacts = TransitionArtifacts(
+            screenshot_filename=out_screenshot_path,
+            console_logs=out_console_logs,
+            vision_output=in_vision_output,
+            input_screenshot_filename=in_screenshot_path,
+            input_console_logs=in_console_logs,
+        )
+        return model, (html_output, artifacts)
 
-    artifacts = TransitionArtifacts(
-        screenshot_filename=out_screenshot_path,
-        console_logs=out_console_logs,
-        vision_output=in_vision_output,
-        input_screenshot_filename=in_screenshot_path,
-        input_console_logs=in_console_logs,
-    )
-    return html_output, artifacts
+    pairs = await asyncio.gather(*[_run_model(m) for m in models])
+    return {m: res for m, res in pairs}
 
 
 class IterationController:
@@ -152,40 +151,50 @@ class IterationController:
         # Compute parent id and html_input
         parent_id: str | None
         html_input: str
+        models = [m.strip() for m in settings.code_model.split(',') if m.strip()]
+        if not models:
+            raise ValueError("No code model specified")
+        base_model = models[0]
         if from_node_id is None:
             parent_id = None
             html_input = ""
+            html_diff = ""
         elif from_node_id not in self._nodes:
             raise ValueError(f"Node {from_node_id} not found")
         else:
             parent_id = from_node_id
             from_node = self._nodes[from_node_id]
-            html_input = from_node.html_output or from_node.html_input
+            prev = from_node.outputs.get(base_model)
+            if prev is None:
+                prev = next(iter(from_node.outputs.values()))
+            html_input = prev.html_output or from_node.html_input
+            html_diff = _compute_html_diff(from_node.html_input, prev.html_output)
 
         # Delete descendants only when iterating from an existing node
         if parent_id is not None:
             self._delete_descendants(parent_id)
 
-        # Get parent node for HTML diff context
-        parent_node_obj = self._nodes.get(parent_id) if parent_id else None
-        
         # Run transition
-        html_output, artifacts = await δ(
+        results = await δ(
             html_input=html_input,
             settings=settings,
+            models=models,
             ai_service=self._ai_service,
             browser_service=self._browser_service,
             vision_service=self._vision_service,
-            parent_node=parent_node_obj,
+            html_diff=html_diff,
         )
 
         # Create and store node
+        outputs_dict: Dict[str, ModelOutput] = {
+            m: ModelOutput(html_output=html, artifacts=art)
+            for m, (html, art) in results.items()
+        }
         node = IterationNode(
             parent_id=parent_id,
             html_input=html_input,
-            html_output=html_output,
+            outputs=outputs_dict,
             settings=settings,
-            artifacts=artifacts,
         )
         self._nodes[node.id] = node
         await self._notify_node_created(node)

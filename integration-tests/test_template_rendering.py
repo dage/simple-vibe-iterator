@@ -36,7 +36,7 @@ class RecordingAICodeService:
         self.last_prompt: str = ""
         self._script_lines: list[str] = list(script_lines or [])
 
-    async def generate_html(self, prompt: str, model: str) -> str:
+    async def generate_html(self, prompt: str, model: str, worker: str) -> str:
         self.last_prompt = prompt
         return _html_with_scripts(self._script_lines)
 

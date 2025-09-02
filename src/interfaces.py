@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import uuid
-from typing import List, Optional, Protocol
+from typing import Dict, List, Optional, Protocol
 
 
 # ---- Data model for state-machine iterations ----
@@ -28,23 +28,28 @@ class TransitionArtifacts:
 
 
 @dataclass
+class ModelOutput:
+    html_output: str
+    artifacts: TransitionArtifacts
+
+
+@dataclass
 class IterationNode:
     parent_id: Optional[str]
     html_input: str
-    html_output: str
+    outputs: Dict[str, ModelOutput]
     settings: TransitionSettings
-    artifacts: TransitionArtifacts
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
 
 # ---- Service protocols (unchanged public surface) ----
 
 class AICodeService(Protocol):
-    async def generate_html(self, prompt: str, model: str) -> str: ...
+    async def generate_html(self, prompt: str, model: str, worker: str) -> str: ...
 
 
 class BrowserService(Protocol):
-    async def render_and_capture(self, html_code: str) -> tuple[str, List[str]]: ...
+    async def render_and_capture(self, html_code: str, worker: str) -> tuple[str, List[str]]: ...
 
 
 class VisionService(Protocol):
