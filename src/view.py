@@ -216,8 +216,8 @@ class NiceGUIView(IterationEventListener):
 
                         with ui.column().classes('basis-1/2 min-w-0 gap-6'):
                             for model_slug, out in node.outputs.items():
-                                with ui.column().classes('min-w-0 gap-2 border rounded p-2'):
-                                    ui.label(f'OUTPUT {model_slug}').classes('text-sm font-semibold')
+                                with ui.column().classes('w-full min-w-0 gap-2 border rounded p-2'):
+                                    ui.label(f'{model_slug}').classes('text-sm font-semibold')
                                     out_png = out.artifacts.screenshot_filename
                                     if out_png:
                                         ui.image(out_png).classes('w-full h-auto max-w-full border rounded')
@@ -233,11 +233,6 @@ class NiceGUIView(IterationEventListener):
                                                 out_html_url = '/artifacts/' + html_candidate.name
                                     except Exception:
                                         pass
-                                    if out_html_url:
-                                        with ui.row().classes('items-center gap-2'):
-                                            ui.icon('content_copy').classes('text-sm cursor-pointer').on('click', lambda html=out.html_output: self._copy_to_clipboard(html))
-                                            ui.label('HTML:').classes('text-sm')
-                                            ui.link('Open', out_html_url, new_tab=True).classes('text-sm')
                                     diff_html = self._create_visual_diff(node.html_input or '', out.html_output or '')
                                     with ui.dialog() as diff_dialog:
                                         diff_dialog.props('persistent')
@@ -259,7 +254,12 @@ class NiceGUIView(IterationEventListener):
                                                 ui.html('<span class="legend-chip legend-insert">Insert</span>')
                                                 ui.html('<span class="legend-chip legend-delete">Delete</span>')
                                             ui.html(f"<div class='diff-container'><pre class='diff-content'>{diff_html or _html.escape('(no differences)')}</pre></div>")
-                                    ui.button('Diff', on_click=diff_dialog.open).props('outline dense')
+                                    if out_html_url:
+                                        with ui.row().classes('items-center gap-2'):
+                                            ui.icon('content_copy').classes('text-sm cursor-pointer').on('click', lambda html=out.html_output: self._copy_to_clipboard(html))
+                                            ui.label('HTML:').classes('text-sm')
+                                            ui.link('Open', out_html_url, new_tab=True).classes('text-sm')
+                                            ui.button('Diff', on_click=diff_dialog.open).props('flat dense').classes('text-sm p-0 min-h-0')
                                     out_logs = list(out.artifacts.console_logs or [])
                                     out_title = f"Console logs ({'empty' if len(out_logs) == 0 else len(out_logs)})"
                                     with ui.expansion(out_title):
@@ -268,29 +268,30 @@ class NiceGUIView(IterationEventListener):
                                             ui.markdown(out_logs_text)
                                         else:
                                             ui.label('(no console logs)')
-                                    async def _iterate() -> None:
+                                    async def _iterate(model_slug=model_slug) -> None:
                                         if not self._begin_operation('Iterate'):
                                             return
                                         try:
-                                            selected_model = inputs['code_model'].value or model_slug
                                             updated = TransitionSettings(
-                                                code_model=selected_model,
+                                                code_model=inputs['code_model'].value or '',
                                                 vision_model=inputs['vision_model'].value or '',
                                                 overall_goal=inputs['overall_goal'].value or '',
                                                 user_steering=inputs['user_steering'].value or '',
                                                 code_template=inputs['code_template'].value or '',
                                                 vision_template=inputs['vision_template'].value or '',
                                             )
-                                            prefs.set('model.code', selected_model)
+
+                                            prefs.set('model.code', updated.code_model)
                                             prefs.set('model.vision', updated.vision_model)
                                             prefs.set('template.code', updated.code_template)
                                             prefs.set('template.vision', updated.vision_template)
-                                            await self.controller.apply_transition(node.id, updated)
+                                            await self.controller.apply_transition(node.id, updated, model_slug)
                                         except Exception as exc:
                                             ui.notify(f'Iterate failed: {exc}', color='negative', timeout=0, close_button=True)
                                         finally:
                                             self._end_operation()
-                                    ui.button('Iterate', on_click=lambda: asyncio.create_task(_iterate())).classes('w-full')
+
+                                    ui.button('Iterate', on_click=lambda m=model_slug: asyncio.create_task(_iterate(m))).classes('w-full')
         return card
 
     # --- Operation status helpers ---

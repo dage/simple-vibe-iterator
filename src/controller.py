@@ -96,9 +96,10 @@ async def δ(
     code_ctx = _build_template_context(html_input=html_input, settings=settings, vision_output=in_vision_output, console_logs=in_console_logs, html_diff=html_diff)
     code_prompt = settings.code_template.format(**code_ctx)
 
-    async def _worker(model: str) -> Tuple[str, str, TransitionArtifacts]:
-        html_output = await ai_service.generate_html(code_prompt, model, worker=model)
-        out_screenshot_path, out_console_logs = await browser_service.render_and_capture(html_output, worker=model)
+    results: Dict[str, Tuple[str, TransitionArtifacts]] = {}
+    for model in models:
+        html_output = await ai_service.generate_html(code_prompt, model)
+        out_screenshot_path, out_console_logs = await browser_service.render_and_capture(html_output)
         artifacts = TransitionArtifacts(
             screenshot_filename=out_screenshot_path,
             console_logs=out_console_logs,
@@ -106,11 +107,7 @@ async def δ(
             input_screenshot_filename=in_screenshot_path,
             input_console_logs=in_console_logs,
         )
-        return model, html_output, artifacts
-
-    tasks = [_worker(m) for m in models]
-    gathered = await asyncio.gather(*tasks)
-    results: Dict[str, Tuple[str, TransitionArtifacts]] = {m: (html, art) for m, html, art in gathered}
+        results[model] = (html_output, artifacts)
     return results
 
 
@@ -150,7 +147,7 @@ class IterationController:
             self._nodes.pop(nid, None)
 
     # Unified apply: if from_node_id is None, create a root; otherwise iterate from given node
-    async def apply_transition(self, from_node_id: str | None, settings: TransitionSettings) -> str:
+    async def apply_transition(self, from_node_id: str | None, settings: TransitionSettings, from_model_slug: str | None = None) -> str:
         # Compute parent id and html_input
         parent_id: str | None
         html_input: str
@@ -167,7 +164,9 @@ class IterationController:
         else:
             parent_id = from_node_id
             from_node = self._nodes[from_node_id]
-            prev = from_node.outputs.get(base_model)
+            # Use specific model output if from_model_slug is provided, otherwise use base_model
+            target_model = from_model_slug or base_model
+            prev = from_node.outputs.get(target_model)
             if prev is None:
                 prev = next(iter(from_node.outputs.values()))
             html_input = prev.html_output or from_node.html_input

@@ -98,9 +98,9 @@ class TestModelLoading:
         """Test filtering with empty query."""
         # Create sample models for testing
         models = [
-            ModelInfo("anthropic/claude-sonnet-4", "Claude Sonnet 4", True, True, 3.0, 15.0),
-            ModelInfo("openai/gpt-4", "GPT-4", True, False, 2.5, 10.0),
-            ModelInfo("x-ai/grok-4", "Grok 4", True, True, 3.0, 15.0),
+            ModelInfo("anthropic/claude-sonnet-4", "Claude Sonnet 4", True, True, 3.0, 15.0, 1640995200),
+            ModelInfo("openai/gpt-4", "GPT-4", True, False, 2.5, 10.0, 1640995200),
+            ModelInfo("x-ai/grok-4", "Grok 4", True, True, 3.0, 15.0, 1640995200),
         ]
         
         # Test using list_models directly instead of separate filter function
@@ -224,11 +224,13 @@ async def run_integration_tests():
         print("\n" + "=" * 60)
         print("🎉 ALL INTEGRATION TESTS PASSED!")
         print("=" * 60)
+        return True
         
     except Exception as e:
         print(f"\n❌ Test failed: {e}")
         import traceback
         traceback.print_exc()
+        return False
 
 
 if __name__ == "__main__":
@@ -241,4 +243,5 @@ if __name__ == "__main__":
         sys.exit(1)
     
     # Run tests
-    asyncio.run(run_integration_tests())
+    success = asyncio.run(run_integration_tests())
+    sys.exit(0 if success else 1)
