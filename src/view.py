@@ -284,14 +284,14 @@ class NiceGUIView(IterationEventListener):
                                             return
                                         try:
                                             updated = TransitionSettings(
-                                                code_model=model_slug,
+                                                code_model=inputs['code_model'].value or '',
                                                 vision_model=inputs['vision_model'].value or '',
                                                 overall_goal=inputs['overall_goal'].value or '',
                                                 user_steering=inputs['user_steering'].value or '',
                                                 code_template=inputs['code_template'].value or '',
                                                 vision_template=inputs['vision_template'].value or '',
                                             )
-                                            prefs.set('model.code', model_slug)
+                                            prefs.set('model.code', updated.code_model)
                                             prefs.set('model.vision', updated.vision_model)
                                             prefs.set('template.code', updated.code_template)
                                             prefs.set('template.vision', updated.vision_template)
