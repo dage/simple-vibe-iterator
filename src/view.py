@@ -227,7 +227,7 @@ class NiceGUIView(IterationEventListener):
 
                         with ui.column().classes('basis-1/2 min-w-0 gap-6'):
                             for model_slug, out in node.outputs.items():
-                                with ui.column().classes('min-w-0 gap-2 border rounded p-2'):
+                                with ui.column().classes('w-full min-w-0 gap-2 border rounded p-2'):
                                     ui.label(f'{model_slug}').classes('text-sm font-semibold')
                                     out_png = out.artifacts.screenshot_filename
                                     if out_png:
