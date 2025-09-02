@@ -228,7 +228,7 @@ class NiceGUIView(IterationEventListener):
                         with ui.column().classes('basis-1/2 min-w-0 gap-6'):
                             for model_slug, out in node.outputs.items():
                                 with ui.column().classes('min-w-0 gap-2 border rounded p-2'):
-                                    ui.label(f'OUTPUT {model_slug}').classes('text-sm font-semibold')
+                                    ui.label(f'{model_slug}').classes('text-sm font-semibold')
                                     out_png = out.artifacts.screenshot_filename
                                     if out_png:
                                         ui.image(out_png).classes('w-full h-auto max-w-full border rounded')
@@ -244,11 +244,6 @@ class NiceGUIView(IterationEventListener):
                                                 out_html_url = '/artifacts/' + html_candidate.name
                                     except Exception:
                                         pass
-                                    if out_html_url:
-                                        with ui.row().classes('items-center gap-2'):
-                                            ui.icon('content_copy').classes('text-sm cursor-pointer').on('click', lambda html=out.html_output: self._copy_to_clipboard(html))
-                                            ui.label('HTML:').classes('text-sm')
-                                            ui.link('Open', out_html_url, new_tab=True).classes('text-sm')
                                     diff_html = self._create_visual_diff(node.html_input or '', out.html_output or '')
                                     with ui.dialog() as diff_dialog:
                                         diff_dialog.props('persistent')
@@ -270,7 +265,12 @@ class NiceGUIView(IterationEventListener):
                                                 ui.html('<span class="legend-chip legend-insert">Insert</span>')
                                                 ui.html('<span class="legend-chip legend-delete">Delete</span>')
                                             ui.html(f"<div class='diff-container'><pre class='diff-content'>{diff_html or _html.escape('(no differences)')}</pre></div>")
-                                    ui.button('Diff', on_click=diff_dialog.open).props('outline dense')
+                                    if out_html_url:
+                                        with ui.row().classes('items-center gap-2'):
+                                            ui.icon('content_copy').classes('text-sm cursor-pointer').on('click', lambda html=out.html_output: self._copy_to_clipboard(html))
+                                            ui.label('HTML:').classes('text-sm')
+                                            ui.link('Open', out_html_url, new_tab=True).classes('text-sm')
+                                            ui.button('Diff', on_click=diff_dialog.open).props('flat dense').classes('text-sm p-0 min-h-0')
                                     out_logs = list(out.artifacts.console_logs or [])
                                     out_title = f"Console logs ({'empty' if len(out_logs) == 0 else len(out_logs)})"
                                     with ui.expansion(out_title):
