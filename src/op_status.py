@@ -3,30 +3,35 @@ from __future__ import annotations
 
 import threading
 import time
+from typing import Dict, Tuple
 
+# Map of worker -> (phase, started_at)
+_phases: Dict[str, Tuple[str, float]] = {}
 _lock = threading.Lock()
-_phase: str = ""
-_phase_started_at: float = 0.0
 
 
-def set_phase(phase: str) -> None:
-    global _phase, _phase_started_at
+def set_phase(worker: str, phase: str) -> None:
+    """Set current phase text for a given worker."""
+    w = worker or "default"
     with _lock:
-        new_phase = str(phase or "")
-        if new_phase != _phase:
-            _phase = new_phase
-            _phase_started_at = time.monotonic() if new_phase else 0.0
+        if phase:
+            _phases[w] = (phase, time.monotonic())
+        else:
+            _phases.pop(w, None)
 
 
-def clear_phase() -> None:
-    set_phase("")
+def clear_phase(worker: str) -> None:
+    set_phase(worker, "")
 
 
-def get_phase_and_elapsed() -> tuple[str, float]:
+def clear_all() -> None:
+    """Remove all worker phases."""
     with _lock:
-        if not _phase:
-            return "", 0.0
-        started = _phase_started_at or time.monotonic()
-        return _phase, max(0.0, time.monotonic() - started)
+        _phases.clear()
 
 
+def get_all_phases() -> Dict[str, Tuple[str, float]]:
+    """Return mapping of worker -> (phase, elapsed_seconds)."""
+    with _lock:
+        now = time.monotonic()
+        return {w: (p, max(0.0, now - ts)) for w, (p, ts) in _phases.items()}
