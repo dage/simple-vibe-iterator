@@ -45,7 +45,7 @@ class NiceGUIView(IterationEventListener):
             ui.label('Simple Vibe Iterator').classes('text-2xl font-bold')
 
             # Container for worker status boxes
-            with ui.row().classes('fixed top-2 right-2 z-50 gap-2 items-start') as sc:
+            with ui.column().classes('fixed top-2 right-2 z-50 gap-2 items-end') as sc:
                 self._status_container = sc
             self._status_timer = ui.timer(0.25, self._refresh_phase)
             self._refresh_phase()
@@ -268,11 +268,11 @@ class NiceGUIView(IterationEventListener):
                                             ui.markdown(out_logs_text)
                                         else:
                                             ui.label('(no console logs)')
-                                    async def _iterate(current_slug=model_slug) -> None:
+                                    async def _iterate() -> None:
                                         if not self._begin_operation('Iterate'):
                                             return
                                         try:
-                                            selected_model = inputs['code_model'].value or current_slug
+                                            selected_model = inputs['code_model'].value or model_slug
                                             updated = TransitionSettings(
                                                 code_model=selected_model,
                                                 vision_model=inputs['vision_model'].value or '',
@@ -290,7 +290,7 @@ class NiceGUIView(IterationEventListener):
                                             ui.notify(f'Iterate failed: {exc}', color='negative', timeout=0, close_button=True)
                                         finally:
                                             self._end_operation()
-                                    ui.button('Iterate', on_click=lambda m=model_slug: asyncio.create_task(_iterate(m))).classes('w-full')
+                                    ui.button('Iterate', on_click=lambda: asyncio.create_task(_iterate())).classes('w-full')
         return card
 
     # --- Operation status helpers ---
@@ -336,7 +336,7 @@ class NiceGUIView(IterationEventListener):
                 with ui.row().classes(box_classes):
                     ui.spinner('dots', color='indigo').classes('w-5 h-5')
                     with ui.column().classes('leading-none gap-0'):
-                        ui.label(worker).classes('font-mono text-sm')
+                        ui.label('Iterate').classes('font-mono text-sm')
                         ui.label(f"{phase} · {elapsed:.1f}s").classes('font-mono text-xs text-gray-600 dark:text-indigo-200')
 
 
