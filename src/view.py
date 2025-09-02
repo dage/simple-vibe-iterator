@@ -295,7 +295,7 @@ class NiceGUIView(IterationEventListener):
                                             prefs.set('model.vision', updated.vision_model)
                                             prefs.set('template.code', updated.code_template)
                                             prefs.set('template.vision', updated.vision_template)
-                                            await self.controller.apply_transition(node.id, updated)
+                                            await self.controller.apply_transition(node.id, updated, model_slug)
                                         except Exception as exc:
                                             ui.notify(f'Iterate failed: {exc}', color='negative', timeout=0, close_button=True)
                                         finally:
