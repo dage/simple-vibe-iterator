@@ -109,8 +109,26 @@ async def δ(
         return model, html_output, artifacts
 
     tasks = [_worker(m) for m in models]
-    gathered = await asyncio.gather(*tasks)
-    results: Dict[str, Tuple[str, TransitionArtifacts]] = {m: (html, art) for m, html, art in gathered}
+    gathered = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    results: Dict[str, Tuple[str, TransitionArtifacts]] = {}
+    failed_models: List[Tuple[str, Exception]] = []
+    
+    for i, result in enumerate(gathered):
+        model = models[i]
+        if isinstance(result, Exception):
+            failed_models.append((model, result))
+            # Print detailed error to terminal
+            print(f"❌ Model '{model}' failed: {type(result).__name__}: {result}")
+        else:
+            model_name, html_output, artifacts = result
+            results[model_name] = (html_output, artifacts)
+    
+    # If no models succeeded, raise an error
+    if not results:
+        model_names = [name for name, _ in failed_models]
+        raise RuntimeError(f"All models failed: {', '.join(model_names)}")
+    
     return results
 
 
