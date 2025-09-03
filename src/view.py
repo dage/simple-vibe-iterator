@@ -269,11 +269,11 @@ class NiceGUIView(IterationEventListener):
                                             ui.markdown(out_logs_text)
                                         else:
                                             ui.label('(no console logs)')
-                                    async def _iterate() -> None:
+                                    async def _iterate_with_slug(slug: str = model_slug) -> None:
                                         if not self._begin_operation('Iterate'):
                                             return
                                         try:
-                                            selected_model = inputs['code_model'].value or model_slug
+                                            selected_model = inputs['code_model'].value or slug
                                             updated = TransitionSettings(
                                                 code_model=selected_model,
                                                 vision_model=inputs['vision_model'].value or '',
@@ -286,13 +286,13 @@ class NiceGUIView(IterationEventListener):
                                             prefs.set('model.vision', updated.vision_model)
                                             prefs.set('template.code', updated.code_template)
                                             prefs.set('template.vision', updated.vision_template)
-                                            await self.controller.apply_transition(node.id, updated, model_slug)
+                                            await self.controller.apply_transition(node.id, updated, slug)
                                         except Exception as exc:
                                             ui.notify(f'Iterate failed: {exc}', color='negative', timeout=0, close_button=True)
                                         finally:
                                             self._end_operation()
 
-                                    ui.button('Iterate', on_click=lambda: asyncio.create_task(_iterate())).classes('w-full')
+                                    ui.button('Iterate', on_click=(lambda slug=model_slug: lambda: asyncio.create_task(_iterate_with_slug(slug)))(model_slug)).classes('w-full')
         return card
 
     # --- Operation status helpers ---
