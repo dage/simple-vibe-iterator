@@ -30,6 +30,7 @@ class NiceGUIView(IterationEventListener):
         self._op_busy: bool = False
         self._status_container: ui.element | None = None
         self._status_timer: ui.timer | None = None
+        self._last_status_hash: str = ""
 
         # Set some default styling
         ui.dark_mode().enable()
@@ -316,8 +317,16 @@ class NiceGUIView(IterationEventListener):
     def _refresh_phase(self) -> None:
         if self._status_container is None:
             return
-        self._status_container.clear()
+        
         phases = op_status.get_all_phases()
+        # Only update UI if status actually changed
+        import json
+        current_hash = json.dumps(phases, sort_keys=True) + str(self._op_busy)
+        if current_hash == self._last_status_hash:
+            return
+        self._last_status_hash = current_hash
+        
+        self._status_container.clear()
         box_classes = (
             'items-start gap-2 bg-white/90 border border-gray-300 rounded px-3 py-2 shadow '
             'dark:bg-indigo-600/20 dark:border-indigo-400/30 dark:text-indigo-100 backdrop-blur-sm'

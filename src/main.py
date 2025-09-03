@@ -68,5 +68,11 @@ if __name__ in {"__main__", "__mp_main__"}:
     # Kill any process using the port before starting
     kill_port_process(PORT)
     
-    _ = create_app()
-    ui.run(title='AI Code Generator', port=PORT)
+    try:
+        _ = create_app()
+        ui.run(title='AI Code Generator', port=PORT)
+    except Exception as e:
+        print(f"CRASH: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
