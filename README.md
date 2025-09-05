@@ -82,7 +82,7 @@ This will:
 ```bash
 python -m src.main
 ```
-Then open `http://localhost:8080`.
+Then open `http://localhost:8055`.
 
 Workflow:
 - Create a root node: enter the overall goal, then click "Create root" (the coding agent creates the initial HTML).
