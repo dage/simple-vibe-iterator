@@ -31,6 +31,7 @@ class NiceGUIView(IterationEventListener):
         self._status_container: ui.element | None = None
         self._status_timer: ui.timer | None = None
         self._last_status_hash: str = ""
+        self._notif_timer: ui.timer | None = None
 
         # Set some default styling
         ui.dark_mode().enable()
@@ -49,6 +50,8 @@ class NiceGUIView(IterationEventListener):
             with ui.column().classes('fixed top-2 right-2 z-50 gap-2 items-end') as sc:
                 self._status_container = sc
             self._status_timer = ui.timer(0.25, self._refresh_phase)
+            # Drain background notifications in UI context
+            self._notif_timer = ui.timer(0.25, self._flush_notifications)
             self._refresh_phase()
 
             with ui.scroll_area().classes('flex-grow w-full') as scroll:
@@ -288,7 +291,8 @@ class NiceGUIView(IterationEventListener):
                                             prefs.set('template.vision', updated.vision_template)
                                             await self.controller.apply_transition(node.id, updated, slug)
                                         except Exception as exc:
-                                            ui.notify(f'Iterate failed: {exc}', color='negative', timeout=0, close_button=True)
+                                            # Route error to UI via notification queue (safe from background tasks)
+                                            op_status.enqueue_notification(f'Iterate failed: {exc}', color='negative', timeout=0, close_button=True)
                                         finally:
                                             self._end_operation()
 
@@ -359,6 +363,23 @@ class NiceGUIView(IterationEventListener):
         except Exception as exc:
             ui.notify(f'Copy failed: {exc}', color='negative', timeout=0, close_button=True)
 
+    def _flush_notifications(self) -> None:
+        """Display any queued notifications from background tasks."""
+        try:
+            items = op_status.drain_notifications()
+        except Exception:
+            items = []
+        for it in items:
+            try:
+                text = str(it.get('text', ''))
+                color = str(it.get('color', 'negative'))
+                timeout = it.get('timeout', 0)
+                close_button = bool(it.get('close_button', True))
+                ui.notify(text, color=color, timeout=timeout, close_button=close_button)
+            except Exception:
+                # Best-effort; drop malformed items
+                pass
+
 
 
     def _create_visual_diff(self, text1: str, text2: str) -> str:
@@ -387,4 +408,3 @@ class NiceGUIView(IterationEventListener):
             else:  # Equal
                 html_parts.append(escaped)
         return ''.join(html_parts)
-

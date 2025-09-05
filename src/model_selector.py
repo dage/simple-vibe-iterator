@@ -6,6 +6,7 @@ import asyncio
 import datetime
 
 from nicegui import ui
+from . import op_status
 
 try:
     from . import or_client as orc
@@ -176,7 +177,8 @@ class ModelSelector:
             models = await orc.list_models(query=query, vision_only=self.vision_only, limit=200)
             self._models = list(models)
         except Exception as exc:
-            ui.notify(f'Failed to load models: {exc}', color='negative', timeout=0, close_button=True)
+            # Use background-safe notification path
+            op_status.enqueue_notification(f'Failed to load models: {exc}', color='negative', timeout=0, close_button=True)
             self._models = []
         self._focused_index = 0 if self._models else -1
         self._render_rows()
@@ -405,5 +407,4 @@ class ModelSelector:
                     pass
             except Exception:
                 pass
-
 

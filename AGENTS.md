@@ -33,10 +33,12 @@
 - CI‑like run locally with `run_all.py`; add new tests following the async pattern used in existing files
 
 ## Commit & Pull Request Guidelines
-- Format: `type: imperative summary ≤50 chars` (no scope in parentheses). Optional single‑line bullets in body.
+- Format: `type: imperative summary ≤50 chars` (no scope in parentheses).
+- Body: start at line 3 (line 2 blank) and use Markdown bullets (`- ...`) with single‑line points.
 - Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`.
 - Example: `fix: prevent single model failures from crashing parallel execution`
 - PRs: concise description, linked issue, UI screenshots when relevant, and validation steps (commands + expected outputs).
+ - Keep messages short and focused; for small changes, a single‑line commit without a body is fine.
 
 ## Security & Configuration Tips
 - Never commit secrets; `.env` is gitignored. Required: `OPENROUTER_API_KEY`; optional: `OPENROUTER_BASE_URL`.
