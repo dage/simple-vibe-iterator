@@ -7,6 +7,7 @@ import datetime
 
 from nicegui import ui
 from . import op_status
+from .params_dialog import open_params_dialog
 
 try:
     from . import or_client as orc
@@ -88,13 +89,14 @@ class ModelSelector:
 
                 self._header = ui.row().classes(
                     'w-full text-xs text-gray-500 dark:text-gray-300 px-2 select-none'
-                ).style('display: grid; grid-template-columns: auto 2fr auto 1fr auto; gap: 0.5rem;')
+                ).style('display: grid; grid-template-columns: auto 2fr auto 1fr auto auto; gap: 0.5rem;')
                 with self._header:
                     ui.label('')
                     ui.label('')
                     ui.label('T/V').classes('text-center')
                     ui.label('Pricing ($/M)').classes('text-center')
                     ui.label('Created').classes('text-center')
+                    ui.label('Params').classes('text-center')
 
                 with ui.element('div').classes('w-full max-h-[360px] overflow-auto') as scroll:
                     self._scroll = scroll
@@ -207,7 +209,7 @@ class ModelSelector:
                 is_checked = m.id in self._selected_ids
                 row = ui.element('div').classes(
                     'w-full px-2 py-1 rounded cursor-default hover:bg-gray-100 dark:hover:bg-gray-800'
-                ).style('display: grid; grid-template-columns: auto 2fr auto 1fr auto; gap: 0.5rem; align-items: center;')
+                ).style('display: grid; grid-template-columns: auto 2fr auto 1fr auto auto; gap: 0.5rem; align-items: center;')
                 if idx == self._focused_index:
                     row.classes('bg-indigo-600/10')
 
@@ -226,6 +228,11 @@ class ModelSelector:
                                 color='green' if m.has_image_input else 'grey').classes('text-sm')
                     ui.label(format_price(m.prompt_price, m.completion_price)).classes('text-sm text-center')
                     ui.label(format_date(m.created)).classes('text-sm text-center')
+                    # Params button opens a separate dialog component
+                    with ui.row().classes('justify-center'):
+                        async def _open_params_handler(mid=m.id, title=m.id):
+                            await open_params_dialog(mid, title_name=title)
+                        ui.button('Params', on_click=_open_params_handler).props('flat dense')
 
                 # Row click: focus only (no selection change)
                 row.on('click', lambda _, i=idx: self._set_focus(i))
@@ -407,4 +414,3 @@ class ModelSelector:
                     pass
             except Exception:
                 pass
-

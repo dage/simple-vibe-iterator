@@ -28,7 +28,7 @@ from openai import (
     RateLimitError,
 )
 from dotenv import load_dotenv
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import time
 
 # ---------------- Settings & client ---------------- #
@@ -57,6 +57,7 @@ class ModelInfo:
     prompt_price: float        # Price per million input tokens ($)
     completion_price: float    # Price per million output tokens ($)
     created: int               # Unix timestamp when model was created
+    supported_parameters: List[str] = field(default_factory=list)  # Supported parameters as reported by API
 
 
 @lru_cache
@@ -161,6 +162,12 @@ def _parse_model_data(data: Dict[str, Any]) -> Optional[ModelInfo]:
         
         # Parse created timestamp (defaults to 0 if not provided)
         created = int(data.get("created", 0))
+
+        # Parse supported parameters if present
+        sp = data.get("supported_parameters") or []
+        supported_parameters: List[str] = []
+        if isinstance(sp, list):
+            supported_parameters = [str(x) for x in sp if isinstance(x, (str, int, float))]
         
         return ModelInfo(
             id=model_id,
@@ -170,6 +177,7 @@ def _parse_model_data(data: Dict[str, Any]) -> Optional[ModelInfo]:
             prompt_price=prompt_price,
             completion_price=completion_price,
             created=created,
+            supported_parameters=supported_parameters,
         )
     except Exception as e:
         print(f"⚠️  Failed to parse model data: {e}")
@@ -289,11 +297,33 @@ async def chat(
     """
     s = _settings()
 
+    # Merge stored per-model params (if any), filtered to supported keys
+    merged_kwargs = dict(kwargs)
+    try:
+        slug = model or s.code_model
+        # Find supported params from cached model list
+        supported = []
+        try:
+            # Prefer cache; if empty, fetch
+            from . import model_params as mp  # local import to avoid circulars in tests
+        except Exception:
+            import model_params as mp  # type: ignore
+        # Use cached models if present; otherwise fetch one page
+        mlist = await list_models(force_refresh=False, limit=2000)
+        sp = next((m.supported_parameters for m in mlist if m.id == slug), [])
+        stored = mp.get_sanitized_params_for_api(slug, sp)
+        # Stored defaults < explicit kwargs
+        for k, v in stored.items():
+            if k not in merged_kwargs:
+                merged_kwargs[k] = v
+    except Exception:
+        pass
+
     async def call():
         return await _client().chat.completions.create(
             model=model or s.code_model,
             messages=messages,
-            **kwargs,
+            **merged_kwargs,
         )
 
     res = await _retry(call)

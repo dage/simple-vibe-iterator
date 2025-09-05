@@ -32,6 +32,27 @@
 - Expectations: cover state machine transitions, OpenRouter services, artifact creation
 - CI‑like run locally with `run_all.py`; add new tests following the async pattern used in existing files
 
+### Agent Development Workflow (Quality Bar)
+- Prefer targeted test runs while iterating: `-k <substr>` and `-j 1` to reduce flakiness and noise.
+- Validate UI changes you make by exercising the exact view or component you changed. For dialogs/slots, open/close at least twice and verify state persists.
+- When adding config/state files, isolate tests from user data (use env overrides like `MODEL_PARAMS_PATH` or temp dirs) to avoid cross‑test interference.
+- Reproduce reported bugs locally before handing off; include the minimal command to verify the fix.
+- If tests require network or browsers, run only the smallest set needed until ready for a full run.
+
+### NiceGUI & Quasar Patterns
+- Use native `ui.table` with a scoped body slot (`add_slot('body', scope='props')`) for custom cell content; avoid passing `props` to `ui.element(...)` directly.
+- Avoid closure capture bugs in per‑row actions: pass the dialog/table instance into callbacks explicitly.
+- Keep dialogs full‑width for complex forms and prefer outlined, dense inputs for readability.
+
+### OpenRouter / Model Parameters Invariants
+- Only send parameters explicitly stored by the user per model. Do not invent defaults.
+- Filter stored params to the model’s `supported_parameters` when available; if unknown, pass through.
+- Call‑site kwargs take precedence over stored params unless product direction states otherwise.
+
+### External Knowledge & Fresh Docs
+- When allowed by the environment and approvals, search for recent solutions and updated docs (e.g., NiceGUI/Quasar slot usage, OpenRouter parameter schema changes) before implementing.
+- Capture any critical findings as short comments in PR descriptions or as brief notes in the code near tricky integrations.
+
 ## Commit & Pull Request Guidelines
 - Format: `type: imperative summary ≤50 chars` (no scope in parentheses).
 - Body: start at line 3 (line 2 blank) and use Markdown bullets (`- ...`) with single‑line points.
@@ -49,3 +70,8 @@
 - Avoid scope creep; implement only requested changes.
 - Re‑running mid‑chain deletes descendants; do not bypass operation locking.
 - Preserve state‑machine flow: render → screenshot/console → vision → code → output.
+
+### Simplicity & Modularity
+- Prefer the simplest working approach. Avoid introducing fallback data or extra layers unless required by product constraints.
+- Consolidate functionality and keep modules focused; extract UI components when they grow complex, but do not duplicate logic across places.
+- Remove scaffolding once no longer needed; keep the codebase lean and easy to reason about.
