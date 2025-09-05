@@ -18,6 +18,12 @@ from . import prefs
 from .model_selector import ModelSelector
 
 
+def format_html_size(html: str) -> str:
+    """Return size of HTML in kilobytes with two decimal places."""
+    size_kb = len((html or "").encode("utf-8")) / 1024
+    return f"{size_kb:.2f} KB"
+
+
 class NiceGUIView(IterationEventListener):
     def __init__(self, controller: IterationController):
         self.controller = controller
@@ -193,9 +199,12 @@ class NiceGUIView(IterationEventListener):
                             else:
                                 ui.label('(no input screenshot)')
                             if input_html_url:
+                                size = format_html_size(node.html_input)
                                 with ui.row().classes('items-center gap-2'):
                                     ui.icon('content_copy').classes('text-sm cursor-pointer').on('click', lambda html=node.html_input: self._copy_to_clipboard(html))
-                                    ui.label('HTML:').classes('text-sm')
+                                    ui.label('HTML').classes('text-sm')
+                                    ui.label(f'({size})').classes('text-sm text-gray-600 dark:text-gray-400')
+                                    ui.label(':').classes('text-sm')
                                     ui.link('Open', input_html_url, new_tab=True).classes('text-sm')
                             in_logs = list(getattr(first_output.artifacts, 'input_console_logs', []) if first_output else [])
                             in_title = f"Console logs ({'empty' if len(in_logs) == 0 else len(in_logs)})"
@@ -259,9 +268,12 @@ class NiceGUIView(IterationEventListener):
                                                 ui.html('<span class="legend-chip legend-delete">Delete</span>')
                                             ui.html(f"<div class='diff-container'><pre class='diff-content'>{diff_html or _html.escape('(no differences)')}</pre></div>")
                                     if out_html_url:
+                                        size = format_html_size(out.html_output)
                                         with ui.row().classes('items-center gap-2'):
                                             ui.icon('content_copy').classes('text-sm cursor-pointer').on('click', lambda html=out.html_output: self._copy_to_clipboard(html))
-                                            ui.label('HTML:').classes('text-sm')
+                                            ui.label('HTML').classes('text-sm')
+                                            ui.label(f'({size})').classes('text-sm text-gray-600 dark:text-gray-400')
+                                            ui.label(':').classes('text-sm')
                                             ui.link('Open', out_html_url, new_tab=True).classes('text-sm')
                                             ui.button('Diff', on_click=diff_dialog.open).props('flat dense').classes('text-sm p-0 min-h-0')
                                     out_logs = list(out.artifacts.console_logs or [])
