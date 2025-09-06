@@ -284,9 +284,12 @@ class NiceGUIView(IterationEventListener):
                                                         with ui.row().classes('items-center justify-between w-full'):
                                                             ui.label('Model Reasoning').classes('text-lg font-semibold')
                                                             ui.button(icon='close', on_click=reasoning_dialog.close).props('flat round dense')
-                                                        # Show reasoning as markdown with spacing
-                                                        rtxt = (out.reasoning_text or '').replace('\n', '\n\n')
-                                                        ui.markdown(rtxt)
+                                                        # Render reasoning as markdown but prevent raw HTML from rendering
+                                                        # by escaping angle brackets. This preserves markdown formatting
+                                                        # (e.g., **bold**, lists, code fences) while neutralizing tags.
+                                                        raw_reasoning = (out.reasoning_text or '')
+                                                        safe_reasoning = _html.escape(raw_reasoning, quote=False)
+                                                        ui.markdown(safe_reasoning)
                                                 ui.icon('psychology').classes('text-gray-500 cursor-pointer').on('click', reasoning_dialog.open)
                                     out_logs = list(out.artifacts.console_logs or [])
                                     out_title = f"Console logs ({'empty' if len(out_logs) == 0 else len(out_logs)})"
