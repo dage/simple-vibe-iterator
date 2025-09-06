@@ -16,6 +16,7 @@ from .interfaces import (
     VisionService,
     ModelOutput,
 )
+from . import op_status
 
 
 def _compute_html_diff(html_input: str, html_output: str) -> str:
@@ -120,6 +121,16 @@ async def δ(
             failed_models.append((model, result))
             # Print detailed error to terminal
             print(f"❌ Model '{model}' failed: {type(result).__name__}: {result}")
+            # Surface error to UI as a non-blocking notification
+            try:
+                op_status.enqueue_notification(
+                    f"Model '{model}' failed: {type(result).__name__}: {result}",
+                    color='negative',
+                    timeout=0,
+                    close_button=True,
+                )
+            except Exception:
+                pass
         else:
             model_name, html_output, reasoning_text, artifacts = result
             results[model_name] = (html_output, reasoning_text, artifacts)
