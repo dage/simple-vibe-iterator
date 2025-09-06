@@ -47,21 +47,21 @@ async def test_param_application() -> Tuple[bool, str]:
             "No spaces, no punctuation, no explanations."
         )
 
-        # Apply tight limit and measure completion tokens via usage
+        # Apply tight limit and compare content lengths
         mp.set_params(slug, {"max_tokens": "16"})
-        short_meta = await or_client.chat_with_meta(messages=[{"role": "user", "content": prompt}], model=slug, temperature=0)
-        short_ct = int((short_meta.get("usage", {}) or {}).get("completion_tokens") or 0)
+        short_content, short_meta = await or_client.chat_with_meta(messages=[{"role": "user", "content": prompt}], model=slug, temperature=0)
+        short_len = len((short_content or '').strip())
 
         # Apply larger limit
         mp.set_params(slug, {"max_tokens": "256"})
-        long_meta = await or_client.chat_with_meta(messages=[{"role": "user", "content": prompt}], model=slug, temperature=0)
-        long_ct = int((long_meta.get("usage", {}) or {}).get("completion_tokens") or 0)
+        long_content, long_meta = await or_client.chat_with_meta(messages=[{"role": "user", "content": prompt}], model=slug, temperature=0)
+        long_len = len((long_content or '').strip())
 
-        ok = (long_ct > short_ct) and (long_ct >= max(40, short_ct + 10))
+        ok = (long_len > short_len) and (long_len >= max(40, short_len + 10))
         details = json.dumps({
-            "short_completion_tokens": short_ct,
-            "long_completion_tokens": long_ct,
-            "short_preview": (short_meta.get("content", "") or "")[:40]
+            "short_len": short_len,
+            "long_len": long_len,
+            "short_preview": (short_content or "")[:40]
         })
         return ok, details
     finally:

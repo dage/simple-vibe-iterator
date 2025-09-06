@@ -97,8 +97,8 @@ async def δ(
     code_ctx = _build_template_context(html_input=html_input, settings=settings, vision_output=in_vision_output, console_logs=in_console_logs, html_diff=html_diff)
     code_prompt = settings.code_template.format(**code_ctx)
 
-    async def _worker(model: str) -> Tuple[str, str, str, TransitionArtifacts]:
-        html_output, reasoning = await ai_service.generate_html(code_prompt, model, worker=model)
+    async def _worker(model: str) -> Tuple[str, str, str, dict | None, TransitionArtifacts]:
+        html_output, reasoning, meta = await ai_service.generate_html(code_prompt, model, worker=model)
         out_screenshot_path, out_console_logs = await browser_service.render_and_capture(html_output, worker=model)
         artifacts = TransitionArtifacts(
             screenshot_filename=out_screenshot_path,
@@ -107,12 +107,12 @@ async def δ(
             input_screenshot_filename=in_screenshot_path,
             input_console_logs=in_console_logs,
         )
-        return model, html_output, (reasoning or ""), artifacts
+        return model, html_output, (reasoning or ""), (meta or None), artifacts
 
     tasks = [_worker(m) for m in models]
     gathered = await asyncio.gather(*tasks, return_exceptions=True)
     
-    results: Dict[str, Tuple[str, str, TransitionArtifacts]] = {}
+    results: Dict[str, Tuple[str, str, dict | None, TransitionArtifacts]] = {}
     failed_models: List[Tuple[str, Exception]] = []
     
     for i, result in enumerate(gathered):
@@ -132,8 +132,8 @@ async def δ(
             except Exception:
                 pass
         else:
-            model_name, html_output, reasoning_text, artifacts = result
-            results[model_name] = (html_output, reasoning_text, artifacts)
+            model_name, html_output, reasoning_text, meta, artifacts = result
+            results[model_name] = (html_output, reasoning_text, meta, artifacts)
     
     # If no models succeeded, raise an error
     if not results:
@@ -222,8 +222,25 @@ class IterationController:
         # Create and store node
         outputs_dict: Dict[str, ModelOutput] = {}
         for m, triple in results.items():
-            html, reasoning_text, art = triple
-            outputs_dict[m] = ModelOutput(html_output=html, artifacts=art, reasoning_text=reasoning_text or "")
+            html, reasoning_text, meta, art = triple
+            total_cost = None
+            generation_time = None
+            try:
+                if isinstance(meta, dict):
+                    tc = meta.get('total_cost')
+                    gt = meta.get('generation_time')
+                    total_cost = float(tc) if tc is not None else None
+                    generation_time = float(gt) if gt is not None else None
+            except Exception:
+                total_cost = None
+                generation_time = None
+            outputs_dict[m] = ModelOutput(
+                html_output=html,
+                artifacts=art,
+                reasoning_text=reasoning_text or "",
+                total_cost=total_cost,
+                generation_time=generation_time,
+            )
         node = IterationNode(
             parent_id=parent_id,
             html_input=html_input,

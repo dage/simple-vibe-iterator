@@ -231,6 +231,15 @@ class NiceGUIView(IterationEventListener):
                             for model_slug, out in node.outputs.items():
                                 with ui.column().classes('w-full min-w-0 gap-2 border rounded p-2'):
                                     ui.label(f'{model_slug}').classes('text-sm font-semibold')
+                                    # Always render a subtle metadata line under the model slug
+                                    try:
+                                        cost = getattr(out, 'total_cost', None)
+                                        time_s = getattr(out, 'generation_time', None)
+                                        cost_str = (f"${cost:.6f}" if isinstance(cost, (int, float)) else "$—")
+                                        time_str = (f"{float(time_s):.1f}s" if isinstance(time_s, (int, float)) else "—")
+                                        ui.label(f"{cost_str} · {time_str}").classes('text-xs text-gray-500 dark:text-gray-400 leading-tight')
+                                    except Exception:
+                                        ui.label("$— · —").classes('text-xs text-gray-500 dark:text-gray-400 leading-tight')
                                     out_png = out.artifacts.screenshot_filename
                                     if out_png:
                                         ui.image(out_png).classes('w-full h-auto max-w-full border rounded')

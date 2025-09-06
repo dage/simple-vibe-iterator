@@ -258,7 +258,7 @@ def encode_image_to_data_url(
     return f"data:{mime};base64,{b64}"
 
 
-async def _retry(coro_fn, max_tries: int = 5, base: float = 0.5):
+async def _retry(coro_fn, max_tries: int = 5, base: float = 0.5, retry_on=None):
     """
     Exponential backoff for transient conditions:
       - 429 (rate limit), 408 (timeout), 5xx, network/timeout errors.
@@ -283,6 +283,14 @@ async def _retry(coro_fn, max_tries: int = 5, base: float = 0.5):
                 await asyncio.sleep(base * (2 ** i) + random.random() * 0.1)
             else:
                 raise
+        except Exception as e:
+            # Optional predicate for non-OpenAI paths (e.g., httpx)
+            should_retry = bool(retry_on(e)) if callable(retry_on) else False
+            if not should_retry:
+                raise
+            if i == max_tries - 1:
+                raise
+            await asyncio.sleep(base * (2 ** i) + random.random() * 0.1)
 
 
 # -------------- Public stateless helpers -------------- #
@@ -322,8 +330,8 @@ async def chat(
         pass
 
     # Use the richer helper and return only textual content for backward compatibility
-    meta = await chat_with_meta(messages=messages, model=model, **merged_kwargs)
-    return meta.get("content", "")
+    content, _meta = await chat_with_meta(messages=messages, model=model, **merged_kwargs)
+    return content or ""
 
 
 async def vision_single(
@@ -352,14 +360,16 @@ async def chat_with_meta(
     messages: List[Dict[str, Any]],
     model: Optional[str] = None,
     **kwargs,
-) -> Dict[str, Any]:
+) -> tuple[str, Dict[str, Any]]:
     """
     Rich chat helper that returns both content and provider-specific fields like reasoning.
 
-    Returns a dict:
+    Returns a tuple of (content, meta):
     - content: str (assistant message content)
-    - reasoning: str (provider-specific reasoning text if present, else empty)
-    - raw: Optional minimal raw fields for debugging (provider-dependent)
+    - meta: dict containing at minimum:
+        - reasoning: str (provider-specific reasoning text if present)
+        - total_cost: float | None (USD, from GET /generation)
+        - generation_time: float | None (seconds, from GET /generation)
     """
     s = _settings()
 
@@ -390,7 +400,9 @@ async def chat_with_meta(
     res = await _retry(call)
     content: str = ""
     reasoning: str = ""
+    req_id: Optional[str] = None
     try:
+        req_id = getattr(res, "id", None)
         msg = res.choices[0].message
         # Extract content (string or list-of-text parts)
         c = getattr(msg, "content", None)
@@ -422,16 +434,58 @@ async def chat_with_meta(
         content = content or ""
         reasoning = reasoning or ""
 
-    usage = {}
+    # Token usage is intentionally omitted to keep API minimal per product direction
+    # Fetch additional generation metadata from OpenRouter's native endpoint
+    total_cost: Optional[float] = None
+    generation_time: Optional[float] = None
     try:
-        u = getattr(res, "usage", None)
-        if u is not None:
-            usage = {
-                "prompt_tokens": getattr(u, "prompt_tokens", None),
-                "completion_tokens": getattr(u, "completion_tokens", None),
-                "total_tokens": getattr(u, "total_tokens", None),
-            }
-    except Exception:
-        usage = {}
+        if req_id:
+            import httpx  # OpenAI SDK depends on httpx, so it's available
+            url = f"{s.base_url}/generation"
+            headers = {"Authorization": f"Bearer {s.api_key}"}
 
-    return {"content": content or "", "reasoning": reasoning or "", "usage": usage}
+            async def _get_generation():
+                async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as http:
+                    resp = await http.get(url, params={"id": req_id}, headers=headers)
+                # Raise for non-2xx to unify handling
+                resp.raise_for_status()
+                return resp.json() or {}
+
+            def _retry_on(exc: Exception) -> bool:
+                try:
+                    # Retry on typical httpx network errors and on specific status codes
+                    if isinstance(exc, httpx.HTTPStatusError):
+                        code = getattr(getattr(exc, "response", None), "status_code", None)
+                        return code in (404, 408, 429, 500, 502, 503, 504)
+                    if isinstance(exc, httpx.HTTPError):
+                        return True
+                except Exception:
+                    pass
+                return False
+
+            data = await _retry(_get_generation, max_tries=6, base=0.25, retry_on=_retry_on)
+            d = data.get("data", data) if isinstance(data, dict) else {}
+            # According to docs, keys are 'total_cost' (USD) and 'generation_time' (seconds)
+            tc = d.get("total_cost")
+            gt = d.get("generation_time")
+            try:
+                total_cost = float(tc) if tc is not None else None
+            except Exception:
+                total_cost = None
+            try:
+                gtf = float(gt) if gt is not None else None
+                if gtf is not None:
+                    # Some providers return ms; normalize to seconds if value looks like ms
+                    generation_time = gtf / 1000.0 if gtf >= 1000.0 else gtf
+            except Exception:
+                generation_time = None
+    except Exception:
+        # Best-effort: do not fail the main call if metadata fetch fails
+        pass
+
+    meta: Dict[str, Any] = {
+        "reasoning": reasoning or "",
+        "total_cost": total_cost,
+        "generation_time": generation_time,
+    }
+    return (content or "", meta)

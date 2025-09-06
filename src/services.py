@@ -39,18 +39,18 @@ class PlaywrightBrowserService(BrowserService):
 # ---- OpenRouter-backed services ----
 
 class OpenRouterAICodeService(AICodeService):
-    async def generate_html(self, prompt: str, model: str, worker: str = "main") -> tuple[str, str | None]:
+    async def generate_html(self, prompt: str, model: str, worker: str = "main") -> tuple[str, str | None, dict | None]:
         # Defer import to avoid requiring env when using stubs/tests
         from . import or_client
 
         # Minimal call: the controller provides a full prompt with context
         op_status.set_phase(worker, f"Code: {model}")
-        meta = await or_client.chat_with_meta(
+        content, meta = await or_client.chat_with_meta(
             messages=[{"role": "user", "content": prompt}],
             model=model,
         )
         op_status.clear_phase(worker)
-        return (meta.get("content", "") or "", meta.get("reasoning") or None)
+        return (content or "", (meta.get("reasoning") or None), meta)
 
 
 class OpenRouterVisionService(VisionService):
@@ -73,4 +73,3 @@ class OpenRouterVisionService(VisionService):
         )
         op_status.clear_phase(worker)
         return reply or ""
-

@@ -70,8 +70,8 @@ async def test_deepseek_reasoning_vs_plain() -> Tuple[bool, str]:
         lengths: list[int] = []
         for _ in range(n):
             # Use rich meta to also verify presence/absence of reasoning
-            meta = await or_client.chat_with_meta(messages=msgs, model=slug)
-            content = meta.get('content', '') or ''
+            content, meta = await or_client.chat_with_meta(messages=msgs, model=slug)
+            content = content or ''
             reasoning = meta.get('reasoning', '') or ''
             # Assert that when reasoning disabled, we didn't receive reasoning tokens
             if not with_reasoning:

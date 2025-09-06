@@ -38,7 +38,7 @@ async def run_once(slug: str, prompt: str) -> dict:
 
     # Ask for visible reasoning with a high effort hint.
     # We send via kwargs to avoid mutating stored per-model params.
-    meta = await or_client.chat_with_meta(
+    content, meta = await or_client.chat_with_meta(
         messages=[{"role": "user", "content": prompt}],
         model=slug,
         include_reasoning=True,
@@ -46,8 +46,7 @@ async def run_once(slug: str, prompt: str) -> dict:
         temperature=0.2,
         max_tokens=512,
     )
-
-    content = meta.get("content", "") or ""
+    content = content or ""
     reasoning = meta.get("reasoning", "") or ""
     fmt = guess_format(reasoning)
     return {
@@ -99,4 +98,3 @@ async def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(asyncio.run(main()))
-
