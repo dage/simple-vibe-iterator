@@ -101,3 +101,11 @@ Workflow:
 Notes:
 - Screenshots/HTML are written to `artifacts/` (ignored by Git).
 - Configuration is read from `config.yaml`; templates are not duplicated in code.
+
+### Model parameters
+- Per‑model parameters are editable from the UI “Params” dialog and stored in `model_params.json`.
+- We fetch each model’s `supported_parameters` from OpenRouter and show them as fields.
+- Parameters are sent to OpenRouter via the OpenAI client’s `extra_body`, which allows provider‑specific keys (e.g., `reasoning`, `include_reasoning`).
+- Enter booleans/numbers/objects as JSON to ensure correct typing. Examples:
+  - `include_reasoning`: `true`
+  - `reasoning`: `{ "effort": "high" }`

@@ -297,7 +297,9 @@ async def chat(
     """
     s = _settings()
 
-    # Merge stored per-model params (if any), filtered to supported keys
+    # Merge stored per-model params (if any), filtered to supported keys.
+    # IMPORTANT: We pass all merged params via `extra_body` to avoid the OpenAI
+    # Python SDK rejecting unknown provider-specific fields (e.g., "reasoning").
     merged_kwargs = dict(kwargs)
     try:
         slug = model or s.code_model
@@ -319,30 +321,9 @@ async def chat(
     except Exception:
         pass
 
-    async def call():
-        return await _client().chat.completions.create(
-            model=model or s.code_model,
-            messages=messages,
-            **merged_kwargs,
-        )
-
-    res = await _retry(call)
-    # Minimal extraction following OpenAI-compatible shape
-    try:
-        content = res.choices[0].message.content
-    except Exception:
-        return ""
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        texts: List[str] = []
-        for part in content:
-            if isinstance(part, dict):
-                t = part.get("text")
-                if isinstance(t, str):
-                    texts.append(t)
-        return "\n".join(t for t in texts if t)
-    return str(content or "")
+    # Use the richer helper and return only textual content for backward compatibility
+    meta = await chat_with_meta(messages=messages, model=model, **merged_kwargs)
+    return meta.get("content", "")
 
 
 async def vision_single(
@@ -365,3 +346,92 @@ async def vision_single(
         ],
     }]
     return await chat(msgs, model=model or s.vision_model, **kwargs)
+
+
+async def chat_with_meta(
+    messages: List[Dict[str, Any]],
+    model: Optional[str] = None,
+    **kwargs,
+) -> Dict[str, Any]:
+    """
+    Rich chat helper that returns both content and provider-specific fields like reasoning.
+
+    Returns a dict:
+    - content: str (assistant message content)
+    - reasoning: str (provider-specific reasoning text if present, else empty)
+    - raw: Optional minimal raw fields for debugging (provider-dependent)
+    """
+    s = _settings()
+
+    # Merge stored per-model params (if any), filtered to supported keys, as in chat()
+    merged_kwargs = dict(kwargs)
+    try:
+        slug = model or s.code_model
+        try:
+            from . import model_params as mp
+        except Exception:
+            import model_params as mp  # type: ignore
+        mlist = await list_models(force_refresh=False, limit=2000)
+        sp = next((m.supported_parameters for m in mlist if m.id == slug), [])
+        stored = mp.get_sanitized_params_for_api(slug, sp)
+        for k, v in stored.items():
+            if k not in merged_kwargs:
+                merged_kwargs[k] = v
+    except Exception:
+        pass
+
+    async def call():
+        return await _client().chat.completions.create(
+            model=model or s.code_model,
+            messages=messages,
+            extra_body=merged_kwargs or None,
+        )
+
+    res = await _retry(call)
+    content: str = ""
+    reasoning: str = ""
+    try:
+        msg = res.choices[0].message
+        # Extract content (string or list-of-text parts)
+        c = getattr(msg, "content", None)
+        if isinstance(c, str):
+            content = c
+        elif isinstance(c, list):
+            texts: List[str] = []
+            for part in c:
+                if isinstance(part, dict):
+                    t = part.get("text")
+                    if isinstance(t, str):
+                        texts.append(t)
+            content = "\n".join(t for t in texts if t)
+        else:
+            content = str(c or "")
+        # Extract provider-specific 'reasoning' if present (OpenRouter-specific)
+        r = getattr(msg, "reasoning", None)
+        if isinstance(r, str):
+            reasoning = r
+        elif isinstance(r, list):  # some providers may return structured parts
+            reasoning = "\n".join(str(x) for x in r if x)
+        elif r is not None:
+            try:
+                # best-effort stringify
+                reasoning = str(r)
+            except Exception:
+                reasoning = ""
+    except Exception:
+        content = content or ""
+        reasoning = reasoning or ""
+
+    usage = {}
+    try:
+        u = getattr(res, "usage", None)
+        if u is not None:
+            usage = {
+                "prompt_tokens": getattr(u, "prompt_tokens", None),
+                "completion_tokens": getattr(u, "completion_tokens", None),
+                "total_tokens": getattr(u, "total_tokens", None),
+            }
+    except Exception:
+        usage = {}
+
+    return {"content": content or "", "reasoning": reasoning or "", "usage": usage}

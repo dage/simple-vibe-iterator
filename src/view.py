@@ -276,6 +276,18 @@ class NiceGUIView(IterationEventListener):
                                             ui.label(':').classes('text-sm')
                                             ui.link('Open', out_html_url, new_tab=True).classes('text-sm')
                                             ui.button('Diff', on_click=diff_dialog.open).props('flat dense').classes('text-sm p-0 min-h-0')
+                                            # Reasoning indicator (grey brain icon) if reasoning is present
+                                            if (out.reasoning_text or '').strip():
+                                                with ui.dialog() as reasoning_dialog:
+                                                    reasoning_dialog.props('persistent')
+                                                    with ui.card().classes('w-[90vw] max-w-[900px]'):
+                                                        with ui.row().classes('items-center justify-between w-full'):
+                                                            ui.label('Model Reasoning').classes('text-lg font-semibold')
+                                                            ui.button(icon='close', on_click=reasoning_dialog.close).props('flat round dense')
+                                                        # Show reasoning as markdown with spacing
+                                                        rtxt = (out.reasoning_text or '').replace('\n', '\n\n')
+                                                        ui.markdown(rtxt)
+                                                ui.icon('psychology').classes('text-gray-500 cursor-pointer').on('click', reasoning_dialog.open)
                                     out_logs = list(out.artifacts.console_logs or [])
                                     out_title = f"Console logs ({'empty' if len(out_logs) == 0 else len(out_logs)})"
                                     with ui.expansion(out_title):

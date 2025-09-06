@@ -1,5 +1,15 @@
 {
   "moonshotai/kimi-k2-0905": {
     "temperature": "0.1"
+  },
+  "x-ai/grok-code-fast-1": {
+    "reasoning": "{\"effort\": \"high\"}",
+    "temperature": "0"
+  },
+  "deepseek/deepseek-chat-v3.1": {
+    "reasoning": "{\"effort\": \"high\"}"
+  },
+  "qwen/qwen3-30b-a3b-thinking-2507": {
+    "reasoning": "{\"effort\": \"high\"}"
   }
 }

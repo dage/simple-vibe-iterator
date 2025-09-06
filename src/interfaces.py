@@ -31,6 +31,7 @@ class TransitionArtifacts:
 class ModelOutput:
     html_output: str
     artifacts: TransitionArtifacts
+    reasoning_text: str = ""
 
 
 @dataclass
@@ -45,7 +46,7 @@ class IterationNode:
 # ---- Service protocols (unchanged public surface) ----
 
 class AICodeService(Protocol):
-    async def generate_html(self, prompt: str, model: str, worker: str = "main") -> str: ...
+    async def generate_html(self, prompt: str, model: str, worker: str = "main") -> tuple[str, str | None]: ...
 
 
 class BrowserService(Protocol):
