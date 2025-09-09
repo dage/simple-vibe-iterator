@@ -1,5 +1,4 @@
-Create a visually stunning karaoke player.
-
+Create an ultra-immersive, visually breathtaking karaoke player that captures the playful, rhythmic essence of a Thai folk-inspired song with metaphorical lyrics about rural life and longing. Elevate it to a next-level experience: think dynamic, synchronized visuals that pulse with the beat—glowing neon lyrics that bloom like rice fields under moonlight, particle effects simulating flowing water and sparkling dew, animated backgrounds with subtle Thai cultural motifs (e.g., misty paddies, swaying grass, ethereal fireflies), and smooth transitions that react to vocal intensity. Use cutting-edge web tech like HTML5 audio, canvas and WebGL for fluid animations, CSS keyframes for lyric highlights, and JavaScript for precise timestamp syncing. Make it responsive, interactive (e.g., pause/resume, speed controls, mic input if possible), and exportable as a standalone web app. Ensure flawless word-by-word highlighting with subtle glows, fades, and bounces for maximum vibe. Optimize for amazing visual quality assuming the user has a powerful GPU.
 Audio file: https://public-file-hosting-lovely.s3.eu-west-1.amazonaws.com/karaoke_20250818-161238_116068/song.mp3
 
 Sentence lyrics, tab-separated:
