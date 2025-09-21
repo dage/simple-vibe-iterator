@@ -8,6 +8,9 @@ import os
 import sys
 
 
+os.environ.setdefault("OPENROUTER_DISABLE_RETRY", "1")
+
+
 def get_project_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
@@ -25,11 +28,35 @@ def inject_src_into_syspath(project_root: Path) -> None:
 
 
 # Test-local stub services (do not rely on network)
+def _prompt_to_text(prompt) -> str:
+    try:
+        if hasattr(prompt, 'messages'):
+            messages = list(getattr(prompt, 'messages', []) or [])
+        elif isinstance(prompt, list):
+            messages = list(prompt)
+        else:
+            return str(prompt or "")
+        if not messages:
+            return ""
+        first = messages[0] or {}
+        content = first.get('content', '') if isinstance(first, dict) else ''
+        if isinstance(content, list):
+            texts = [
+                str(part.get('text', ''))
+                for part in content
+                if isinstance(part, dict) and part.get('type') == 'text'
+            ]
+            return "\n".join([t for t in texts if t])
+        return str(content or "")
+    except Exception:
+        return str(prompt or "")
+
+
 class _TestStubAICodeService:
-    async def generate_html(self, prompt: str, model: str, worker: str = "main") -> str:
+    async def generate_html(self, prompt, model: str, worker: str = "main") -> str:
         await asyncio.sleep(0.05)
-        safe = (prompt or "").strip()[:200]
-        return (
+        safe = _prompt_to_text(prompt).strip()[:200]
+        html = (
             "<!DOCTYPE html>\n"
             "<html><head><meta charset=\"utf-8\"><title>Generated Page</title>\n"
             "<style>body{font-family:sans-serif;padding:24px} .box{padding:16px;border:1px solid #ccc;border-radius:8px}</style>\n"
@@ -38,6 +65,7 @@ class _TestStubAICodeService:
             "<script>console.log('Page loaded');</script>\n"
             "</body></html>"
         )
+        return html, "", {}
 
 
 class _TestStubVisionService:
@@ -72,7 +100,7 @@ async def build_controller():
 
 
 def default_settings(overall_goal: str = ""):
-    from src.interfaces import TransitionSettings
+    from src.interfaces import IterationMode, TransitionSettings
     from src import config as app_config
 
     cfg = app_config.get_config()
@@ -96,6 +124,7 @@ def default_settings(overall_goal: str = ""):
             "User steering: {user_steering}\n"
             "HTML:\n{html_input}\n"
         ),
+        mode=IterationMode.VISION_SUMMARY,
     )
 
 
@@ -171,18 +200,19 @@ async def test_artifacts_presence() -> Tuple[bool, str]:
 
 async def test_prompt_placeholders() -> Tuple[bool, str]:
     # Recording AI service to capture the prompt sent by δ
-    from src.controller import IterationController
+    from src.controller import IterationController, _compute_html_diff
     from src.interfaces import AICodeService, TransitionSettings
+    from src.prompt_builder import _build_template_context
     from src.services import PlaywrightBrowserService
-    from src.controller import _build_template_context, _compute_html_diff
 
     class RecordingAICodeService(AICodeService):
         def __init__(self) -> None:
             self.last_prompt: str = ""
-        async def generate_html(self, prompt: str, model: str, worker: str = "main") -> str:
-            self.last_prompt = prompt
-            safe = (prompt or "").strip()[:200]
-            return (
+        async def generate_html(self, prompt, model: str, worker: str = "main") -> str:
+            text = _prompt_to_text(prompt)
+            self.last_prompt = text
+            safe = text.strip()[:200]
+            html = (
                 "<!DOCTYPE html>\n"
                 "<html><head><meta charset=\"utf-8\"><title>Generated Page</title>\n"
                 "<style>body{font-family:sans-serif;padding:24px} .box{padding:16px;border:1px solid #ccc;border-radius:8px}</style>\n"
@@ -191,6 +221,7 @@ async def test_prompt_placeholders() -> Tuple[bool, str]:
                 "<script>console.log('Page loaded');</script>\n"
                 "</body></html>"
             )
+            return html, "", {}
 
     ai = RecordingAICodeService()
     browser = PlaywrightBrowserService()
@@ -214,7 +245,7 @@ async def test_prompt_placeholders() -> Tuple[bool, str]:
     expected_prompt = settings.code_template.format(**_build_template_context(
         html_input=root_out.html_output,
         settings=settings,
-        vision_output=child_out.artifacts.vision_output,
+        interpretation_summary=child_out.artifacts.vision_output,
         console_logs=child_out.artifacts.console_logs,
         html_diff=_compute_html_diff(root.html_input, root_out.html_output),
     ))

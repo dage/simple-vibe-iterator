@@ -2,9 +2,13 @@
   "moonshotai/kimi-k2-0905": {
     "temperature": "0.1"
   },
+  "z-ai/glm-4.5-air": {
+    "include_reasoning": "true",
+    "reasoning": "{\"effort\": \"high\"}"
+  },
   "x-ai/grok-code-fast-1": {
     "reasoning": "{\"effort\": \"high\"}",
-    "temperature": "0"
+    "temperature": "0.5"
   },
   "deepseek/deepseek-chat-v3.1": {
     "reasoning": "{\"effort\": \"high\"}"
@@ -17,5 +21,9 @@
   },
   "qwen/qwen3-max": {
     "temperature": "0.1"
+  },
+  "openrouter/sonoma-sky-alpha": {
+    "include_reasoning": "true",
+    "reasoning": "{\"effort\": \"high\"}"
   }
 }

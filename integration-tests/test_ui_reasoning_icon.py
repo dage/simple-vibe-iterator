@@ -50,6 +50,10 @@ async def test_ui_reasoning_dialog_twice() -> tuple[bool, str]:
     import prefs
     import config as app_config
     import importlib
+    try:
+        from src.interfaces import IterationMode
+    except Exception:
+        from interfaces import IterationMode  # type: ignore
 
     # Route model params to a temp file and enable reasoning
     tmp = tempfile.NamedTemporaryFile(prefix="model_params_", suffix=".json", delete=False)
@@ -58,25 +62,27 @@ async def test_ui_reasoning_dialog_twice() -> tuple[bool, str]:
 
     # Configure defaults for the app via prefs
     cfg = app_config.get_config()
-    code_model = 'deepseek/deepseek-chat-v3.1:free'
+    code_model = 'meta-llama/llama-3.2-90b-vision-instruct'
     vision_model = cfg.vision_model
     prefs.set('model.code', code_model)
     prefs.set('model.vision', vision_model)
     prefs.set('template.code', cfg.code_template)
     prefs.set('template.vision', cfg.vision_template)
+    prefs.set('iteration.mode', IterationMode.DIRECT_TO_CODER.value)
 
     # Enable reasoning for DeepSeek
     mp.set_params(code_model, {
         'include_reasoning': 'true',
-        'reasoning': json.dumps({'effort': 'high'}),
+        'reasoning': json.dumps({'effort': 'medium'}),
         'max_tokens': '256',
-        'temperature': '0.2',
+        'temperature': '0.1',
     })
 
     # Launch app server as subprocess
     import subprocess
     env = os.environ.copy()
-    proc = subprocess.Popen([sys.executable, '-m', 'src.main'], cwd=str(project_root()))
+    env["APP_USE_MOCK_AI"] = "ui-reasoning"
+    proc = subprocess.Popen([sys.executable, '-m', 'src.main'], cwd=str(project_root()), env=env)
     try:
         await _wait_http_ready('http://localhost:8055')
 
@@ -88,7 +94,8 @@ async def test_ui_reasoning_dialog_twice() -> tuple[bool, str]:
             await page.goto('http://localhost:8055', wait_until='domcontentloaded')
 
             # Fill overall goal and start
-            await page.get_by_label('Overall goal').fill('Create a minimal HTML with a heading and a short line of text.')
+            goal_input = page.locator('textarea[aria-label="Overall goal"]').first
+            await goal_input.fill('Create a minimal HTML with a heading and a short line of text.')
             await page.get_by_text('Start').click()
 
             # Wait for first iteration output card to render and reasoning icon to appear

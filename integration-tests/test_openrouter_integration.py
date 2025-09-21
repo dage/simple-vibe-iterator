@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple
 from PIL import Image, ImageDraw
 
+os.environ.setdefault("OPENROUTER_DISABLE_RETRY", "1")
+
 
 def get_project_root() -> Path:
     return Path(__file__).resolve().parents[1]
@@ -161,5 +163,4 @@ async def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(asyncio.run(main()))
-
 

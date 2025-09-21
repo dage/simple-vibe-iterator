@@ -2,11 +2,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 import uuid
-from typing import Dict, List, Optional, Protocol
+from typing import Any, Dict, List, Optional, Protocol
 
 
 # ---- Data model for state-machine iterations ----
+
+
+class IterationMode(str, Enum):
+    VISION_SUMMARY = "vision_summary"
+    DIRECT_TO_CODER = "direct_to_coder"
+
+    def __str__(self) -> str:  # pragma: no cover - trivial
+        return str(self.value)
+
 
 @dataclass
 class TransitionSettings:
@@ -16,6 +26,7 @@ class TransitionSettings:
     user_steering: str
     code_template: str
     vision_template: str
+    mode: IterationMode = IterationMode.VISION_SUMMARY
 
 
 @dataclass
@@ -25,6 +36,16 @@ class TransitionArtifacts:
     vision_output: str
     input_screenshot_filename: str
     input_console_logs: List[str]
+    assets: List["IterationAsset"] = field(default_factory=list)
+    analysis: Dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class IterationAsset:
+    kind: str
+    path: str
+    role: str = ""
+    metadata: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -48,7 +69,7 @@ class IterationNode:
 # ---- Service protocols (unchanged public surface) ----
 
 class AICodeService(Protocol):
-    async def generate_html(self, prompt: str, model: str, worker: str = "main") -> tuple[str, str | None, dict | None]: ...
+    async def generate_html(self, prompt: Any, model: str, worker: str = "main") -> tuple[str, str | None, dict | None]: ...
 
 
 class BrowserService(Protocol):

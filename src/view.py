@@ -11,7 +11,7 @@ from diff_match_patch import diff_match_patch
 import html as _html
 
 from .controller import IterationController
-from .interfaces import IterationEventListener, IterationNode, TransitionSettings
+from .interfaces import IterationEventListener, IterationNode, IterationMode, TransitionSettings
 from . import op_status
 from . import config as app_config
 from . import prefs
@@ -66,7 +66,7 @@ class NiceGUIView(IterationEventListener):
                     # Start area with full settings editor (scrollable like normal cards)
                     with ui.card().classes('w-full p-4'):
                         init_settings = self._default_settings(overall_goal='')
-                        inputs = self._render_settings_editor(init_settings)
+                        inputs = self._render_settings_editor(init_settings, allow_mode_switch=True)
                         async def _start() -> None:
                             og = (inputs['overall_goal'].value or '').strip()
                             if not og:
@@ -82,11 +82,20 @@ class NiceGUIView(IterationEventListener):
                                     user_steering=inputs['user_steering'].value or '',
                                     code_template=inputs['code_template'].value or '',
                                     vision_template=inputs['vision_template'].value or '',
+                                    mode=self._extract_mode(inputs['mode'])
                                 )
+                                prefs.set('iteration.mode', settings.mode.value)
                                 prefs.set('model.code', settings.code_model)
                                 prefs.set('model.vision', settings.vision_model)
                                 prefs.set('template.code', settings.code_template)
                                 prefs.set('template.vision', settings.vision_template)
+                                if self.controller.has_nodes():
+                                    root = self.controller.get_root()
+                                    if root and root.settings.mode != settings.mode:
+                                        self.controller.reset()
+                                        if self.chat_container is not None:
+                                            self.chat_container.clear()
+                                            self.node_cards.clear()
                                 await self.controller.apply_transition(None, settings)
                             except Exception as exc:
                                 ui.notify(f'Start failed: {exc}', color='negative', timeout=0, close_button=True)
@@ -99,6 +108,10 @@ class NiceGUIView(IterationEventListener):
 
     def _default_settings(self, overall_goal: str) -> TransitionSettings:
         cfg = app_config.get_config()
+        try:
+            mode = IterationMode(prefs.get('iteration.mode', cfg.iteration_mode.value))
+        except Exception:
+            mode = cfg.iteration_mode
         return TransitionSettings(
             code_model=prefs.get('model.code', cfg.code_model),
             vision_model=prefs.get('model.vision', cfg.vision_model),
@@ -106,6 +119,7 @@ class NiceGUIView(IterationEventListener):
             user_steering='',
             code_template=prefs.get('template.code', cfg.code_template),
             vision_template=prefs.get('template.vision', cfg.vision_template),
+            mode=mode,
         )
 
     # IterationEventListener
@@ -133,10 +147,30 @@ class NiceGUIView(IterationEventListener):
                 card = self._create_node_card(idx, node)
                 self.node_cards[node.id] = card
 
-    def _render_settings_editor(self, initial: TransitionSettings) -> Dict[str, ui.element]:
+    def _render_settings_editor(self, initial: TransitionSettings, *, allow_mode_switch: bool = False) -> Dict[str, ui.element]:
         # Left-side settings editor used in both Start area and iteration cards
         overall_goal = ui.textarea(label='Overall goal', value=initial.overall_goal).classes('w-full')
         user_steering = ui.textarea(label='Optional user steering', value=initial.user_steering).classes('w-full')
+
+        mode_value = initial.mode.value if isinstance(initial.mode, IterationMode) else str(initial.mode)
+        if not mode_value:
+            mode_value = IterationMode.VISION_SUMMARY.value
+
+        mode_options = {
+            'Vision analysis (separate model)': IterationMode.VISION_SUMMARY.value,
+            'Direct screenshot to coder': IterationMode.DIRECT_TO_CODER.value,
+        }
+        label_by_value = {v: k for k, v in mode_options.items()}
+        value_by_label = {k: v for k, v in mode_options.items()}
+        initial_label = label_by_value.get(mode_value, 'Vision analysis (separate model)')
+        mode_select = ui.select(
+            options=list(mode_options.keys()),
+            value=initial_label,
+            label='iteration mode',
+        ).props('dense outlined').classes('w-full')
+        mode_select._mode_value_map = value_by_label  # type: ignore[attr-defined]
+        if not allow_mode_switch:
+            mode_select.props('disable')
 
         with ui.expansion('Coding').classes('w-full') as code_exp:
             code_selector = ModelSelector(
@@ -159,6 +193,41 @@ class NiceGUIView(IterationEventListener):
             vision_model = vision_selector.input
             vision_tmpl = ui.textarea(label='vision template', value=initial.vision_template).classes('w-full')
 
+        def _apply_mode_state(label: str) -> None:
+            mapped_value = value_by_label.get(label, IterationMode.VISION_SUMMARY.value)
+            require_image = mapped_value == IterationMode.DIRECT_TO_CODER.value
+            try:
+                code_selector.set_require_image_input(require_image)
+            except Exception:
+                pass
+            try:
+                vision_exp.visible = not require_image
+            except Exception:
+                pass
+            if require_image:
+                try:
+                    vision_selector.set_value('')
+                except Exception:
+                    pass
+                if allow_mode_switch:
+                    try:
+                        code_selector.set_value('')
+                    except Exception:
+                        pass
+
+        _apply_mode_state(initial_label)
+
+        if allow_mode_switch:
+            def _handle_mode_change(_=None) -> None:
+                try:
+                    current = str(getattr(mode_select, 'value', initial_label) or '')
+                except Exception:
+                    current = initial_label
+                _apply_mode_state(current)
+
+            mode_select.on_value_change(lambda _: _handle_mode_change())
+            mode_select.on('update:model-value', lambda _: _handle_mode_change())
+
         return {
             'user_steering': user_steering,
             'overall_goal': overall_goal,
@@ -166,6 +235,7 @@ class NiceGUIView(IterationEventListener):
             'vision_model': vision_model,
             'code_template': code_tmpl,
             'vision_template': vision_tmpl,
+            'mode': mode_select,
         }
 
     def _create_node_card(self, index: int, node: IterationNode) -> ui.card:
@@ -214,18 +284,19 @@ class NiceGUIView(IterationEventListener):
                                     ui.markdown(in_logs_text)
                                 else:
                                     ui.label('(no console logs)')
-                            _va_raw = first_output.artifacts.vision_output if first_output else ''
-                            _va_lines = [l for l in _va_raw.splitlines() if l.strip()]
-                            va_title = f"Vision Analysis ({'empty' if len(_va_lines) == 0 else len(_va_lines)})"
-                            with ui.expansion(va_title):
-                                va_text = first_output.artifacts.vision_output if first_output else ''
-                                if not (getattr(first_output.artifacts, 'input_screenshot_filename', '') if first_output else '').strip():
-                                    va_text = '(no input screenshot)'
-                                elif not (va_text or '').strip():
-                                    va_text = '(pending)'
-                                else:
-                                    va_text = va_text.replace('\n', '\n\n')
-                                ui.markdown(va_text)
+                            if node.settings.mode == IterationMode.VISION_SUMMARY:
+                                _va_raw = first_output.artifacts.vision_output if first_output else ''
+                                _va_lines = [l for l in _va_raw.splitlines() if l.strip()]
+                                va_title = f"Vision Analysis ({'empty' if len(_va_lines) == 0 else len(_va_lines)})"
+                                with ui.expansion(va_title):
+                                    va_text = first_output.artifacts.vision_output if first_output else ''
+                                    if not (getattr(first_output.artifacts, 'input_screenshot_filename', '') if first_output else '').strip():
+                                        va_text = '(no input screenshot)'
+                                    elif not (va_text or '').strip():
+                                        va_text = '(pending)'
+                                    else:
+                                        va_text = va_text.replace('\n', '\n\n')
+                                    ui.markdown(va_text)
 
                         with ui.column().classes('basis-1/2 min-w-0 gap-6'):
                             for model_slug, out in node.outputs.items():
@@ -320,6 +391,7 @@ class NiceGUIView(IterationEventListener):
                                                 user_steering=inputs['user_steering'].value or '',
                                                 code_template=inputs['code_template'].value or '',
                                                 vision_template=inputs['vision_template'].value or '',
+                                                mode=self._extract_mode(inputs['mode'])
                                             )
                                             prefs.set('model.code', selected_model)
                                             prefs.set('model.vision', updated.vision_model)
@@ -391,6 +463,18 @@ class NiceGUIView(IterationEventListener):
 
 
     # --- Utilities ---
+    def _extract_mode(self, element: ui.element) -> IterationMode:
+        try:
+            raw = getattr(element, 'value', '')
+            value_map = getattr(element, '_mode_value_map', {}) or {}
+            mapped = value_map.get(raw, raw)
+        except Exception:
+            mapped = ''
+        try:
+            return IterationMode(str(mapped or IterationMode.VISION_SUMMARY.value))
+        except Exception:
+            return IterationMode.VISION_SUMMARY
+
     def _copy_to_clipboard(self, text: str) -> None:
         try:
             js_text = json.dumps(text)

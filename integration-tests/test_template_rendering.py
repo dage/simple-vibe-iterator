@@ -7,6 +7,9 @@ from pathlib import Path
 from typing import List, Tuple
 
 
+os.environ.setdefault("OPENROUTER_DISABLE_RETRY", "1")
+
+
 def get_project_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
@@ -31,14 +34,38 @@ def _html_with_scripts(script_lines: list[str]) -> str:
     )
 
 
+def _prompt_to_text(prompt) -> str:
+    try:
+        if hasattr(prompt, 'messages'):
+            messages = list(getattr(prompt, 'messages', []) or [])
+        elif isinstance(prompt, list):
+            messages = list(prompt)
+        else:
+            return str(prompt or "")
+        if not messages:
+            return ""
+        first = messages[0] if isinstance(messages[0], dict) else {}
+        content = first.get('content', '') if isinstance(first, dict) else ''
+        if isinstance(content, list):
+            texts = [
+                str(part.get('text', ''))
+                for part in content
+                if isinstance(part, dict) and part.get('type') == 'text'
+            ]
+            return "\n".join([t for t in texts if t])
+        return str(content or "")
+    except Exception:
+        return str(prompt or "")
+
+
 class RecordingAICodeService:
     def __init__(self, script_lines: list[str] | None = None) -> None:
         self.last_prompt: str = ""
         self._script_lines: list[str] = list(script_lines or [])
 
-    async def generate_html(self, prompt: str, model: str, worker: str = "main") -> str:
-        self.last_prompt = prompt
-        return _html_with_scripts(self._script_lines)
+    async def generate_html(self, prompt, model: str, worker: str = "main") -> tuple[str, str | None, dict | None]:
+        self.last_prompt = _prompt_to_text(prompt)
+        return _html_with_scripts(self._script_lines), "", {}
 
 
 class RecordingVisionService:
@@ -53,7 +80,7 @@ class RecordingVisionService:
 async def test_template_context_rendering() -> Tuple[bool, str]:
     from src.services import PlaywrightBrowserService
     from src.controller import IterationController
-    from src.interfaces import TransitionSettings
+    from src.interfaces import IterationMode, TransitionSettings
 
     def make_settings() -> TransitionSettings:
         return TransitionSettings(
@@ -86,6 +113,7 @@ async def test_template_context_rendering() -> Tuple[bool, str]:
                 "self_name=VISION-TPL\n"
                 "peer_name=CODE-TPL\n"
             ),
+            mode=IterationMode.VISION_SUMMARY,
         )
 
     async def run_case(script_lines: list[str]) -> tuple[str, str]:
@@ -137,5 +165,3 @@ async def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(asyncio.run(main()))
-
-

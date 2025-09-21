@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
+os.environ.setdefault("OPENROUTER_DISABLE_RETRY", "1")
+
 
 def get_project_root() -> Path:
     return Path(__file__).resolve().parents[1]
@@ -62,7 +64,7 @@ async def run_ping() -> Tuple[bool, str]:
         PlaywrightBrowserService,
     )
     from src.controller import IterationController
-    from src.interfaces import TransitionSettings
+    from src.interfaces import IterationMode, TransitionSettings
 
     ai = OpenRouterAICodeService()
     vision = OpenRouterVisionService()
@@ -91,6 +93,7 @@ async def run_ping() -> Tuple[bool, str]:
             "User steering: {user_steering}\n"
             "HTML:\n{html_input}\n"
         ),
+        mode=IterationMode.VISION_SUMMARY,
     )
 
     ctrl = IterationController(ai, browser, vision)
@@ -137,5 +140,3 @@ async def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(asyncio.run(main()))
-
-

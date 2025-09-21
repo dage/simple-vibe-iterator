@@ -13,6 +13,9 @@ def project_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
+os.environ.setdefault("OPENROUTER_DISABLE_RETRY", "1")
+
+
 def ensure_root_cwd() -> Path:
     root = project_root()
     os.chdir(root)

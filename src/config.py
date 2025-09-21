@@ -8,6 +8,11 @@ import os
 
 import yaml
 
+try:  # pragma: no cover - supports both package and sys.path setups
+    from .interfaces import IterationMode
+except Exception:  # pragma: no cover
+    from interfaces import IterationMode  # type: ignore
+
 
 """
 App configuration loaded from YAML (single source of truth).
@@ -22,6 +27,7 @@ class AppConfig:
     vision_model: str
     code_template: str
     vision_template: str
+    iteration_mode: IterationMode
 
 
 def _project_root() -> Path:
@@ -70,12 +76,18 @@ def get_config() -> AppConfig:
     code_template = str(templates.get('code'))
     vision_template = str(templates.get('vision'))
 
+    iteration_cfg = data.get('iteration') if isinstance(data, dict) else {}
+    mode_value = (iteration_cfg or {}).get('mode', IterationMode.VISION_SUMMARY.value)
+    try:
+        iteration_mode = IterationMode(str(mode_value))
+    except Exception:
+        iteration_mode = IterationMode.VISION_SUMMARY
+
     return AppConfig(
         code_model=code_model,
         vision_model=vision_model,
         code_template=code_template,
         vision_template=vision_template,
+        iteration_mode=iteration_mode,
     )
-
-
 

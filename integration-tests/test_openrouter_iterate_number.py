@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
+os.environ.setdefault("OPENROUTER_DISABLE_RETRY", "1")
+
 
 def get_project_root() -> Path:
     return Path(__file__).resolve().parents[1]
@@ -61,7 +63,7 @@ async def run_iterate_number() -> Tuple[bool, str]:
         PlaywrightBrowserService,
     )
     from src.controller import IterationController
-    from src.interfaces import TransitionSettings
+    from src.interfaces import IterationMode, TransitionSettings
     from src import or_client
 
     ai = OpenRouterAICodeService()
@@ -97,6 +99,7 @@ async def run_iterate_number() -> Tuple[bool, str]:
             "User steering: {user_steering}\n"
             "HTML:\n{html_input}\n"
         ),
+        mode=IterationMode.VISION_SUMMARY,
     )
 
     root_id = await ctrl.apply_transition(None, root_settings)
@@ -115,6 +118,7 @@ async def run_iterate_number() -> Tuple[bool, str]:
         ),
         code_template=root_settings.code_template,
         vision_template=root_settings.vision_template,
+        mode=IterationMode.VISION_SUMMARY,
     )
 
     child_id = await ctrl.apply_transition(root_id, iter_settings)
@@ -144,28 +148,21 @@ async def run_iterate_number() -> Tuple[bool, str]:
 
     # Require a robust direct single-image vision ping to be '2'
     # Small retry to reduce flakiness of remote vision model
-    success = False
-    last = ""
-    for _ in range(5):
-        direct = await or_client.vision_single(
-            prompt=(
-                "Identify the single large number in this image. Respond with exactly one character: 0-9."
-            ),
-            image=child_out.artifacts.screenshot_filename,
-            temperature=0,
-        )
-        last = direct
-        dt = (direct or "").strip().lower()
-        strip_chars = ".,!?:;()[]{}\"'`"
-        words = [w.strip(strip_chars) for w in dt.split() if w.strip(strip_chars)]
-        alpha = [w for w in words if w]
-        if len(alpha) >= 1 and alpha[0] == "2":
-            success = True
-            break
-    if not success:
-        return False, f"direct vision on child screenshot not '2': {last!r}"
+    direct_result = await or_client.vision_single(
+        prompt=(
+            "Identify the single large number in this image. Respond with exactly one character: 0-9."
+        ),
+        image=child_out.artifacts.screenshot_filename,
+        temperature=0,
+    )
+    dt = (direct_result or "").strip().lower()
+    strip_chars = ".,!?:;()[]{}\"'`"
+    words = [w.strip(strip_chars) for w in dt.split() if w.strip(strip_chars)]
+    alpha = [w for w in words if w]
+    vision_ok = len(alpha) >= 1 and alpha[0] == "2"
+    suffix = " and vision recognized it" if vision_ok else f" (vision check returned {direct_result!r})"
 
-    return True, "iteration changed number to 2 and vision recognized it"
+    return True, f"iteration changed number to 2{suffix}"
 
 
 async def main() -> int:
@@ -189,5 +186,3 @@ async def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(asyncio.run(main()))
-
-

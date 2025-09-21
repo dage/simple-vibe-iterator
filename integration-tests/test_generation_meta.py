@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 from typing import Tuple
 
+os.environ.setdefault("OPENROUTER_DISABLE_RETRY", "1")
+
 
 def project_root() -> Path:
     return Path(__file__).resolve().parents[1]

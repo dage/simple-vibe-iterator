@@ -41,11 +41,13 @@ class ModelSelector:
         label: str = 'model',
         on_change: Optional[Callable[[str], None]] = None,
         single_selection: bool = False,
+        require_image_input: bool = False,
     ) -> None:
         self.label = label
         self.vision_only = vision_only
         self.on_change = on_change
         self.single_selection = single_selection
+        self.require_image_input = require_image_input
 
         self._selected_ids: Set[str] = self._parse_value(initial_value)
         self._applied_value: str = self._format_value(sorted(self._selected_ids))
@@ -182,8 +184,24 @@ class ModelSelector:
             # Use background-safe notification path
             op_status.enqueue_notification(f'Failed to load models: {exc}', color='negative', timeout=0, close_button=True)
             self._models = []
+        if self.require_image_input:
+            self._models = [m for m in self._models if getattr(m, 'has_image_input', False)]
         self._focused_index = 0 if self._models else -1
         self._render_rows()
+
+    def set_require_image_input(self, value: bool) -> None:
+        if self.require_image_input == value:
+            return
+        self.require_image_input = value
+
+        async def _reload() -> None:
+            try:
+                query = (self._filter.value or '').strip()
+            except Exception:
+                query = ''
+            await self._load_and_render(query)
+
+        asyncio.create_task(_reload())
 
     def _render_rows(self) -> None:
         self._rows_container.clear()

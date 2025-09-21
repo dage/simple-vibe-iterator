@@ -3,20 +3,28 @@ from __future__ import annotations
 
 import asyncio
 import difflib
-import uuid
+from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 from .interfaces import (
     AICodeService,
     BrowserService,
+    IterationAsset,
     IterationEventListener,
     IterationNode,
+    IterationMode,
     TransitionArtifacts,
     TransitionSettings,
     VisionService,
     ModelOutput,
 )
 from . import op_status
+from .prompt_builder import build_code_payload, build_vision_prompt
+
+try:  # pragma: no cover - import differs during tests
+    from . import or_client as orc
+except Exception:  # pragma: no cover
+    import or_client as orc  # type: ignore
 
 
 def _compute_html_diff(html_input: str, html_output: str) -> str:
@@ -42,30 +50,18 @@ def _compute_html_diff(html_input: str, html_output: str) -> str:
     return "".join(diff)
 
 
-# Pure transition function δ(html_input, settings) -> mapping of model -> (html_output, artifacts)
-def _build_template_context(
-    html_input: str,
-    settings: TransitionSettings,
-    vision_output: str = "",
-    console_logs: list[str] | None = None,
-    html_diff: str = "",
-) -> dict:
-    # Prepare a unified mapping for both templates, exposing all settings fields
-    # plus common dynamic fields.
-    from dataclasses import asdict
+@dataclass
+class TransitionContext:
+    html_input: str
+    html_diff: str
+    input_screenshot_path: str = ""
+    input_console_logs: List[str] = field(default_factory=list)
 
-    raw = asdict(settings).copy()
-    # Do not expose template strings themselves to avoid nested, unsubstituted placeholders
-    raw.pop("code_template", None)
-    raw.pop("vision_template", None)
-    ctx = raw
-    ctx.update({
-        "html_input": html_input or "",
-        "vision_output": vision_output or "",
-        "console_logs": "\n".join(console_logs or []),
-        "html_diff": html_diff or "",
-    })
-    return ctx
+
+@dataclass
+class InterpretationResult:
+    summary: str = ""
+    attachments: List[IterationAsset] = field(default_factory=list)
 async def δ(
     html_input: str,
     settings: TransitionSettings,
@@ -74,54 +70,48 @@ async def δ(
     browser_service: BrowserService,
     vision_service: VisionService,
     html_diff: str = "",
-) -> Dict[str, Tuple[str, TransitionArtifacts]]:
-    # Prepare defaults
-    in_console_logs: list[str] = []
-    in_vision_output: str = ""
-    in_screenshot_path: str = ""
-    
-    # Optional input render + vision when html_input is present
-    if (html_input or "").strip():
-        in_screenshot_path, in_console_logs = await browser_service.render_and_capture(html_input, worker="input")
-        vision_ctx = _build_template_context(html_input=html_input, settings=settings, vision_output="", console_logs=in_console_logs, html_diff=html_diff)
-        vision_prompt = settings.vision_template.format(**vision_ctx)
-        in_vision_output = await vision_service.analyze_screenshot(
-            vision_prompt,
-            in_screenshot_path,
-            in_console_logs,
-            settings.vision_model,
-            worker="vision",
-        )
+) -> Dict[str, Tuple[str, str, dict | None, TransitionArtifacts]]:
+    context = TransitionContext(html_input=html_input or "", html_diff=html_diff or "")
 
-    # Build code-model prompt once
-    code_ctx = _build_template_context(html_input=html_input, settings=settings, vision_output=in_vision_output, console_logs=in_console_logs, html_diff=html_diff)
-    code_prompt = settings.code_template.format(**code_ctx)
+    if (html_input or "").strip():
+        screenshot_path, console_logs = await browser_service.render_and_capture(html_input, worker="input")
+        context.input_screenshot_path = screenshot_path
+        context.input_console_logs = list(console_logs)
+
+    interpretation = await _interpret_input(settings, context, vision_service)
 
     async def _worker(model: str) -> Tuple[str, str, str, dict | None, TransitionArtifacts]:
-        html_output, reasoning, meta = await ai_service.generate_html(code_prompt, model, worker=model)
+        payload = build_code_payload(
+            html_input=context.html_input,
+            settings=settings,
+            interpretation_summary=interpretation.summary,
+            console_logs=context.input_console_logs,
+            html_diff=context.html_diff,
+            attachments=interpretation.attachments,
+        )
+        html_output, reasoning, meta = await ai_service.generate_html(payload, model, worker=model)
         out_screenshot_path, out_console_logs = await browser_service.render_and_capture(html_output, worker=model)
-        artifacts = TransitionArtifacts(
-            screenshot_filename=out_screenshot_path,
+        artifacts = _create_artifacts(
+            model=model,
+            context=context,
+            interpretation=interpretation,
+            screenshot_path=out_screenshot_path,
             console_logs=out_console_logs,
-            vision_output=in_vision_output,
-            input_screenshot_filename=in_screenshot_path,
-            input_console_logs=in_console_logs,
+            vision_output=interpretation.summary,
         )
         return model, html_output, (reasoning or ""), (meta or None), artifacts
 
     tasks = [_worker(m) for m in models]
     gathered = await asyncio.gather(*tasks, return_exceptions=True)
-    
+
     results: Dict[str, Tuple[str, str, dict | None, TransitionArtifacts]] = {}
     failed_models: List[Tuple[str, Exception]] = []
-    
+
     for i, result in enumerate(gathered):
         model = models[i]
         if isinstance(result, Exception):
             failed_models.append((model, result))
-            # Print detailed error to terminal
             print(f"❌ Model '{model}' failed: {type(result).__name__}: {result}")
-            # Surface error to UI as a non-blocking notification
             try:
                 op_status.enqueue_notification(
                     f"Model '{model}' failed: {type(result).__name__}: {result}",
@@ -134,13 +124,119 @@ async def δ(
         else:
             model_name, html_output, reasoning_text, meta, artifacts = result
             results[model_name] = (html_output, reasoning_text, meta, artifacts)
-    
-    # If no models succeeded, raise an error
+
     if not results:
         model_names = [name for name, _ in failed_models]
         raise RuntimeError(f"All models failed: {', '.join(model_names)}")
-    
+
     return results
+
+
+async def _interpret_input(
+    settings: TransitionSettings,
+    context: TransitionContext,
+    vision_service: VisionService,
+) -> InterpretationResult:
+    result = InterpretationResult()
+
+    if not (context.input_screenshot_path or "").strip():
+        return result
+
+    result.attachments.append(
+        IterationAsset(
+            kind="image",
+            path=context.input_screenshot_path,
+            role="input",
+            metadata={"stage": "before"},
+        )
+    )
+
+    if settings.mode != IterationMode.VISION_SUMMARY:
+        return result
+
+    vision_prompt = build_vision_prompt(
+        html_input=context.html_input,
+        settings=settings,
+        console_logs=context.input_console_logs,
+        html_diff=context.html_diff,
+    )
+    analysis = await vision_service.analyze_screenshot(
+        vision_prompt,
+        context.input_screenshot_path,
+        context.input_console_logs,
+        settings.vision_model,
+        worker="vision",
+    )
+    result.summary = analysis or ""
+    return result
+
+
+def _create_artifacts(
+    *,
+    model: str,
+    context: TransitionContext,
+    interpretation: InterpretationResult,
+    screenshot_path: str,
+    console_logs: List[str],
+    vision_output: str,
+) -> TransitionArtifacts:
+    assets: List[IterationAsset] = [
+        IterationAsset(
+            kind=asset.kind,
+            path=asset.path,
+            role=asset.role,
+            metadata=dict(asset.metadata),
+        )
+        for asset in interpretation.attachments
+        if asset.path
+    ]
+
+    if screenshot_path:
+        assets.append(
+            IterationAsset(
+                kind="image",
+                path=screenshot_path,
+                role="output",
+                metadata={"model": model},
+            )
+        )
+
+    analysis: Dict[str, str] = {}
+    if vision_output.strip():
+        analysis["vision_summary"] = vision_output
+
+    return TransitionArtifacts(
+        screenshot_filename=screenshot_path,
+        console_logs=list(console_logs),
+        vision_output=vision_output,
+        input_screenshot_filename=context.input_screenshot_path,
+        input_console_logs=list(context.input_console_logs),
+        assets=assets,
+        analysis=analysis,
+    )
+
+
+async def _ensure_models_support_mode(models: List[str], mode: IterationMode) -> None:
+    if mode != IterationMode.DIRECT_TO_CODER:
+        return
+
+    try:
+        available = await orc.list_models(force_refresh=False, limit=2000)
+    except Exception as exc:  # pragma: no cover - surfaces to UI
+        raise RuntimeError(f"Failed to validate models for direct screenshot mode: {exc}")
+
+    missing: List[str] = []
+    lookup = {m.id: m for m in available}
+    for slug in models:
+        info = lookup.get(slug)
+        if info is None or not getattr(info, "has_image_input", False):
+            missing.append(slug)
+
+    if missing:
+        raise ValueError(
+            "Direct screenshot mode requires code models with image input support: "
+            + ", ".join(missing)
+        )
 
 
 class IterationController:
@@ -166,6 +262,18 @@ class IterationController:
     def get_children(self, node_id: str) -> List[IterationNode]:
         return [n for n in self._nodes.values() if n.parent_id == node_id]
 
+    def get_root(self) -> Optional[IterationNode]:
+        for node in self._nodes.values():
+            if node.parent_id is None:
+                return node
+        return None
+
+    def has_nodes(self) -> bool:
+        return bool(self._nodes)
+
+    def reset(self) -> None:
+        self._nodes.clear()
+
     def _delete_descendants(self, node_id: str) -> None:
         # Gather descendants via BFS
         queue: List[str] = [node_id]
@@ -186,6 +294,12 @@ class IterationController:
         models = [m.strip() for m in settings.code_model.split(',') if m.strip()]
         if not models:
             raise ValueError("No code model specified")
+
+        if not isinstance(settings.mode, IterationMode):
+            settings.mode = IterationMode(str(settings.mode))
+
+        await _ensure_models_support_mode(models, settings.mode)
+
         base_model = models[0]
         if from_node_id is None:
             parent_id = None

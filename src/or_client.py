@@ -264,12 +264,14 @@ async def _retry(coro_fn, max_tries: int = 5, base: float = 0.5, retry_on=None):
       - 429 (rate limit), 408 (timeout), 5xx, network/timeout errors.
     Never retries 402 (insufficient credits).
     """
-    for i in range(max_tries):
+    disable_retry = os.getenv("OPENROUTER_DISABLE_RETRY", "").strip() != ""
+    attempts = 1 if disable_retry else max_tries
+    for i in range(attempts):
         try:
             return await coro_fn()
         except (RateLimitError, APITimeoutError, APIConnectionError) as e:
             # always back off for these
-            if i == max_tries - 1:
+            if i == attempts - 1:
                 raise
             await asyncio.sleep(base * (2 ** i) + random.random() * 0.1)
         except APIStatusError as e:
@@ -278,7 +280,7 @@ async def _retry(coro_fn, max_tries: int = 5, base: float = 0.5, retry_on=None):
                 # no credits – surface immediately
                 raise
             if code in (408, 429, 500, 502, 503, 504):
-                if i == max_tries - 1:
+                if i == attempts - 1:
                     raise
                 await asyncio.sleep(base * (2 ** i) + random.random() * 0.1)
             else:
@@ -288,7 +290,7 @@ async def _retry(coro_fn, max_tries: int = 5, base: float = 0.5, retry_on=None):
             should_retry = bool(retry_on(e)) if callable(retry_on) else False
             if not should_retry:
                 raise
-            if i == max_tries - 1:
+            if i == attempts - 1:
                 raise
             await asyncio.sleep(base * (2 ** i) + random.random() * 0.1)
 

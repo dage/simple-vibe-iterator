@@ -12,6 +12,8 @@ from unittest.mock import patch
 # Add project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+os.environ.setdefault("OPENROUTER_DISABLE_RETRY", "1")
+
 from src.or_client import list_models, ModelInfo
 
 

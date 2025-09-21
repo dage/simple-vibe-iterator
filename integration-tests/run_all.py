@@ -42,13 +42,15 @@ def discover_tests(pattern_substring: str | None = None, self_name: str | None =
 
 async def run_one(test_path: Path, timeout_s: float | None) -> TestResult:
     start = monotonic()
+    env = os.environ.copy()
+    env.setdefault("OPENROUTER_DISABLE_RETRY", "1")
     proc = await asyncio.create_subprocess_exec(
         sys.executable,
         str(test_path),
         cwd=str(PROJECT_ROOT),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-        env=os.environ.copy(),
+        env=env,
     )
     try:
         stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=None if timeout_s is None or timeout_s <= 0 else timeout_s)
@@ -56,7 +58,9 @@ async def run_one(test_path: Path, timeout_s: float | None) -> TestResult:
     except asyncio.TimeoutError:
         with contextlib.suppress(ProcessLookupError):
             proc.kill()
-        stdout_b, stderr_b, rc = b"", b"", 124
+        stdout_b = b""
+        stderr_b = f"[TIMEOUT] Exceeded {timeout_s:.0f}s limit".encode("utf-8") if timeout_s else b"[TIMEOUT]"
+        rc = 124
     duration = monotonic() - start
     return TestResult(
         path=test_path,
@@ -106,7 +110,12 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run all integration tests in integration-tests directory.")
     parser.add_argument("-k", metavar="SUBSTR", help="Only run tests with SUBSTR in filename", default=None)
     parser.add_argument("-j", "--jobs", type=int, default=2, help="Number of parallel jobs (default: 2)")
-    parser.add_argument("--timeout", type=float, default=0.0, help="Per-test timeout in seconds (0 disables)")
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=180.0,
+        help="Per-test timeout in seconds (default: 180; pass 0 to disable)",
+    )
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output (print test stdout/stderr)")
     return parser.parse_args(argv)
 
@@ -145,5 +154,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
