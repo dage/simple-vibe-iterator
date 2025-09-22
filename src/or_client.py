@@ -29,7 +29,6 @@ from openai import (
 )
 from dotenv import load_dotenv
 from dataclasses import dataclass, field
-import time
 
 # ---------------- Settings & client ---------------- #
 
@@ -69,11 +68,7 @@ def _settings() -> _Settings:
     # Import here to support both package import (src.or_client) and
     # top-level import (tests add src/ to sys.path). YAML is the single source of truth.
     try:
-        try:
-            from . import config as app_config  # type: ignore
-        except Exception:
-            import config as app_config  # type: ignore
-        cfg = app_config.get_config()
+        cfg = _import_config()
         code_model = cfg.code_model
         vision_model = cfg.vision_model
     except Exception as exc:
@@ -228,6 +223,64 @@ async def list_models(query: str = "", vision_only: bool = False, limit: int = 2
 
 # -------------- Internal helpers -------------- #
 
+def _import_config():
+    """Import config module with fallback for different import contexts."""
+    try:
+        from . import config as app_config  # type: ignore
+        return app_config.get_config()
+    except Exception:
+        import config as app_config  # type: ignore
+        return app_config.get_config()
+
+
+def _import_model_params():
+    """Import model_params module with fallback for different import contexts."""
+    try:
+        from . import model_params as mp  # type: ignore
+        return mp
+    except Exception:
+        import model_params as mp  # type: ignore
+        return mp
+
+
+async def _merge_model_params(model: Optional[str], kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    """Merge stored per-model params with kwargs, handling reasoning injection."""
+    s = _settings()
+    merged_kwargs = dict(kwargs)
+
+    try:
+        slug = model or s.code_model
+        mp = _import_model_params()
+
+        # Use cached models if present; otherwise fetch one page
+        mlist = await list_models(force_refresh=False, limit=2000)
+        sp = next((m.supported_parameters for m in mlist if m.id == slug), [])
+
+        # Auto-inject reasoning parameters for models that actually support them
+        # But skip if there are conflicting parameters that don't work well with reasoning
+        conflicting_params = {"response_format", "tools", "tool_choice", "structured_outputs"}
+        has_conflicts = any(param in merged_kwargs for param in conflicting_params)
+        skip_reasoning = (
+            has_conflicts or
+            any(conflict in slug for conflict in ["openai/gpt-5", "google/gemini"])
+        )
+
+        if not skip_reasoning:
+            if "include_reasoning" in sp and "include_reasoning" not in merged_kwargs:
+                merged_kwargs["include_reasoning"] = True
+            if "reasoning" in sp and "reasoning" not in merged_kwargs:
+                merged_kwargs["reasoning"] = {"effort": "high"}
+
+        stored = mp.get_sanitized_params_for_api(slug, sp)
+        # Stored defaults < explicit kwargs
+        for k, v in stored.items():
+            if k not in merged_kwargs:
+                merged_kwargs[k] = v
+    except Exception:
+        pass
+
+    return merged_kwargs
+
 def _guess_mime(path: Union[str, Path]) -> str:
     mt, _ = mimetypes.guess_type(str(path))
     return mt or "image/png"
@@ -305,46 +358,10 @@ async def chat(
     """
     Stateless chat. Returns the assistant message string.
     """
-    s = _settings()
-
     # Merge stored per-model params (if any), filtered to supported keys.
     # IMPORTANT: We pass all merged params via `extra_body` to avoid the OpenAI
     # Python SDK rejecting unknown provider-specific fields (e.g., "reasoning").
-    merged_kwargs = dict(kwargs)
-    try:
-        slug = model or s.code_model
-        # Find supported params from cached model list
-        try:
-            # Prefer cache; if empty, fetch
-            from . import model_params as mp  # local import to avoid circulars in tests
-        except Exception:
-            import model_params as mp  # type: ignore
-        # Use cached models if present; otherwise fetch one page
-        mlist = await list_models(force_refresh=False, limit=2000)
-        sp = next((m.supported_parameters for m in mlist if m.id == slug), [])
-
-        # Auto-inject reasoning parameters for models that actually support them
-        # But skip if there are conflicting parameters that don't work well with reasoning
-        conflicting_params = {"response_format", "tools", "tool_choice", "structured_outputs"}
-        has_conflicts = any(param in merged_kwargs for param in conflicting_params)
-        skip_reasoning = (
-            has_conflicts or
-            any(conflict in slug for conflict in ["openai/gpt-5", "google/gemini"])
-        )
-
-        if not skip_reasoning:
-            if "include_reasoning" in sp and "include_reasoning" not in merged_kwargs:
-                merged_kwargs["include_reasoning"] = True
-            if "reasoning" in sp and "reasoning" not in merged_kwargs:
-                merged_kwargs["reasoning"] = {"effort": "high"}
-
-        stored = mp.get_sanitized_params_for_api(slug, sp)
-        # Stored defaults < explicit kwargs
-        for k, v in stored.items():
-            if k not in merged_kwargs:
-                merged_kwargs[k] = v
-    except Exception:
-        pass
+    merged_kwargs = await _merge_model_params(model, kwargs)
 
     # Use the richer helper and return only textual content for backward compatibility
     content, _meta = await chat_with_meta(messages=messages, model=model, **merged_kwargs)
@@ -391,37 +408,7 @@ async def chat_with_meta(
     s = _settings()
 
     # Merge stored per-model params (if any), filtered to supported keys, as in chat()
-    merged_kwargs = dict(kwargs)
-    try:
-        slug = model or s.code_model
-        try:
-            from . import model_params as mp
-        except Exception:
-            import model_params as mp  # type: ignore
-        mlist = await list_models(force_refresh=False, limit=2000)
-        sp = next((m.supported_parameters for m in mlist if m.id == slug), [])
-
-        # Auto-inject reasoning parameters for models that actually support them
-        # But skip if there are conflicting parameters that don't work well with reasoning
-        conflicting_params = {"response_format", "tools", "tool_choice", "structured_outputs"}
-        has_conflicts = any(param in merged_kwargs for param in conflicting_params)
-        skip_reasoning = (
-            has_conflicts or
-            any(conflict in slug for conflict in ["openai/gpt-5", "google/gemini"])
-        )
-
-        if not skip_reasoning:
-            if "include_reasoning" in sp and "include_reasoning" not in merged_kwargs:
-                merged_kwargs["include_reasoning"] = True
-            if "reasoning" in sp and "reasoning" not in merged_kwargs:
-                merged_kwargs["reasoning"] = {"effort": "high"}
-
-        stored = mp.get_sanitized_params_for_api(slug, sp)
-        for k, v in stored.items():
-            if k not in merged_kwargs:
-                merged_kwargs[k] = v
-    except Exception:
-        pass
+    merged_kwargs = await _merge_model_params(model, kwargs)
 
     async def call():
         return await _client().chat.completions.create(
