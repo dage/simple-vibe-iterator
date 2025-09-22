@@ -117,6 +117,7 @@ class ModelSelector:
         self._selected_ids = self._parse_value(value)
         self._applied_value = self._format_value(sorted(self._selected_ids))
         self._set_input_value(self._applied_value)
+        self._render_chips()
         try:
             self._render_rows()
         except Exception:
@@ -177,15 +178,27 @@ class ModelSelector:
     # --- Load and render ---
 
     async def _load_and_render(self, query: str) -> None:
+        removed: Set[str] = set()
         try:
-            models = await orc.list_models(query=query, vision_only=self.vision_only, limit=200)
-            self._models = list(models)
+            models = await orc.list_models(query=query, vision_only=self.vision_only, limit=2000)
+            filtered = list(models)
+            if self.require_image_input:
+                filtered = [m for m in filtered if getattr(m, 'has_image_input', False)]
+
+            available_ids = {m.id for m in filtered}
+            for sid in list(self._selected_ids):
+                if sid not in available_ids:
+                    removed.add(sid)
+
+            self._models = filtered
         except Exception as exc:
-            # Use background-safe notification path
             op_status.enqueue_notification(f'Failed to load models: {exc}', color='negative', timeout=0, close_button=True)
             self._models = []
-        if self.require_image_input:
-            self._models = [m for m in self._models if getattr(m, 'has_image_input', False)]
+
+        if removed:
+            self._selected_ids.difference_update(removed)
+            await self._apply_immediately()
+
         self._focused_index = 0 if self._models else -1
         self._render_rows()
 
@@ -201,7 +214,7 @@ class ModelSelector:
                 query = ''
             await self._load_and_render(query)
 
-        asyncio.create_task(_reload())
+        ui.timer(0, lambda: asyncio.create_task(_reload()), once=True)
 
     def _render_rows(self) -> None:
         self._rows_container.clear()

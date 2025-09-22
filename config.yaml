@@ -1,6 +1,6 @@
 models:
   code: x-ai/grok-4-fast:free
-  vision: meta-llama/llama-3.2-90b-vision-instruct
+  vision: google/gemini-2.5-flash-image-preview
 
 iteration:
   mode: vision_summary
@@ -44,8 +44,6 @@ templates:
     Context (for understanding, not to be echoed):
     Overall goal: {overall_goal}
     User steering: {user_steering}
-    Code model: {code_model}
-    Vision model: {vision_model}
     Browser console logs (summarize only if visually relevant):
     {console_logs}
     HTML (reference only; do not quote):

@@ -15,6 +15,7 @@ from .interfaces import IterationEventListener, IterationNode, IterationMode, Tr
 from . import op_status
 from . import config as app_config
 from . import prefs
+from . import mode_prefs
 from .model_selector import ModelSelector
 
 
@@ -84,11 +85,7 @@ class NiceGUIView(IterationEventListener):
                                     vision_template=inputs['vision_template'].value or '',
                                     mode=self._extract_mode(inputs['mode'])
                                 )
-                                prefs.set('iteration.mode', settings.mode.value)
-                                prefs.set('model.code', settings.code_model)
-                                prefs.set('model.vision', settings.vision_model)
-                                prefs.set('template.code', settings.code_template)
-                                prefs.set('template.vision', settings.vision_template)
+                                mode_prefs.save_settings(settings)
                                 if self.controller.has_nodes():
                                     root = self.controller.get_root()
                                     if root and root.settings.mode != settings.mode:
@@ -108,19 +105,7 @@ class NiceGUIView(IterationEventListener):
 
     def _default_settings(self, overall_goal: str) -> TransitionSettings:
         cfg = app_config.get_config()
-        try:
-            mode = IterationMode(prefs.get('iteration.mode', cfg.iteration_mode.value))
-        except Exception:
-            mode = cfg.iteration_mode
-        return TransitionSettings(
-            code_model=prefs.get('model.code', cfg.code_model),
-            vision_model=prefs.get('model.vision', cfg.vision_model),
-            overall_goal=overall_goal,
-            user_steering='',
-            code_template=prefs.get('template.code', cfg.code_template),
-            vision_template=prefs.get('template.vision', cfg.vision_template),
-            mode=mode,
-        )
+        return mode_prefs.load_settings(overall_goal=overall_goal)
 
     # IterationEventListener
     async def on_node_created(self, node: IterationNode) -> None:
@@ -193,7 +178,7 @@ class NiceGUIView(IterationEventListener):
             vision_model = vision_selector.input
             vision_tmpl = ui.textarea(label='vision template', value=initial.vision_template).classes('w-full')
 
-        def _apply_mode_state(label: str) -> None:
+        def _apply_mode_state(label: str, *, reset_on_mode_change: bool = False) -> None:
             mapped_value = value_by_label.get(label, IterationMode.VISION_SUMMARY.value)
             require_image = mapped_value == IterationMode.DIRECT_TO_CODER.value
             try:
@@ -204,7 +189,7 @@ class NiceGUIView(IterationEventListener):
                 vision_exp.visible = not require_image
             except Exception:
                 pass
-            if require_image:
+            if require_image and reset_on_mode_change:
                 try:
                     vision_selector.set_value('')
                 except Exception:
@@ -217,16 +202,85 @@ class NiceGUIView(IterationEventListener):
 
         _apply_mode_state(initial_label)
 
+        def _persist_current() -> None:
+            try:
+                mode = self._extract_mode(mode_select)
+            except Exception:
+                mode = initial.mode if isinstance(initial.mode, IterationMode) else IterationMode.VISION_SUMMARY
+
+            current = TransitionSettings(
+                code_model=code_selector.get_value(),
+                vision_model=vision_selector.get_value(),
+                overall_goal=overall_goal.value or '',
+                user_steering=user_steering.value or '',
+                code_template=code_tmpl.value or '',
+                vision_template=vision_tmpl.value or '',
+                mode=mode,
+            )
+            mode_prefs.save_settings(current)
+
         if allow_mode_switch:
             def _handle_mode_change(_=None) -> None:
                 try:
                     current = str(getattr(mode_select, 'value', initial_label) or '')
                 except Exception:
                     current = initial_label
-                _apply_mode_state(current)
+                _apply_mode_state(current, reset_on_mode_change=True)
+
+                try:
+                    new_mode = self._extract_mode(mode_select)
+                except Exception:
+                    new_mode = initial.mode if isinstance(initial.mode, IterationMode) else IterationMode.VISION_SUMMARY
+
+                mode_prefs.set_mode(new_mode)
+                stored = mode_prefs.load_settings_for_mode(new_mode)
+
+                code_selector.set_value(stored.code_model)
+                try:
+                    code_model.set_value(stored.code_model)
+                except Exception:
+                    code_model.value = stored.code_model
+
+                vision_selector.set_value(stored.vision_model)
+                try:
+                    vision_model.set_value(stored.vision_model)
+                except Exception:
+                    vision_model.value = stored.vision_model
+
+                try:
+                    code_tmpl.set_value(stored.code_template)
+                except Exception:
+                    code_tmpl.value = stored.code_template
+
+                try:
+                    vision_tmpl.set_value(stored.vision_template)
+                except Exception:
+                    vision_tmpl.value = stored.vision_template
+
+                _persist_current()
 
             mode_select.on_value_change(lambda _: _handle_mode_change())
             mode_select.on('update:model-value', lambda _: _handle_mode_change())
+
+            # Persist changes as users tweak values in the start editor
+            def _wrap_change(orig):
+                def handler(value: str) -> None:
+                    _persist_current()
+                    if callable(orig):
+                        try:
+                            orig(value)
+                        except Exception:
+                            pass
+                return handler
+
+            code_selector.on_change = _wrap_change(code_selector.on_change)
+            vision_selector.on_change = _wrap_change(vision_selector.on_change)
+
+            code_tmpl.on('blur', lambda _: _persist_current())
+            vision_tmpl.on('blur', lambda _: _persist_current())
+        else:
+            mode_select.on_value_change(lambda _: prefs.set('iteration.mode', self._extract_mode(mode_select).value))
+            mode_select.on('update:model-value', lambda _: prefs.set('iteration.mode', self._extract_mode(mode_select).value))
 
         return {
             'user_steering': user_steering,
@@ -393,10 +447,7 @@ class NiceGUIView(IterationEventListener):
                                                 vision_template=inputs['vision_template'].value or '',
                                                 mode=self._extract_mode(inputs['mode'])
                                             )
-                                            prefs.set('model.code', selected_model)
-                                            prefs.set('model.vision', updated.vision_model)
-                                            prefs.set('template.code', updated.code_template)
-                                            prefs.set('template.vision', updated.vision_template)
+                                            mode_prefs.save_settings(updated)
                                             await self.controller.apply_transition(node.id, updated, slug)
                                         except Exception as exc:
                                             # Route error to UI via notification queue (safe from background tasks)
