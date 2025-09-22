@@ -304,6 +304,30 @@ class NiceGUIView(IterationEventListener):
 
                 with ui.column().classes('basis-7/12 min-w-0 gap-4'):
                     first_output = next(iter(node.outputs.values())) if node.outputs else None
+
+                    # Messages dialog (common for all models)
+                    messages_dialog = None
+                    if first_output and hasattr(first_output, 'messages') and first_output.messages:
+                        messages_dialog = ui.dialog()
+                        messages_dialog.props('persistent')
+                        with messages_dialog:
+                            with ui.card().classes('w-[90vw] max-w-[1200px]'):
+                                with ui.row().classes('items-center justify-between w-full'):
+                                    ui.label('LLM Input Messages').classes('text-lg font-semibold')
+                                    ui.button(icon='close', on_click=messages_dialog.close).props('flat round dense')
+                                ui.html('''<style>
+                                .messages-container { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; background: #0b0f17; color: #e5e7eb; border: 1px solid #334155; border-radius: 6px; padding: 16px; max-height: 70vh; overflow: auto; }
+                                .messages-content { white-space: pre-wrap; word-break: break-word; }
+                                </style>''')
+                                messages_json = json.dumps(first_output.messages, indent=2, ensure_ascii=False)
+                                escaped_json = _html.escape(messages_json)
+                                ui.html(f"<div class='messages-container'><pre class='messages-content'>{escaped_json}</pre></div>")
+
+                    # Messages button (positioned above INPUT SCREENSHOT)
+                    if messages_dialog:
+                        with ui.row().classes('items-center gap-2 mb-2'):
+                            ui.button('📋 Messages', on_click=messages_dialog.open).props('flat dense').classes('text-sm p-0 min-h-0')
+
                     with ui.row().classes('w-full items-start gap-6 flex-nowrap'):
                         with ui.column().classes('basis-1/2 min-w-0 gap-2'):
                             ui.label('INPUT SCREENSHOT').classes('text-sm font-semibold')

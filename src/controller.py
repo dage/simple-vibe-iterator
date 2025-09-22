@@ -339,21 +339,25 @@ class IterationController:
             html, reasoning_text, meta, art = triple
             total_cost = None
             generation_time = None
+            messages = None
             try:
                 if isinstance(meta, dict):
                     tc = meta.get('total_cost')
                     gt = meta.get('generation_time')
                     total_cost = float(tc) if tc is not None else None
                     generation_time = float(gt) if gt is not None else None
+                    messages = meta.get('messages')
             except Exception:
                 total_cost = None
                 generation_time = None
+                messages = None
             outputs_dict[m] = ModelOutput(
                 html_output=html,
                 artifacts=art,
                 reasoning_text=reasoning_text or "",
                 total_cost=total_cost,
                 generation_time=generation_time,
+                messages=messages,
             )
         node = IterationNode(
             parent_id=parent_id,

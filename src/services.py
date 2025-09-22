@@ -54,6 +54,14 @@ class OpenRouterAICodeService(AICodeService):
         op_status.set_phase(worker, f"Code: {model}")
 
         if os.getenv("APP_USE_MOCK_AI") == "ui-reasoning":
+            # Extract messages for mock case too
+            if isinstance(prompt, PromptPayload):
+                messages = prompt.messages
+            elif isinstance(prompt, list):
+                messages = [dict(m) for m in prompt]
+            else:
+                messages = [{"role": "user", "content": prompt}]
+
             reasoning_text = "Mock reasoning: UI verification"
             html_output = (
                 "<!DOCTYPE html><html><head><meta charset=\"utf-8\"/>"
@@ -66,6 +74,7 @@ class OpenRouterAICodeService(AICodeService):
                 "reasoning": reasoning_text,
                 "total_cost": 0.0,
                 "generation_time": 0.01,
+                "messages": messages,
             }
             op_status.clear_phase(worker)
             return (html_output, reasoning_text, meta)
@@ -82,6 +91,12 @@ class OpenRouterAICodeService(AICodeService):
             model=model,
         )
         reasoning_result = (meta.get("reasoning") or None)
+
+        # Add messages to meta so controller can extract them for ModelOutput
+        if meta is None:
+            meta = {}
+        meta["messages"] = messages
+
         op_status.clear_phase(worker)
         return (content or "", reasoning_result, meta)
 

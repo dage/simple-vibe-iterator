@@ -55,6 +55,7 @@ class ModelOutput:
     reasoning_text: str = ""
     total_cost: float | None = None
     generation_time: float | None = None
+    messages: Optional[List[Dict[str, Any]]] = None
 
 
 @dataclass
