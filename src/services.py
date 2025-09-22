@@ -75,6 +75,7 @@ class OpenRouterAICodeService(AICodeService):
                 "total_cost": 0.0,
                 "generation_time": 0.01,
                 "messages": messages,
+                "assistant_response": html_output,
             }
             op_status.clear_phase(worker)
             return (html_output, reasoning_text, meta)
@@ -92,10 +93,11 @@ class OpenRouterAICodeService(AICodeService):
         )
         reasoning_result = (meta.get("reasoning") or None)
 
-        # Add messages to meta so controller can extract them for ModelOutput
+        # Add messages and assistant response to meta so controller can extract them for ModelOutput
         if meta is None:
             meta = {}
         meta["messages"] = messages
+        meta["assistant_response"] = content or ""
 
         op_status.clear_phase(worker)
         return (content or "", reasoning_result, meta)

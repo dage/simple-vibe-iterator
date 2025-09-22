@@ -27,6 +27,7 @@ class TransitionSettings:
     code_template: str
     vision_template: str
     mode: IterationMode = IterationMode.VISION_SUMMARY
+    keep_history: bool = False
 
 
 @dataclass
@@ -56,6 +57,7 @@ class ModelOutput:
     total_cost: float | None = None
     generation_time: float | None = None
     messages: Optional[List[Dict[str, Any]]] = None
+    assistant_response: str = ""
 
 
 @dataclass

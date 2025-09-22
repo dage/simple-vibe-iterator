@@ -72,6 +72,7 @@ def build_code_payload(
     console_logs: List[str] | None,
     html_diff: str,
     attachments: Iterable[IterationAsset],
+    message_history: List[Dict[str, Any]] | None = None,
 ) -> PromptPayload:
     ctx = _build_template_context(
         html_input=html_input,
@@ -82,6 +83,36 @@ def build_code_payload(
     )
     code_prompt = settings.code_template.format(**ctx)
 
+    # If keep_history is enabled and we have message history, use it
+    if settings.keep_history and message_history:
+        # Start with the cumulative message history
+        messages = list(message_history)
+
+        # Add the current iteration's user message
+        if settings.mode == IterationMode.DIRECT_TO_CODER:
+            code_prompt = _strip_vision_mentions(code_prompt)
+            # Attach any provided images to the user message; coder must rely on raw pixels.
+            parts: List[Dict[str, Any]] = []
+            if code_prompt.strip():
+                parts.append({"type": "text", "text": code_prompt})
+            for asset in attachments:
+                if asset.kind != "image" or not asset.path:
+                    continue
+                try:
+                    data_url = orc.encode_image_to_data_url(asset.path)
+                except Exception:
+                    continue
+                parts.append({"type": "image_url", "image_url": {"url": data_url}})
+            if not parts:
+                # Fallback to plain text to avoid empty prompt edge case.
+                parts = [{"type": "text", "text": code_prompt}]
+            messages.append({"role": "user", "content": parts})
+        else:
+            messages.append({"role": "user", "content": code_prompt})
+
+        return PromptPayload(messages)
+
+    # Original behavior when keep_history is disabled or no history available
     if settings.mode == IterationMode.DIRECT_TO_CODER:
         code_prompt = _strip_vision_mentions(code_prompt)
         # Attach any provided images to the user message; coder must rely on raw pixels.

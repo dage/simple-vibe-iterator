@@ -70,6 +70,7 @@ async def δ(
     browser_service: BrowserService,
     vision_service: VisionService,
     html_diff: str = "",
+    message_history: List[Dict[str, Any]] | None = None,
 ) -> Dict[str, Tuple[str, str, dict | None, TransitionArtifacts]]:
     context = TransitionContext(html_input=html_input or "", html_diff=html_diff or "")
 
@@ -88,6 +89,7 @@ async def δ(
             console_logs=context.input_console_logs,
             html_diff=context.html_diff,
             attachments=interpretation.attachments,
+            message_history=message_history,
         )
         html_output, reasoning, meta = await ai_service.generate_html(payload, model, worker=model)
         out_screenshot_path, out_console_logs = await browser_service.render_and_capture(html_output, worker=model)
@@ -286,6 +288,41 @@ class IterationController:
         for nid in to_delete:
             self._nodes.pop(nid, None)
 
+    def _collect_message_history(self, node_id: str, model_slug: str) -> List[Dict[str, Any]]:
+        """Collect cumulative message history from root to the given node."""
+        # Build chain from root to current node
+        chain: List[IterationNode] = []
+        cur = self.get_node(node_id)
+        while cur is not None:
+            chain.append(cur)
+            cur = self.get_node(cur.parent_id) if cur.parent_id else None
+        chain.reverse()
+
+        messages: List[Dict[str, Any]] = []
+
+        for node in chain:
+            # Add user message from this node
+            # Get the user messages from the first available model output
+            first_output = next(iter(node.outputs.values())) if node.outputs else None
+            if first_output and first_output.messages:
+                # Extract user messages (assuming last message is the user message for this iteration)
+                user_messages = [msg for msg in first_output.messages if msg.get("role") == "user"]
+                if user_messages:
+                    messages.extend(user_messages)
+
+            # Add assistant response from the requested model (or fallback to first available)
+            output = node.outputs.get(model_slug)
+            if output is None and node.outputs:
+                output = next(iter(node.outputs.values()))
+
+            if output and output.assistant_response:
+                messages.append({
+                    "role": "assistant",
+                    "content": output.assistant_response
+                })
+
+        return messages
+
     # Unified apply: if from_node_id is None, create a root; otherwise iterate from given node
     async def apply_transition(self, from_node_id: str | None, settings: TransitionSettings, from_model_slug: str | None = None) -> str:
         # Compute parent id and html_input
@@ -322,6 +359,15 @@ class IterationController:
         if parent_id is not None:
             self._delete_descendants(parent_id)
 
+        # Import settings here to avoid circular imports
+        from .settings import get_settings
+        settings_manager = get_settings()
+
+        # Collect message history if keep_history is enabled (single source of truth)
+        message_history = None
+        if settings_manager.keep_history and parent_id is not None:
+            message_history = self._collect_message_history(parent_id, base_model)
+
         # Run transition
         results = await δ(
             html_input=html_input,
@@ -331,6 +377,7 @@ class IterationController:
             browser_service=self._browser_service,
             vision_service=self._vision_service,
             html_diff=html_diff,
+            message_history=message_history,
         )
 
         # Create and store node
@@ -340,6 +387,7 @@ class IterationController:
             total_cost = None
             generation_time = None
             messages = None
+            assistant_response = ""
             try:
                 if isinstance(meta, dict):
                     tc = meta.get('total_cost')
@@ -347,10 +395,12 @@ class IterationController:
                     total_cost = float(tc) if tc is not None else None
                     generation_time = float(gt) if gt is not None else None
                     messages = meta.get('messages')
+                    assistant_response = str(meta.get('assistant_response', ''))
             except Exception:
                 total_cost = None
                 generation_time = None
                 messages = None
+                assistant_response = ""
             outputs_dict[m] = ModelOutput(
                 html_output=html,
                 artifacts=art,
@@ -358,6 +408,7 @@ class IterationController:
                 total_cost=total_cost,
                 generation_time=generation_time,
                 messages=messages,
+                assistant_response=assistant_response,
             )
         node = IterationNode(
             parent_id=parent_id,

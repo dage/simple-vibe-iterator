@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Dict, List
+from typing import Any, Dict, List
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -14,10 +14,9 @@ import html as _html
 from .controller import IterationController
 from .interfaces import IterationEventListener, IterationNode, IterationMode, TransitionSettings
 from . import op_status
-from . import config as app_config
 from . import prefs
-from . import mode_prefs
 from .model_selector import ModelSelector
+from .settings import get_settings
 
 
 def format_html_size(html: str) -> str:
@@ -77,6 +76,17 @@ class NiceGUIView(IterationEventListener):
                             if not self._begin_operation('Start'):
                                 return
                             try:
+                                # Update app-wide keep_history setting from UI if changed
+                                from .settings import get_settings
+                                settings_manager = get_settings()
+
+                                if 'keep_history' in inputs and inputs['keep_history'] is not None:
+                                    try:
+                                        new_keep_history = bool(inputs['keep_history'].value)
+                                        settings_manager.keep_history = new_keep_history
+                                    except Exception:
+                                        pass
+
                                 settings = TransitionSettings(
                                     code_model=inputs['code_model'].value or '',
                                     vision_model=inputs['vision_model'].value or '',
@@ -84,9 +94,10 @@ class NiceGUIView(IterationEventListener):
                                     user_steering=inputs['user_steering'].value or '',
                                     code_template=inputs['code_template'].value or '',
                                     vision_template=inputs['vision_template'].value or '',
-                                    mode=self._extract_mode(inputs['mode'])
+                                    mode=self._extract_mode(inputs['mode']),
+                                    keep_history=get_settings().keep_history
                                 )
-                                mode_prefs.save_settings(settings)
+                                get_settings().save_settings(settings)
                                 if self.controller.has_nodes():
                                     root = self.controller.get_root()
                                     if root and root.settings.mode != settings.mode:
@@ -105,8 +116,7 @@ class NiceGUIView(IterationEventListener):
                     self.chat_container = ui.column().classes('w-full gap-4')
 
     def _default_settings(self, overall_goal: str) -> TransitionSettings:
-        cfg = app_config.get_config()
-        return mode_prefs.load_settings(overall_goal=overall_goal)
+        return get_settings().load_settings(overall_goal=overall_goal)
 
     # IterationEventListener
     async def on_node_created(self, node: IterationNode) -> None:
@@ -135,21 +145,32 @@ class NiceGUIView(IterationEventListener):
 
     def _render_settings_editor(self, initial: TransitionSettings, *, allow_mode_switch: bool = False) -> Dict[str, ui.element]:
         # Left-side settings editor used in both Start area and iteration cards
-        overall_goal = ui.textarea(label='Overall goal', value=initial.overall_goal).classes('w-full')
-        user_steering = ui.textarea(label='Optional user steering', value=initial.user_steering).classes('w-full')
 
-        mode_value = initial.mode.value if isinstance(initial.mode, IterationMode) else str(initial.mode)
-        if not mode_value:
-            mode_value = IterationMode.VISION_SUMMARY.value
-
-        mode_options = {
-            'Vision analysis (separate model)': IterationMode.VISION_SUMMARY.value,
-            'Direct screenshot to coder': IterationMode.DIRECT_TO_CODER.value,
-        }
-        label_by_value = {v: k for k, v in mode_options.items()}
-        value_by_label = {k: v for k, v in mode_options.items()}
-        initial_label = label_by_value.get(mode_value, 'Vision analysis (separate model)')
+        # Settings section (only visible for start node with allow_mode_switch=True)
+        keep_history_checkbox = None
+        mode_select = None
         if allow_mode_switch:
+            ui.label('Settings').classes('text-sm font-semibold text-gray-600 dark:text-gray-400 mt-2 mb-2')
+
+            # Keep History toggle
+            keep_history_checkbox = ui.checkbox(
+                'Keep history (cumulative message thread)',
+                value=initial.keep_history
+            ).classes('w-full')
+
+            # Iteration Mode select
+            mode_value = initial.mode.value if isinstance(initial.mode, IterationMode) else str(initial.mode)
+            if not mode_value:
+                mode_value = IterationMode.VISION_SUMMARY.value
+
+            mode_options = {
+                'Vision analysis (separate model)': IterationMode.VISION_SUMMARY.value,
+                'Direct screenshot to coder': IterationMode.DIRECT_TO_CODER.value,
+            }
+            label_by_value = {v: k for k, v in mode_options.items()}
+            value_by_label = {k: v for k, v in mode_options.items()}
+            initial_label = label_by_value.get(mode_value, 'Vision analysis (separate model)')
+
             mode_select = ui.select(
                 options=list(mode_options.keys()),
                 value=initial_label,
@@ -157,7 +178,19 @@ class NiceGUIView(IterationEventListener):
             ).props('dense outlined').classes('w-full')
             mode_select._mode_value_map = value_by_label  # type: ignore[attr-defined]
         else:
+            # For iteration cards, just create a stub mode_select
+            mode_value = initial.mode.value if isinstance(initial.mode, IterationMode) else str(initial.mode)
+            mode_options = {
+                'Vision analysis (separate model)': IterationMode.VISION_SUMMARY.value,
+                'Direct screenshot to coder': IterationMode.DIRECT_TO_CODER.value,
+            }
+            label_by_value = {v: k for k, v in mode_options.items()}
+            value_by_label = {k: v for k, v in mode_options.items()}
+            initial_label = label_by_value.get(mode_value, 'Vision analysis (separate model)')
             mode_select = SimpleNamespace(value=initial_label, _mode_value_map=value_by_label)
+
+        overall_goal = ui.textarea(label='Overall goal', value=initial.overall_goal).classes('w-full')
+        user_steering = ui.textarea(label='Optional user steering', value=initial.user_steering).classes('w-full')
 
         with ui.expansion('Coding').classes('w-full') as code_exp:
             code_selector = ModelSelector(
@@ -210,6 +243,13 @@ class NiceGUIView(IterationEventListener):
             except Exception:
                 mode = initial.mode if isinstance(initial.mode, IterationMode) else IterationMode.VISION_SUMMARY
 
+            keep_history_value = initial.keep_history
+            if keep_history_checkbox is not None:
+                try:
+                    keep_history_value = bool(keep_history_checkbox.value)
+                except Exception:
+                    keep_history_value = initial.keep_history
+
             current = TransitionSettings(
                 code_model=code_selector.get_value(),
                 vision_model=vision_selector.get_value(),
@@ -218,8 +258,9 @@ class NiceGUIView(IterationEventListener):
                 code_template=code_tmpl.value or '',
                 vision_template=vision_tmpl.value or '',
                 mode=mode,
+                keep_history=keep_history_value,
             )
-            mode_prefs.save_settings(current)
+            get_settings().save_settings(current)
 
         if allow_mode_switch:
             def _handle_mode_change(_=None) -> None:
@@ -234,8 +275,8 @@ class NiceGUIView(IterationEventListener):
                 except Exception:
                     new_mode = initial.mode if isinstance(initial.mode, IterationMode) else IterationMode.VISION_SUMMARY
 
-                mode_prefs.set_mode(new_mode)
-                stored = mode_prefs.load_settings_for_mode(new_mode)
+                get_settings().current_mode = new_mode
+                stored = get_settings().load_settings_for_mode(new_mode)
 
                 code_selector.set_value(stored.code_model)
                 try:
@@ -258,6 +299,12 @@ class NiceGUIView(IterationEventListener):
                     vision_tmpl.set_value(stored.vision_template)
                 except Exception:
                     vision_tmpl.value = stored.vision_template
+                # Update keep_history checkbox to match loaded settings
+                if keep_history_checkbox is not None:
+                    try:
+                        keep_history_checkbox.set_value(stored.keep_history)
+                    except Exception:
+                        keep_history_checkbox.value = stored.keep_history
 
                 _persist_current()
 
@@ -280,10 +327,12 @@ class NiceGUIView(IterationEventListener):
 
             code_tmpl.on('blur', lambda _: _persist_current())
             vision_tmpl.on('blur', lambda _: _persist_current())
+            if keep_history_checkbox is not None:
+                keep_history_checkbox.on_value_change(lambda _: _persist_current())
         else:
             prefs.set('iteration.mode', self._extract_mode(mode_select).value)
 
-        return {
+        result = {
             'user_steering': user_steering,
             'overall_goal': overall_goal,
             'code_model': code_model,
@@ -292,6 +341,9 @@ class NiceGUIView(IterationEventListener):
             'vision_template': vision_tmpl,
             'mode': mode_select,
         }
+        if keep_history_checkbox is not None:
+            result['keep_history'] = keep_history_checkbox
+        return result
 
     def _create_node_card(self, index: int, node: IterationNode) -> ui.card:
         with ui.card().classes('w-full p-4') as card:
@@ -305,7 +357,7 @@ class NiceGUIView(IterationEventListener):
                 with ui.column().classes('basis-7/12 min-w-0 gap-4'):
                     first_output = next(iter(node.outputs.values())) if node.outputs else None
 
-                    # Messages dialog (common for all models)
+                    # Messages dialog (showing full JSON as sent to LLM)
                     messages_dialog = None
                     if first_output and hasattr(first_output, 'messages') and first_output.messages:
                         messages_dialog = ui.dialog()
@@ -313,7 +365,7 @@ class NiceGUIView(IterationEventListener):
                         with messages_dialog:
                             with ui.card().classes('w-[90vw] max-w-[1200px]'):
                                 with ui.row().classes('items-center justify-between w-full'):
-                                    ui.label('LLM Input Messages').classes('text-lg font-semibold')
+                                    ui.label('Message History').classes('text-lg font-semibold')
                                     ui.button(icon='close', on_click=messages_dialog.close).props('flat round dense')
                                 ui.html('''<style>
                                 .messages-container { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; background: #0b0f17; color: #e5e7eb; border: 1px solid #334155; border-radius: 6px; padding: 16px; max-height: 70vh; overflow: auto; }
@@ -463,6 +515,16 @@ class NiceGUIView(IterationEventListener):
                                             return
                                         try:
                                             selected_model = inputs['code_model'].value or slug
+                                            # Update app-wide keep_history setting from UI if changed
+                                            settings_manager = get_settings()
+
+                                            if 'keep_history' in inputs and inputs['keep_history'] is not None:
+                                                try:
+                                                    new_keep_history = bool(inputs['keep_history'].value)
+                                                    settings_manager.keep_history = new_keep_history
+                                                except Exception:
+                                                    pass
+
                                             updated = TransitionSettings(
                                                 code_model=selected_model,
                                                 vision_model=inputs['vision_model'].value or '',
@@ -470,9 +532,10 @@ class NiceGUIView(IterationEventListener):
                                                 user_steering=inputs['user_steering'].value or '',
                                                 code_template=inputs['code_template'].value or '',
                                                 vision_template=inputs['vision_template'].value or '',
-                                                mode=self._extract_mode(inputs['mode'])
+                                                mode=self._extract_mode(inputs['mode']),
+                                                keep_history=get_settings().keep_history
                                             )
-                                            mode_prefs.save_settings(updated)
+                                            get_settings().save_settings(updated)
                                             await self.controller.apply_transition(node.id, updated, slug)
                                         except Exception as exc:
                                             # Route error to UI via notification queue (safe from background tasks)
@@ -575,6 +638,7 @@ class NiceGUIView(IterationEventListener):
             except Exception:
                 # Best-effort; drop malformed items
                 pass
+
 
 
 
