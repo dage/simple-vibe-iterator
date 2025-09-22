@@ -5,6 +5,7 @@ import asyncio
 import json
 from typing import Dict, List
 from pathlib import Path
+from types import SimpleNamespace
 
 from nicegui import ui
 from diff_match_patch import diff_match_patch
@@ -148,14 +149,15 @@ class NiceGUIView(IterationEventListener):
         label_by_value = {v: k for k, v in mode_options.items()}
         value_by_label = {k: v for k, v in mode_options.items()}
         initial_label = label_by_value.get(mode_value, 'Vision analysis (separate model)')
-        mode_select = ui.select(
-            options=list(mode_options.keys()),
-            value=initial_label,
-            label='iteration mode',
-        ).props('dense outlined').classes('w-full')
-        mode_select._mode_value_map = value_by_label  # type: ignore[attr-defined]
-        if not allow_mode_switch:
-            mode_select.props('disable')
+        if allow_mode_switch:
+            mode_select = ui.select(
+                options=list(mode_options.keys()),
+                value=initial_label,
+                label='iteration mode',
+            ).props('dense outlined').classes('w-full')
+            mode_select._mode_value_map = value_by_label  # type: ignore[attr-defined]
+        else:
+            mode_select = SimpleNamespace(value=initial_label, _mode_value_map=value_by_label)
 
         with ui.expansion('Coding').classes('w-full') as code_exp:
             code_selector = ModelSelector(
@@ -279,8 +281,7 @@ class NiceGUIView(IterationEventListener):
             code_tmpl.on('blur', lambda _: _persist_current())
             vision_tmpl.on('blur', lambda _: _persist_current())
         else:
-            mode_select.on_value_change(lambda _: prefs.set('iteration.mode', self._extract_mode(mode_select).value))
-            mode_select.on('update:model-value', lambda _: prefs.set('iteration.mode', self._extract_mode(mode_select).value))
+            prefs.set('iteration.mode', self._extract_mode(mode_select).value)
 
         return {
             'user_steering': user_steering,
