@@ -81,8 +81,9 @@ class OpenRouterAICodeService(AICodeService):
             messages=messages,
             model=model,
         )
+        reasoning_result = (meta.get("reasoning") or None)
         op_status.clear_phase(worker)
-        return (content or "", (meta.get("reasoning") or None), meta)
+        return (content or "", reasoning_result, meta)
 
 
 class OpenRouterVisionService(VisionService):

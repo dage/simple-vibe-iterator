@@ -314,7 +314,6 @@ async def chat(
     try:
         slug = model or s.code_model
         # Find supported params from cached model list
-        supported = []
         try:
             # Prefer cache; if empty, fetch
             from . import model_params as mp  # local import to avoid circulars in tests
@@ -323,6 +322,22 @@ async def chat(
         # Use cached models if present; otherwise fetch one page
         mlist = await list_models(force_refresh=False, limit=2000)
         sp = next((m.supported_parameters for m in mlist if m.id == slug), [])
+
+        # Auto-inject reasoning parameters for models that actually support them
+        # But skip if there are conflicting parameters that don't work well with reasoning
+        conflicting_params = {"response_format", "tools", "tool_choice", "structured_outputs"}
+        has_conflicts = any(param in merged_kwargs for param in conflicting_params)
+        skip_reasoning = (
+            has_conflicts or
+            any(conflict in slug for conflict in ["openai/gpt-5", "google/gemini"])
+        )
+
+        if not skip_reasoning:
+            if "include_reasoning" in sp and "include_reasoning" not in merged_kwargs:
+                merged_kwargs["include_reasoning"] = True
+            if "reasoning" in sp and "reasoning" not in merged_kwargs:
+                merged_kwargs["reasoning"] = {"effort": "high"}
+
         stored = mp.get_sanitized_params_for_api(slug, sp)
         # Stored defaults < explicit kwargs
         for k, v in stored.items():
@@ -385,6 +400,22 @@ async def chat_with_meta(
             import model_params as mp  # type: ignore
         mlist = await list_models(force_refresh=False, limit=2000)
         sp = next((m.supported_parameters for m in mlist if m.id == slug), [])
+
+        # Auto-inject reasoning parameters for models that actually support them
+        # But skip if there are conflicting parameters that don't work well with reasoning
+        conflicting_params = {"response_format", "tools", "tool_choice", "structured_outputs"}
+        has_conflicts = any(param in merged_kwargs for param in conflicting_params)
+        skip_reasoning = (
+            has_conflicts or
+            any(conflict in slug for conflict in ["openai/gpt-5", "google/gemini"])
+        )
+
+        if not skip_reasoning:
+            if "include_reasoning" in sp and "include_reasoning" not in merged_kwargs:
+                merged_kwargs["include_reasoning"] = True
+            if "reasoning" in sp and "reasoning" not in merged_kwargs:
+                merged_kwargs["reasoning"] = {"effort": "high"}
+
         stored = mp.get_sanitized_params_for_api(slug, sp)
         for k, v in stored.items():
             if k not in merged_kwargs:
