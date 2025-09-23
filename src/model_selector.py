@@ -180,14 +180,20 @@ class ModelSelector:
     async def _load_and_render(self, query: str) -> None:
         removed: Set[str] = set()
         try:
+            # Load models for current view (respecting query and capability constraints)
             models = await orc.list_models(query=query, vision_only=self.vision_only, limit=2000)
             filtered = list(models)
             if self.require_image_input:
                 filtered = [m for m in filtered if getattr(m, 'has_image_input', False)]
 
-            available_ids = {m.id for m in filtered}
+            # Determine removal only against the unfiltered availability under capability constraints,
+            # so typing in the filter does NOT clear existing selections.
+            all_models = await orc.list_models(query="", vision_only=self.vision_only, limit=2000)
+            if self.require_image_input:
+                all_models = [m for m in all_models if getattr(m, 'has_image_input', False)]
+            available_ids_all = {m.id for m in all_models}
             for sid in list(self._selected_ids):
-                if sid not in available_ids:
+                if sid not in available_ids_all:
                     removed.add(sid)
 
             self._models = filtered
