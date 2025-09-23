@@ -153,8 +153,8 @@ async def _interpret_input(
         )
     )
 
-    if settings.mode != IterationMode.VISION_SUMMARY:
-        return result
+    # Run vision analysis for all modes when a screenshot is available so that
+    # direct-to-coder can also leverage a textual summary alongside raw pixels.
 
     vision_prompt = build_vision_prompt(
         html_input=context.html_input,

@@ -90,7 +90,9 @@ def build_code_payload(
 
         # Add the current iteration's user message
         if settings.mode == IterationMode.DIRECT_TO_CODER:
-            code_prompt = _strip_vision_mentions(code_prompt)
+            # In direct mode, we still include the computed vision summary in the
+            # textual prompt, but we also attach the screenshot so the coder can
+            # reason directly over pixels. Keep the text intact.
             # Attach any provided images to the user message; coder must rely on raw pixels.
             parts: List[Dict[str, Any]] = []
             if code_prompt.strip():
@@ -114,7 +116,8 @@ def build_code_payload(
 
     # Original behavior when keep_history is disabled or no history available
     if settings.mode == IterationMode.DIRECT_TO_CODER:
-        code_prompt = _strip_vision_mentions(code_prompt)
+        # Include the vision summary in the textual prompt and attach the image
+        # so the coder has both sources of signal.
         # Attach any provided images to the user message; coder must rely on raw pixels.
         parts: List[Dict[str, Any]] = []
         if code_prompt.strip():

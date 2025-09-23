@@ -220,15 +220,12 @@ class NiceGUIView(IterationEventListener):
                 code_selector.set_require_image_input(require_image)
             except Exception:
                 pass
+            # Keep vision settings visible for all modes (direct mode now also uses vision)
             try:
-                vision_exp.visible = not require_image
+                vision_exp.visible = True
             except Exception:
                 pass
             if require_image and reset_on_mode_change:
-                try:
-                    vision_selector.set_value('')
-                except Exception:
-                    pass
                 if allow_mode_switch:
                     try:
                         code_selector.set_value('')
@@ -415,19 +412,19 @@ class NiceGUIView(IterationEventListener):
                                     ui.markdown(in_logs_text)
                                 else:
                                     ui.label('(no console logs)')
-                            if node.settings.mode == IterationMode.VISION_SUMMARY:
-                                _va_raw = first_output.artifacts.vision_output if first_output else ''
-                                _va_lines = [l for l in _va_raw.splitlines() if l.strip()]
-                                va_title = f"Vision Analysis ({'empty' if len(_va_lines) == 0 else len(_va_lines)})"
-                                with ui.expansion(va_title):
-                                    va_text = first_output.artifacts.vision_output if first_output else ''
-                                    if not (getattr(first_output.artifacts, 'input_screenshot_filename', '') if first_output else '').strip():
-                                        va_text = '(no input screenshot)'
-                                    elif not (va_text or '').strip():
-                                        va_text = '(pending)'
-                                    else:
-                                        va_text = va_text.replace('\n', '\n\n')
-                                    ui.markdown(va_text)
+                            # Show vision analysis section for any mode; direct mode now includes vision
+                            _va_raw = first_output.artifacts.vision_output if first_output else ''
+                            _va_lines = [l for l in _va_raw.splitlines() if l.strip()]
+                            va_title = f"Vision Analysis ({'empty' if len(_va_lines) == 0 else len(_va_lines)})"
+                            with ui.expansion(va_title):
+                                va_text = first_output.artifacts.vision_output if first_output else ''
+                                if not (getattr(first_output.artifacts, 'input_screenshot_filename', '') if first_output else '').strip():
+                                    va_text = '(no input screenshot)'
+                                elif not (va_text or '').strip():
+                                    va_text = '(pending)'
+                                else:
+                                    va_text = va_text.replace('\n', '\n\n')
+                                ui.markdown(va_text)
 
                         with ui.column().classes('basis-1/2 min-w-0 gap-6'):
                             for model_slug, out in node.outputs.items():

@@ -73,7 +73,7 @@ class StubVisionService:
 
     async def analyze_screenshot(self, *args, **kwargs) -> str:
         self.called = True
-        raise AssertionError("Vision service should not be called in direct mode")
+        return "- Observed a 1x1 image"
 
 
 class RecordingAICodeService:
@@ -134,8 +134,8 @@ async def test_direct_mode_prompt_contains_image() -> Tuple[bool, str]:
     if not child:
         return False, "child missing"
 
-    if vision.called:
-        return False, "vision service should not be invoked in direct mode"
+    if not vision.called:
+        return False, "vision service should be invoked in direct mode now"
 
     if not ai.last_messages:
         return False, "direct mode prompt did not include image content"
@@ -149,8 +149,8 @@ async def test_direct_mode_prompt_contains_image() -> Tuple[bool, str]:
     if not has_image:
         return False, "image attachment missing from prompt"
 
-    if "vision" in ai.last_prompt_text.lower():
-        return False, "prompt text still references vision analysis"
+    if "vision" not in ai.last_prompt_text.lower():
+        return False, "prompt text should include vision analysis now"
 
     return True, "direct mode prompt attaches screenshot"
 

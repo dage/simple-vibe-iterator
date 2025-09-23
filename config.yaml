@@ -24,7 +24,7 @@ templates:
     - Load external libraries (three.js, etc.) from reliable CDNs when needed
 
     ITERATION GUIDANCE:
-    - Vision findings will be empty when using direct screenshot mode
+    - Direct screenshot mode also runs vision analysis; both are provided
     - Console logs contain feedback from previous iterations - use them to fix issues
     - Build incrementally on existing HTML rather than starting over
     - Each iteration should show measurable progress or enhancement
