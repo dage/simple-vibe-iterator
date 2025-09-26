@@ -87,6 +87,14 @@ class NiceGUIView(IterationEventListener):
                                     except Exception:
                                         pass
 
+                                try:
+                                    raw_shots = getattr(inputs['input_screenshot_count'], 'value', init_settings.input_screenshot_count)
+                                    shot_value = int(raw_shots)
+                                except Exception:
+                                    shot_value = init_settings.input_screenshot_count
+                                if shot_value < 1:
+                                    shot_value = 1
+
                                 settings = TransitionSettings(
                                     code_model=inputs['code_model'].value or '',
                                     vision_model=inputs['vision_model'].value or '',
@@ -94,6 +102,7 @@ class NiceGUIView(IterationEventListener):
                                     user_steering=inputs['user_steering'].value or '',
                                     code_template=inputs['code_template'].value or '',
                                     vision_template=inputs['vision_template'].value or '',
+                                    input_screenshot_count=shot_value,
                                     mode=self._extract_mode(inputs['mode']),
                                     keep_history=get_settings().keep_history
                                 )
@@ -189,6 +198,20 @@ class NiceGUIView(IterationEventListener):
             initial_label = label_by_value.get(mode_value, 'Vision analysis (separate model)')
             mode_select = SimpleNamespace(value=initial_label, _mode_value_map=value_by_label)
 
+        try:
+            initial_shots = int(getattr(initial, 'input_screenshot_count', 1) or 1)
+        except Exception:
+            initial_shots = 1
+        if initial_shots < 1:
+            initial_shots = 1
+        screenshot_count = ui.number(
+            label='Input screenshots',
+            value=initial_shots,
+            min=1,
+            max=16,
+            step=1,
+        ).props('dense outlined').classes('w-full')
+
         overall_goal = ui.textarea(label='Overall goal', value=initial.overall_goal).classes('w-full')
         user_steering = ui.textarea(label='Optional user steering', value=initial.user_steering).classes('w-full')
 
@@ -247,6 +270,13 @@ class NiceGUIView(IterationEventListener):
                 except Exception:
                     keep_history_value = initial.keep_history
 
+            try:
+                shot_value = int(getattr(screenshot_count, 'value', initial_shots) or initial_shots)
+            except Exception:
+                shot_value = initial_shots
+            if shot_value < 1:
+                shot_value = 1
+
             current = TransitionSettings(
                 code_model=code_selector.get_value(),
                 vision_model=vision_selector.get_value(),
@@ -254,6 +284,7 @@ class NiceGUIView(IterationEventListener):
                 user_steering=user_steering.value or '',
                 code_template=code_tmpl.value or '',
                 vision_template=vision_tmpl.value or '',
+                input_screenshot_count=shot_value,
                 mode=mode,
                 keep_history=keep_history_value,
             )
@@ -296,6 +327,10 @@ class NiceGUIView(IterationEventListener):
                     vision_tmpl.set_value(stored.vision_template)
                 except Exception:
                     vision_tmpl.value = stored.vision_template
+                try:
+                    screenshot_count.set_value(stored.input_screenshot_count)
+                except Exception:
+                    screenshot_count.value = stored.input_screenshot_count
                 # Update keep_history checkbox to match loaded settings
                 if keep_history_checkbox is not None:
                     try:
@@ -326,6 +361,8 @@ class NiceGUIView(IterationEventListener):
             vision_tmpl.on('blur', lambda _: _persist_current())
             if keep_history_checkbox is not None:
                 keep_history_checkbox.on_value_change(lambda _: _persist_current())
+            screenshot_count.on_value_change(lambda _: _persist_current())
+            screenshot_count.on('update:model-value', lambda _: _persist_current())
         else:
             prefs.set('iteration.mode', self._extract_mode(mode_select).value)
 
@@ -336,6 +373,7 @@ class NiceGUIView(IterationEventListener):
             'vision_model': vision_model,
             'code_template': code_tmpl,
             'vision_template': vision_tmpl,
+            'input_screenshot_count': screenshot_count,
             'mode': mode_select,
         }
         if keep_history_checkbox is not None:
@@ -485,31 +523,49 @@ class NiceGUIView(IterationEventListener):
 
                     with ui.row().classes('w-full items-start gap-6 flex-nowrap'):
                         with ui.column().classes('basis-1/2 min-w-0 gap-2'):
-                            ui.label('INPUT SCREENSHOT').classes('text-sm font-semibold')
+                            ui.label('INPUT SCREENSHOTS').classes('text-sm font-semibold')
+                            input_entries: List[tuple[int, str, str, str]] = []
+                            primary_html_url = ''
+                            limit_note = ''
                             try:
                                 from pathlib import Path as _P
-                                input_png = first_output.artifacts.input_screenshot_filename if first_output else ''
-                                input_html_url = ''
-                                if input_png:
-                                    p = _P(input_png)
+                                raw_paths = list(getattr(first_output.artifacts, 'input_screenshot_filenames', []) if first_output else [])
+                                for idx, raw_path in enumerate(raw_paths):
+                                    if not (raw_path or '').strip():
+                                        continue
+                                    p = _P(raw_path)
+                                    artifact_url = f"/artifacts/{p.name}" if p.exists() else ''
                                     html_candidate = p.with_suffix('.html')
-                                    if html_candidate.exists():
-                                        input_html_url = '/artifacts/' + html_candidate.name
+                                    html_url = f"/artifacts/{html_candidate.name}" if html_candidate.exists() else ''
+                                    input_entries.append((idx, raw_path, artifact_url, html_url))
+                                    if not primary_html_url and html_url:
+                                        primary_html_url = html_url
+                                limit_note = (getattr(first_output.artifacts, 'analysis', {}) or {}).get('input_screenshot_limit', '')
                             except Exception:
-                                input_png = ''
-                                input_html_url = ''
-                            if input_png:
-                                ui.image(input_png).classes('w-full h-auto max-w-full border rounded')
-                            else:
-                                ui.label('(no input screenshot)')
-                            if input_html_url:
+                                input_entries = []
+                                limit_note = ''
+                                primary_html_url = ''
+
+                            if input_entries:
+                                if limit_note:
+                                    ui.label(limit_note).classes('text-xs text-amber-300')
+                                with ui.row().classes('w-full gap-2 flex-wrap'):
+                                    for idx, raw_path, artifact_url, html_url in input_entries:
+                                        with ui.column().classes('gap-1 w-[120px]'):
+                                            target_link = artifact_url or raw_path
+                                            with ui.link('', target_link, new_tab=True).classes('block no-underline'):
+                                                ui.image(raw_path).classes('w-[120px] h-[80px] object-cover border border-gray-600 rounded hover:border-blue-400 transition-colors duration-150')
+                                            with ui.row().classes('items-center justify-between w-full'):
+                                                ui.label(f'#{idx + 1}').classes('text-xs text-gray-400')
                                 size = format_html_size(node.html_input)
-                                with ui.row().classes('items-center gap-2'):
+                                with ui.row().classes('items-center gap-2 mt-1'):
                                     ui.icon('content_copy').classes('text-sm cursor-pointer').on('click', lambda html=node.html_input: self._copy_to_clipboard(html))
-                                    ui.label('HTML').classes('text-sm')
+                                    ui.label('HTML source').classes('text-sm')
+                                    if primary_html_url:
+                                        ui.link('Open', primary_html_url, new_tab=True).classes('text-sm')
                                     ui.label(f'({size})').classes('text-sm text-gray-600 dark:text-gray-400')
-                                    ui.label(':').classes('text-sm')
-                                    ui.link('Open', input_html_url, new_tab=True).classes('text-sm')
+                            else:
+                                ui.label('(no input screenshots)').classes('text-sm text-gray-500')
                             in_logs = list(getattr(first_output.artifacts, 'input_console_logs', []) if first_output else [])
                             in_title = f"Console logs ({'empty' if len(in_logs) == 0 else len(in_logs)})"
                             with ui.expansion(in_title):
@@ -524,7 +580,8 @@ class NiceGUIView(IterationEventListener):
                             va_title = f"Vision Analysis ({'empty' if len(_va_lines) == 0 else len(_va_lines)})"
                             with ui.expansion(va_title):
                                 va_text = first_output.artifacts.vision_output if first_output else ''
-                                if not (getattr(first_output.artifacts, 'input_screenshot_filename', '') if first_output else '').strip():
+                                has_inputs = bool(getattr(first_output.artifacts, 'input_screenshot_filenames', []) if first_output else [])
+                                if not has_inputs:
                                     va_text = '(no input screenshot)'
                                 elif not (va_text or '').strip():
                                     va_text = '(pending)'
@@ -628,6 +685,14 @@ class NiceGUIView(IterationEventListener):
                                                 except Exception:
                                                     pass
 
+                                            try:
+                                                raw_iter_shots = getattr(inputs['input_screenshot_count'], 'value', node.settings.input_screenshot_count)
+                                                iter_shots = int(raw_iter_shots)
+                                            except Exception:
+                                                iter_shots = node.settings.input_screenshot_count
+                                            if iter_shots < 1:
+                                                iter_shots = 1
+
                                             updated = TransitionSettings(
                                                 code_model=selected_model,
                                                 vision_model=inputs['vision_model'].value or '',
@@ -635,6 +700,7 @@ class NiceGUIView(IterationEventListener):
                                                 user_steering=inputs['user_steering'].value or '',
                                                 code_template=inputs['code_template'].value or '',
                                                 vision_template=inputs['vision_template'].value or '',
+                                                input_screenshot_count=iter_shots,
                                                 mode=self._extract_mode(inputs['mode']),
                                                 keep_history=get_settings().keep_history
                                             )

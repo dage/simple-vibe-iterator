@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 import uuid
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Any, Dict, List, Optional, Protocol, Sequence
 
 
 # ---- Data model for state-machine iterations ----
@@ -26,6 +26,7 @@ class TransitionSettings:
     user_steering: str
     code_template: str
     vision_template: str
+    input_screenshot_count: int = 1
     mode: IterationMode = IterationMode.VISION_SUMMARY
     keep_history: bool = False
 
@@ -35,10 +36,14 @@ class TransitionArtifacts:
     screenshot_filename: str
     console_logs: List[str]
     vision_output: str
-    input_screenshot_filename: str
+    input_screenshot_filenames: List[str]
     input_console_logs: List[str]
     assets: List["IterationAsset"] = field(default_factory=list)
     analysis: Dict[str, str] = field(default_factory=dict)
+
+    @property
+    def input_screenshot_filename(self) -> str:
+        return self.input_screenshot_filenames[0] if self.input_screenshot_filenames else ""
 
 
 @dataclass
@@ -76,14 +81,21 @@ class AICodeService(Protocol):
 
 
 class BrowserService(Protocol):
-    async def render_and_capture(self, html_code: str, worker: str = "main") -> tuple[str, List[str]]: ...
+    async def render_and_capture(
+        self,
+        html_code: str,
+        worker: str = "main",
+        *,
+        capture_count: int = 1,
+        interval_seconds: float = 1.0,
+    ) -> tuple[List[str], List[str]]: ...
 
 
 class VisionService(Protocol):
     async def analyze_screenshot(
         self,
         prompt: str,
-        screenshot_path: str,
+        screenshot_paths: Sequence[str],
         console_logs: List[str],
         model: str,
         worker: str = "main",

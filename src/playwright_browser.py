@@ -1,7 +1,7 @@
 # src/playwright_browser.py
 from __future__ import annotations
 from pathlib import Path
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Sequence
 from playwright.sync_api import sync_playwright
 import time
 
@@ -19,8 +19,16 @@ def parse_viewport(s: str | None) -> tuple[int, int]:
         return (1280, 720)
 
 
-def capture_html(html_path: Path, out_png: Path, viewport: Tuple[int, int] = (1280, 720)) -> List[Dict[str, Any]]:
-    out_png.parent.mkdir(parents=True, exist_ok=True)
+def capture_html(
+    html_path: Path,
+    out_pngs: Sequence[Path],
+    viewport: Tuple[int, int] = (1280, 720),
+    interval_seconds: float = 1.0,
+) -> List[Dict[str, Any]]:
+    if not out_pngs:
+        raise ValueError("At least one output path is required for capture_html")
+    for path in out_pngs:
+        path.parent.mkdir(parents=True, exist_ok=True)
     url = html_path.resolve().as_uri()
     logs: List[Dict[str, Any]] = []
     with sync_playwright() as p:
@@ -109,10 +117,15 @@ def capture_html(html_path: Path, out_png: Path, viewport: Tuple[int, int] = (12
                 if (now - start_ts) >= MAX_WAIT_S:
                     break
                 time.sleep(0.05)
-
-            page.screenshot(path=str(out_png), full_page=False)
+            wait_ms = max(0, int(interval_seconds * 1000)) if interval_seconds else 0
+            for idx, path in enumerate(out_pngs):
+                if idx > 0 and wait_ms > 0:
+                    try:
+                        page.wait_for_timeout(wait_ms)
+                    except Exception:
+                        time.sleep(interval_seconds)
+                page.screenshot(path=str(path), full_page=False)
         finally:
             browser.close()
     return logs
-
 

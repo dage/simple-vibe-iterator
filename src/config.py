@@ -1,10 +1,11 @@
 # src/config.py
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 import os
+from typing import Dict
 
 import yaml
 
@@ -28,6 +29,9 @@ class AppConfig:
     code_template: str
     vision_template: str
     iteration_mode: IterationMode
+    input_screenshot_default: int = 1
+    input_screenshot_interval: float = 1.0
+    model_image_limits: Dict[str, Dict[str, int]] = field(default_factory=dict)
 
 
 def _project_root() -> Path:
@@ -83,11 +87,48 @@ def get_config() -> AppConfig:
     except Exception:
         iteration_mode = IterationMode.VISION_SUMMARY
 
+    screenshot_cfg = iteration_cfg.get('input_screenshots') if isinstance(iteration_cfg, dict) else {}
+    if not isinstance(screenshot_cfg, dict):
+        screenshot_cfg = {}
+    try:
+        default_shots = int(screenshot_cfg.get('default_count', 1))
+    except Exception:
+        default_shots = 1
+    if default_shots < 1:
+        default_shots = 1
+    try:
+        interval_seconds = float(screenshot_cfg.get('interval_seconds', 1.0))
+    except Exception:
+        interval_seconds = 1.0
+    if interval_seconds <= 0:
+        interval_seconds = 1.0
+
+    limits: Dict[str, Dict[str, int]] = {'code': {}, 'vision': {}}
+    raw_limits = screenshot_cfg.get('model_limits', {})
+    if isinstance(raw_limits, dict):
+        for group in ('code', 'vision'):
+            group_cfg = raw_limits.get(group)
+            if not isinstance(group_cfg, dict):
+                continue
+            normalized: Dict[str, int] = {}
+            for slug, raw_value in group_cfg.items():
+                try:
+                    value = int(raw_value)
+                except Exception:
+                    continue
+                if value <= 0:
+                    continue
+                normalized[str(slug)] = value
+            if normalized:
+                limits[group] = normalized
+
     return AppConfig(
         code_model=code_model,
         vision_model=vision_model,
         code_template=code_template,
         vision_template=vision_template,
         iteration_mode=iteration_mode,
+        input_screenshot_default=default_shots,
+        input_screenshot_interval=interval_seconds,
+        model_image_limits=limits,
     )
-

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Sequence, Tuple
 import os
 import sys
 
@@ -72,16 +72,16 @@ class _TestStubVisionService:
     async def analyze_screenshot(
         self,
         prompt: str,
-        screenshot_path: str,
+        screenshot_paths: Sequence[str],
         console_logs: List[str],
         model: str,
         worker: str = "main",
     ) -> str:
         await asyncio.sleep(0.01)
-        name = Path(screenshot_path).name
+        names = [Path(p).name for p in screenshot_paths]
         lines = [
             "Vision stub",
-            f"Screenshot: {name}",
+            f"Screenshots: {', '.join(names) if names else '(none)'}",
             f"Console entries: {len(console_logs)}",
             f"Prompt bytes: {len((prompt or '').encode('utf-8'))}",
             f"Model: {model}",
@@ -286,9 +286,22 @@ async def test_shared_input_capture() -> Tuple[bool, str]:
         def __init__(self) -> None:
             self.calls: list[str] = []
 
-        async def render_and_capture(self, html_code: str, worker: str = "main") -> tuple[str, List[str]]:
+        async def render_and_capture(
+            self,
+            html_code: str,
+            worker: str = "main",
+            *,
+            capture_count: int = 1,
+            interval_seconds: float = 1.0,
+        ) -> tuple[List[str], List[str]]:
             self.calls.append(worker)
-            return (f"{worker}.png", [f"log-{worker}"])
+            try:
+                count = int(capture_count)
+            except Exception:
+                count = 1
+            count = max(1, count)
+            files = [f"{worker}_{idx}.png" for idx in range(count)]
+            return (files, [f"log-{worker}"])
 
     ai = _TestStubAICodeService()
     browser = _CountingBrowserService()

@@ -113,6 +113,33 @@ class Settings:
             mode = self.current_mode
         self._set_mode_value('template.vision', mode, value)
 
+    def get_input_screenshot_count(self, mode: Optional[IterationMode] = None) -> int:
+        """Get the preferred number of input screenshots for the given mode."""
+        if mode is None:
+            mode = self.current_mode
+        cfg = app_config.get_config()
+        fallback = str(cfg.input_screenshot_default)
+        raw = self._get_mode_value('input.screenshot.count', mode, prefs.get('input.screenshot.count', fallback))
+        try:
+            value = int(raw)
+        except Exception:
+            value = cfg.input_screenshot_default
+        if value < 1:
+            value = 1
+        return value
+
+    def set_input_screenshot_count(self, value: int, mode: Optional[IterationMode] = None) -> None:
+        """Set the preferred number of input screenshots for the given mode."""
+        if mode is None:
+            mode = self.current_mode
+        try:
+            count = int(value)
+        except Exception:
+            count = 1
+        if count < 1:
+            count = 1
+        self._set_mode_value('input.screenshot.count', mode, str(count))
+
     # TransitionSettings compatibility
     def load_settings(self, overall_goal: str = '', user_steering: str = '') -> TransitionSettings:
         """Load complete settings for current mode."""
@@ -133,6 +160,7 @@ class Settings:
             user_steering=user_steering,
             code_template=self.get_code_template(mode),
             vision_template=self.get_vision_template(mode),
+            input_screenshot_count=self.get_input_screenshot_count(mode),
             mode=mode,
             keep_history=self.keep_history,
         )
@@ -144,6 +172,7 @@ class Settings:
         self.set_vision_model(settings.vision_model, settings.mode)
         self.set_code_template(settings.code_template, settings.mode)
         self.set_vision_template(settings.vision_template, settings.mode)
+        self.set_input_screenshot_count(settings.input_screenshot_count, settings.mode)
         self.keep_history = settings.keep_history
 
     def with_mode(self, settings: TransitionSettings, mode: IterationMode) -> TransitionSettings:

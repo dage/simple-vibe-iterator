@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
+import uuid
 from pathlib import Path
 from typing import List, Sequence
 
@@ -19,15 +20,41 @@ class PlaywrightBrowserService(BrowserService):
         self._out_dir.mkdir(parents=True, exist_ok=True)
         self._viewport = parse_viewport(viewport)
         self._lock = asyncio.Lock()
-    async def render_and_capture(self, html_code: str, worker: str = "main") -> tuple[str, List[str]]:
-        # Persist HTML to temp file for Playwright to open via file://
+    async def render_and_capture(
+        self,
+        html_code: str,
+        worker: str = "main",
+        *,
+        capture_count: int = 1,
+        interval_seconds: float = 1.0,
+    ) -> tuple[List[str], List[str]]:
+        try:
+            count = int(capture_count)
+        except Exception:
+            count = 1
+        count = max(1, count)
+
+        try:
+            interval = float(interval_seconds)
+        except Exception:
+            interval = 1.0
+        if interval <= 0:
+            interval = 1.0
+
         digest = hashlib.sha1(html_code.encode("utf-8")).hexdigest()[:12]
-        html_path = self._out_dir / f"page_{digest}.html"
-        png_path = self._out_dir / f"page_{digest}.png"
-        html_path.write_text(html_code, encoding="utf-8")
+        token = uuid.uuid4().hex[:8]
+        base_html = self._out_dir / f"page_{digest}_{token}.html"
+        base_html.write_text(html_code, encoding="utf-8")
+        png_paths = [self._out_dir / f"page_{digest}_{token}_{idx}.png" for idx in range(count)]
         op_status.set_phase(worker, "Playwright: Capture screenshot")
         async with self._lock:
-            logs = await asyncio.to_thread(capture_html, html_path, png_path, self._viewport)
+            logs = await asyncio.to_thread(
+                capture_html,
+                base_html,
+                png_paths,
+                self._viewport,
+                interval,
+            )
         # Flatten console texts for now to meet interface
         flat_logs: List[str] = []
         for entry in logs:
@@ -35,7 +62,14 @@ class PlaywrightBrowserService(BrowserService):
             msg = str(entry.get("text") or "")
             flat_logs.append(f"[{t}] {msg}")
         op_status.clear_phase(worker)
-        return (str(png_path), flat_logs)
+        for png in png_paths:
+            html_copy = png.with_suffix('.html')
+            try:
+                if not html_copy.exists():
+                    html_copy.write_text(html_code, encoding="utf-8")
+            except Exception:
+                pass
+        return ([str(p) for p in png_paths], flat_logs)
 
 
 # ---- OpenRouter-backed services ----
@@ -107,7 +141,7 @@ class OpenRouterVisionService(VisionService):
     async def analyze_screenshot(
         self,
         prompt: str,
-        screenshot_path: str,
+        screenshot_paths: Sequence[str],
         console_logs: List[str],
         model: str,
         worker: str = "main",
@@ -115,9 +149,20 @@ class OpenRouterVisionService(VisionService):
         from . import or_client
 
         op_status.set_phase(worker, f"Vision: {model}")
-        reply = await or_client.vision_single(
-            prompt=prompt,
-            image=screenshot_path,
+        parts = [{"type": "text", "text": prompt}]
+        for path in screenshot_paths:
+            if not (path or "").strip():
+                continue
+            try:
+                data_url = or_client.encode_image_to_data_url(path)
+            except Exception:
+                continue
+            parts.append({"type": "image_url", "image_url": {"url": data_url}})
+        if len(parts) == 1:
+            op_status.clear_phase(worker)
+            return ""
+        reply = await or_client.chat(
+            messages=[{"role": "user", "content": parts}],
             model=model,
             temperature=0,
         )

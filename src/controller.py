@@ -20,11 +20,13 @@ from .interfaces import (
 )
 from . import op_status
 from .prompt_builder import build_code_payload, build_vision_prompt
+from .model_capabilities import get_image_limit, get_input_screenshot_interval
 
 try:  # pragma: no cover - import differs during tests
     from . import or_client as orc
 except Exception:  # pragma: no cover
     import or_client as orc  # type: ignore
+
 
 
 def _compute_html_diff(html_input: str, html_output: str) -> str:
@@ -54,8 +56,9 @@ def _compute_html_diff(html_input: str, html_output: str) -> str:
 class TransitionContext:
     html_input: str
     html_diff: str
-    input_screenshot_path: str = ""
+    input_screenshot_paths: List[str] = field(default_factory=list)
     input_console_logs: List[str] = field(default_factory=list)
+    input_limit_note: str = ""
 
 
 @dataclass
@@ -74,10 +77,29 @@ async def δ(
 ) -> Dict[str, Tuple[str, str, dict | None, TransitionArtifacts]]:
     context = TransitionContext(html_input=html_input or "", html_diff=html_diff or "")
 
-    if (html_input or "").strip():
-        screenshot_path, console_logs = await browser_service.render_and_capture(html_input, worker="input")
-        context.input_screenshot_path = screenshot_path
+    requested_shots = 1
+    try:
+        requested_shots = int(getattr(settings, "input_screenshot_count", 1) or 1)
+    except Exception:
+        requested_shots = 1
+    requested_shots = max(1, requested_shots)
+    effective_shots, limit_note = _resolve_input_screenshot_plan(settings, requested_shots)
+
+    if (html_input or "").strip() and effective_shots > 0:
+        screenshots, console_logs = await browser_service.render_and_capture(
+            html_input,
+            worker="input",
+            capture_count=effective_shots,
+            interval_seconds=get_input_screenshot_interval(),
+        )
+        context.input_screenshot_paths = list(screenshots)
         context.input_console_logs = list(console_logs)
+        if limit_note:
+            context.input_limit_note = limit_note
+            try:
+                op_status.enqueue_notification(limit_note, color='warning', timeout=5000, close_button=True)
+            except Exception:
+                pass
 
     interpretation = await _interpret_input(settings, context, vision_service)
 
@@ -92,7 +114,8 @@ async def δ(
             message_history=message_history,
         )
         html_output, reasoning, meta = await ai_service.generate_html(payload, model, worker=model)
-        out_screenshot_path, out_console_logs = await browser_service.render_and_capture(html_output, worker=model)
+        out_screenshots, out_console_logs = await browser_service.render_and_capture(html_output, worker=model)
+        out_screenshot_path = out_screenshots[0] if out_screenshots else ""
         artifacts = _create_artifacts(
             model=model,
             context=context,
@@ -134,6 +157,54 @@ async def δ(
     return results
 
 
+def _resolve_input_screenshot_plan(settings: TransitionSettings, requested: int) -> tuple[int, str | None]:
+    effective = max(1, requested)
+    notes: List[str] = []
+
+    try:
+        mode = settings.mode if isinstance(settings.mode, IterationMode) else IterationMode(str(settings.mode))
+    except Exception:
+        mode = IterationMode.VISION_SUMMARY
+
+    if mode == IterationMode.DIRECT_TO_CODER:
+        code_models = [slug.strip() for slug in (settings.code_model or "").split(',') if slug.strip()]
+        for slug in code_models:
+            limit = get_image_limit(slug, role="code")
+            if limit is None:
+                continue
+            if effective > limit:
+                effective = min(effective, limit)
+            if requested > limit:
+                notes.append(f"code model {slug} (max {limit})")
+
+    vision_limit = get_image_limit(settings.vision_model, role="vision")
+    if vision_limit is not None:
+        if effective > vision_limit:
+            effective = min(effective, vision_limit)
+        if requested > vision_limit:
+            notes.append(f"vision model {settings.vision_model} (max {vision_limit})")
+
+    if effective < 1:
+        effective = 1
+
+    note_text: str | None = None
+    if notes and effective < requested:
+        deduped: List[str] = []
+        seen: set[str] = set()
+        for entry in notes:
+            if entry in seen:
+                continue
+            deduped.append(entry)
+            seen.add(entry)
+        joined = ", ".join(deduped)
+        note_text = (
+            "Input screenshots limited: "
+            f"requested {requested} → using {effective} (limited by {joined})"
+        )
+
+    return effective, note_text
+
+
 async def _interpret_input(
     settings: TransitionSettings,
     context: TransitionContext,
@@ -141,17 +212,19 @@ async def _interpret_input(
 ) -> InterpretationResult:
     result = InterpretationResult()
 
-    if not (context.input_screenshot_path or "").strip():
+    input_paths = [p for p in context.input_screenshot_paths if (p or "").strip()]
+    if not input_paths:
         return result
 
-    result.attachments.append(
-        IterationAsset(
-            kind="image",
-            path=context.input_screenshot_path,
-            role="input",
-            metadata={"stage": "before"},
+    for idx, path in enumerate(input_paths):
+        result.attachments.append(
+            IterationAsset(
+                kind="image",
+                path=path,
+                role="input",
+                metadata={"stage": "before", "index": str(idx)},
+            )
         )
-    )
 
     # Run vision analysis for all modes when a screenshot is available so that
     # direct-to-coder can also leverage a textual summary alongside raw pixels.
@@ -164,7 +237,7 @@ async def _interpret_input(
     )
     analysis = await vision_service.analyze_screenshot(
         vision_prompt,
-        context.input_screenshot_path,
+        input_paths,
         context.input_console_logs,
         settings.vision_model,
         worker="vision",
@@ -207,11 +280,16 @@ def _create_artifacts(
     if vision_output.strip():
         analysis["vision_summary"] = vision_output
 
+    if context.input_screenshot_paths:
+        analysis["input_screenshot_count"] = str(len(context.input_screenshot_paths))
+        if context.input_limit_note:
+            analysis["input_screenshot_limit"] = context.input_limit_note
+
     return TransitionArtifacts(
         screenshot_filename=screenshot_path,
         console_logs=list(console_logs),
         vision_output=vision_output,
-        input_screenshot_filename=context.input_screenshot_path,
+        input_screenshot_filenames=list(context.input_screenshot_paths),
         input_console_logs=list(context.input_console_logs),
         assets=assets,
         analysis=analysis,

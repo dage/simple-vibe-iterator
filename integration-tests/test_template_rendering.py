@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Sequence, Tuple
 
 
 os.environ.setdefault("OPENROUTER_DISABLE_RETRY", "1")
@@ -72,7 +72,7 @@ class RecordingVisionService:
     def __init__(self) -> None:
         self.last_prompt: str = ""
 
-    async def analyze_screenshot(self, prompt: str, screenshot_path: str, console_logs: List[str], model: str, worker: str = "main") -> str:
+    async def analyze_screenshot(self, prompt: str, screenshot_paths: Sequence[str], console_logs: List[str], model: str, worker: str = "main") -> str:
         self.last_prompt = prompt
         return "vision: ok"
 

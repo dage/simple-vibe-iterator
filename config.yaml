@@ -4,6 +4,16 @@ models:
 
 iteration:
   mode: vision_summary
+  input_screenshots:
+    default_count: 1
+    interval_seconds: 1.0
+    model_limits:
+      code:
+        google/gemini-2.5-flash-preview-09-2025: 8
+        x-ai/grok-4-fast:free: 4
+      vision:
+        google/gemini-2.5-flash-preview-09-2025: 12
+        qwen/qwen3-vl-235b-a22b-thinking: 5
 
 templates:
   code: |
@@ -46,6 +56,7 @@ templates:
     - Keep focus on the Overal Goal and the User Steering
     - Analyze the screenshot for visual, technical, and performance aspects that matter for web graphics
     - Focus on elements relevant to graphical effects: animations, canvas/WebGL content, visual quality, responsiveness
+    - Multiple input screenshots may represent sequential frames captured one second apart; analyze differences between frames to describe motion or animation states
     - The coding model can see the screenshot directly, so focus on insights it might miss or need clarification on
     - Provide factual observations that will help the coding model make informed improvements
 
@@ -60,6 +71,7 @@ templates:
     REPORTING GUIDELINES:
     - Be specific and quantitative where possible (colors as hex, sizes in pixels, positions relative to viewport)
     - Note what appears to be working well vs. what needs improvement
+    - When motion is inferred across frames, reference frame indices (#1, #2, ...) and describe the progression
     - Flag technical issues that suggest code problems (flickering, artifacts, poor performance)
     - Do NOT give coding instructions, suggestions, or act as a planner
     - Use bullet points only; keep each observation concise but informative

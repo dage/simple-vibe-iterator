@@ -60,11 +60,26 @@ class StubBrowserService:
         self.temp_dir = temp_dir
         self._counter = 0
 
-    async def render_and_capture(self, html_code: str, worker: str = "main") -> tuple[str, List[str]]:
-        self._counter += 1
-        target = self.temp_dir / f"capture_{self._counter}.png"
-        target.write_bytes(PNG_BYTES)
-        return str(target), ["[log] stub"]
+    async def render_and_capture(
+        self,
+        html_code: str,
+        worker: str = "main",
+        *,
+        capture_count: int = 1,
+        interval_seconds: float = 1.0,
+    ) -> tuple[List[str], List[str]]:
+        try:
+            count = int(capture_count)
+        except Exception:
+            count = 1
+        count = max(1, count)
+        files: List[str] = []
+        for _ in range(count):
+            self._counter += 1
+            target = self.temp_dir / f"capture_{self._counter}.png"
+            target.write_bytes(PNG_BYTES)
+            files.append(str(target))
+        return files, ["[log] stub"]
 
 
 class StubVisionService:
