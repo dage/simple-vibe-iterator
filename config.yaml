@@ -5,12 +5,12 @@ models:
 iteration:
   mode: vision_summary
   input_screenshots:
-    default_count: 1
-    interval_seconds: 1.0
+    default_count: 2
+    interval_seconds: 10
     model_limits:
-      google/gemini-2.5-flash-preview-09-2025: 8
-      x-ai/grok-4-fast:free: 4
-      qwen/qwen3-vl-235b-a22b-thinking: 5
+      google/gemini-2.5-flash-preview-09-2025: 32
+      x-ai/grok-4-fast:free: 32
+      qwen/qwen3-vl-235b-a22b-thinking: 32
 
 templates:
   code: |

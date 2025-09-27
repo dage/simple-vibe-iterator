@@ -17,6 +17,7 @@ from . import op_status
 from . import prefs
 from .model_selector import ModelSelector
 from .settings import get_settings
+from .ui_theme import apply_theme
 
 
 def format_html_size(html: str) -> str:
@@ -41,15 +42,10 @@ class NiceGUIView(IterationEventListener):
         self._notif_timer: ui.timer | None = None
 
         # Set some default styling
-        ui.dark_mode().enable()
+        apply_theme()
 
     def render(self) -> None:
         # Scoped CSS: Make the default CLOSE button text black on error notifications
-        ui.html('''<style>
-        .q-notification.bg-negative .q-btn--flat,
-        .q-notification.text-negative .q-btn--flat { color: black !important; }
-        .q-expansion-item.nicegui-expansion { border: 1px solid #555 !important; border-radius: 6px !important; }
-        </style>''')
         with ui.column().classes('w-full h-screen p-4 gap-3'):
             ui.label('Simple Vibe Iterator').classes('text-2xl font-bold')
 
