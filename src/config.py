@@ -31,7 +31,7 @@ class AppConfig:
     iteration_mode: IterationMode
     input_screenshot_default: int = 1
     input_screenshot_interval: float = 1.0
-    model_image_limits: Dict[str, Dict[str, int]] = field(default_factory=dict)
+    model_image_limits: Dict[str, int] = field(default_factory=dict)
 
 
 def _project_root() -> Path:
@@ -103,24 +103,29 @@ def get_config() -> AppConfig:
     if interval_seconds <= 0:
         interval_seconds = 1.0
 
-    limits: Dict[str, Dict[str, int]] = {'code': {}, 'vision': {}}
+    limits: Dict[str, int] = {}
+
+    def _register_limit(slug: str, raw_value: object) -> None:
+        try:
+            value = int(raw_value)  # type: ignore[arg-type]
+        except Exception:
+            return
+        if value <= 0:
+            return
+        slug_key = str(slug)
+        if slug_key in limits:
+            limits[slug_key] = min(limits[slug_key], value)
+        else:
+            limits[slug_key] = value
+
     raw_limits = screenshot_cfg.get('model_limits', {})
     if isinstance(raw_limits, dict):
-        for group in ('code', 'vision'):
-            group_cfg = raw_limits.get(group)
-            if not isinstance(group_cfg, dict):
-                continue
-            normalized: Dict[str, int] = {}
-            for slug, raw_value in group_cfg.items():
-                try:
-                    value = int(raw_value)
-                except Exception:
-                    continue
-                if value <= 0:
-                    continue
-                normalized[str(slug)] = value
-            if normalized:
-                limits[group] = normalized
+        for key, entry in raw_limits.items():
+            if isinstance(entry, dict):
+                for slug, raw_value in entry.items():
+                    _register_limit(slug, raw_value)
+            else:
+                _register_limit(key, entry)
 
     return AppConfig(
         code_model=code_model,

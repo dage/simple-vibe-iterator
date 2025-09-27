@@ -166,23 +166,27 @@ def _resolve_input_screenshot_plan(settings: TransitionSettings, requested: int)
     except Exception:
         mode = IterationMode.VISION_SUMMARY
 
+    relevant_models: List[str] = []
     if mode == IterationMode.DIRECT_TO_CODER:
         code_models = [slug.strip() for slug in (settings.code_model or "").split(',') if slug.strip()]
-        for slug in code_models:
-            limit = get_image_limit(slug, role="code")
-            if limit is None:
-                continue
-            if effective > limit:
-                effective = min(effective, limit)
-            if requested > limit:
-                notes.append(f"code model {slug} (max {limit})")
+        relevant_models.extend(code_models)
 
-    vision_limit = get_image_limit(settings.vision_model, role="vision")
-    if vision_limit is not None:
-        if effective > vision_limit:
-            effective = min(effective, vision_limit)
-        if requested > vision_limit:
-            notes.append(f"vision model {settings.vision_model} (max {vision_limit})")
+    if settings.vision_model:
+        relevant_models.append(settings.vision_model.strip())
+
+    seen: set[str] = set()
+    for slug in relevant_models:
+        normalized = slug.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        limit = get_image_limit(normalized)
+        if limit is None:
+            continue
+        if effective > limit:
+            effective = min(effective, limit)
+        if requested > limit:
+            notes.append(f"{normalized} (max {limit})")
 
     if effective < 1:
         effective = 1

@@ -8,12 +8,9 @@ iteration:
     default_count: 1
     interval_seconds: 1.0
     model_limits:
-      code:
-        google/gemini-2.5-flash-preview-09-2025: 8
-        x-ai/grok-4-fast:free: 4
-      vision:
-        google/gemini-2.5-flash-preview-09-2025: 12
-        qwen/qwen3-vl-235b-a22b-thinking: 5
+      google/gemini-2.5-flash-preview-09-2025: 8
+      x-ai/grok-4-fast:free: 4
+      qwen/qwen3-vl-235b-a22b-thinking: 5
 
 templates:
   code: |

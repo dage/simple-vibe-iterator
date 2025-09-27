@@ -25,13 +25,12 @@ def get_input_screenshot_interval() -> float:
     return value
 
 
-def get_image_limit(model_slug: str, *, role: str) -> Optional[int]:
-    limits: Dict[str, Dict[str, int]] = getattr(get_config(), "model_image_limits", {}) or {}
-    group = limits.get(role, {}) if isinstance(limits, dict) else {}
-    if not isinstance(group, dict):
+def get_image_limit(model_slug: str) -> Optional[int]:
+    limits: Dict[str, int] = getattr(get_config(), "model_image_limits", {}) or {}
+    if not isinstance(limits, dict):
         return None
     try:
-        value = group.get(model_slug)
+        value = limits.get(model_slug)
     except Exception:
         return None
     if value is None:
