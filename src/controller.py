@@ -372,7 +372,6 @@ class IterationController:
 
     def _collect_message_history(self, node_id: str, model_slug: str) -> List[Dict[str, Any]]:
         """Collect cumulative message history from root to the given node."""
-        # Build chain from root to current node
         chain: List[IterationNode] = []
         cur = self.get_node(node_id)
         while cur is not None:
@@ -380,30 +379,31 @@ class IterationController:
             cur = self.get_node(cur.parent_id) if cur.parent_id else None
         chain.reverse()
 
-        messages: List[Dict[str, Any]] = []
+        history: List[Dict[str, Any]] = []
 
         for node in chain:
-            # Add user message from this node
-            # Get the user messages from the first available model output
-            first_output = next(iter(node.outputs.values())) if node.outputs else None
-            if first_output and first_output.messages:
-                # Extract user messages (assuming last message is the user message for this iteration)
-                user_messages = [msg for msg in first_output.messages if msg.get("role") == "user"]
-                if user_messages:
-                    messages.extend(user_messages)
-
-            # Add assistant response from the requested model (or fallback to first available)
             output = node.outputs.get(model_slug)
             if output is None and node.outputs:
                 output = next(iter(node.outputs.values()))
 
-            if output and output.assistant_response:
-                messages.append({
-                    "role": "assistant",
-                    "content": output.assistant_response
-                })
+            if output is None:
+                continue
 
-        return messages
+            snapshot = list(output.messages or [])
+            if snapshot:
+                prefix_len = 0
+                max_compare = min(len(history), len(snapshot))
+                while prefix_len < max_compare and history[prefix_len] == snapshot[prefix_len]:
+                    prefix_len += 1
+                if prefix_len < len(snapshot):
+                    history.extend(snapshot[prefix_len:])
+            assistant_content = output.assistant_response
+            if assistant_content:
+                assistant_message = {"role": "assistant", "content": assistant_content}
+                if not history or history[-1] != assistant_message:
+                    history.append(assistant_message)
+
+        return history
 
     # Unified apply: if from_node_id is None, create a root; otherwise iterate from given node
     async def apply_transition(self, from_node_id: str | None, settings: TransitionSettings, from_model_slug: str | None = None) -> str:
