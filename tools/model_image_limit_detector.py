@@ -12,17 +12,6 @@ import yaml
 from PIL import Image
 from nicegui import ui
 
-
-class _LiteralString(str):
-    """Marker to force YAML literal block output for multi-line values."""
-
-
-def _literal_string_representer(dumper, data):
-    return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='|')
-
-
-yaml.add_representer(_LiteralString, _literal_string_representer)
-
 # Ensure src/ is importable when running as a standalone script
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / 'src'
@@ -40,15 +29,14 @@ if 'src' not in sys.modules:
 import importlib
 
 try:
-    get_config = importlib.import_module('src.config').get_config  # type: ignore[attr-defined]
+    importlib.import_module('src.config')
     ModelSelector = importlib.import_module('src.model_selector').ModelSelector  # type: ignore[attr-defined]
     or_client = importlib.import_module('src.or_client')  # type: ignore[assignment]
     apply_theme = importlib.import_module('src.ui_theme').apply_theme  # type: ignore[attr-defined]
 except Exception as exc:  # pragma: no cover - surface friendly error in UI
     raise RuntimeError(f'Failed to import app modules: {exc}')
 
-_MAX_ATTEMPTS_DEFAULT = 12
-DEFAULT_MODEL_SLUG = 'qwen/qwen3-vl-235b-a22b-thinking'
+_MAX_ATTEMPTS_DEFAULT = 32
 
 
 @dataclass
@@ -64,8 +52,8 @@ class DetectionState:
     log_output: Optional[Any] = None
     detect_button: Optional[Any] = None
     max_attempt_input: Optional[Any] = None
-    update_button: Optional[Any] = None
     current_limit_label: Optional[Any] = None
+    update_hint: Optional[Any] = None
 
 
 state = DetectionState()
@@ -117,6 +105,20 @@ async def _send_test_message(model: str, image_count: int) -> None:
     )
 
 
+async def _attempt_count(slug: str, count: int) -> tuple[bool, Optional[str]]:
+    _append_log(f'Trying with {count} image(s)...')
+    try:
+        await _send_test_message(slug, count)
+        _append_log(f'  ✓ {count} image(s) accepted')
+        await asyncio.sleep(0.25)
+        return True, None
+    except Exception as exc:
+        err = _format_exception(exc)
+        _append_log(f'  ✗ {count} image(s) rejected: {err}')
+        await asyncio.sleep(0.25)
+        return False, err
+
+
 async def _detect_limit() -> None:
     if state.is_running:
         return
@@ -138,7 +140,7 @@ async def _detect_limit() -> None:
         max_attempts = int(state.max_attempt_input.value) if state.max_attempt_input else _MAX_ATTEMPTS_DEFAULT
     except Exception:
         max_attempts = _MAX_ATTEMPTS_DEFAULT
-    max_attempts = max(1, min(max_attempts, 32))
+    max_attempts = max(1, min(max_attempts, 256))
 
     state.is_running = True
     state.model_slug = slug
@@ -149,47 +151,69 @@ async def _detect_limit() -> None:
 
     if state.detect_button is not None:
         state.detect_button.props('loading')
-    if state.update_button is not None:
-        state.update_button.visible = False
     if state.result_label is not None:
         state.result_label.text = f'Running detection for {slug} (up to {max_attempts} images)...'
-    _append_log(f'Starting detection for {slug}')
+    if state.update_hint is not None:
+        state.update_hint.text = 'Detecting limit...'
+    _append_log(f'Starting detection for {slug} (binary search)')
 
-    last_success = 0
+    detected_limit = 0
+    summary = ''
+    last_error: Optional[str] = None
 
-    for count in range(1, max_attempts + 1):
-        _append_log(f'Trying with {count} image(s)...')
-        try:
-            await _send_test_message(slug, count)
-            last_success = count
-            _append_log(f'  ✓ {count} image(s) accepted')
-            await asyncio.sleep(0.25)
-        except Exception as exc:
-            err = _format_exception(exc)
-            state.error_message = err
-            _append_log(f'  ✗ {count} image(s) rejected: {err}')
-            break
-
-    if state.error_message is None and last_success >= max_attempts:
-        state.detected_limit = last_success
+    success_high, err_high = await _attempt_count(slug, max_attempts)
+    if success_high:
+        detected_limit = max_attempts
         state.reached_max = True
-        summary = f'Model accepted all {last_success} tested image(s); limit may exceed {max_attempts}.'
+        summary = f'Model accepted all {max_attempts} tested image(s); limit is at least {max_attempts}.'
     else:
-        state.detected_limit = last_success
-        if state.error_message is None:
-            summary = f'Model accepted {last_success} image(s); no error encountered.'
-        elif last_success == 0:
-            summary = f'Model rejected the first image: {state.error_message}'
+        last_error = err_high
+        if max_attempts == 1:
+            summary = f'Model rejected the first image: {last_error}'
         else:
-            summary = f'Estimated limit: {last_success} image(s). Last error: {state.error_message}'
+            success_low, err_low = await _attempt_count(slug, 1)
+            if not success_low:
+                detected_limit = 0
+                last_error = err_low or err_high
+                summary = f'Model rejected the first image: {last_error}'
+            else:
+                detected_limit = 1
+                low = 2
+                high = max_attempts - 1
+                while low <= high:
+                    mid = (low + high) // 2
+                    success_mid, err_mid = await _attempt_count(slug, mid)
+                    if success_mid:
+                        detected_limit = mid
+                        low = mid + 1
+                    else:
+                        last_error = err_mid
+                        high = mid - 1
+                if detected_limit >= max_attempts:
+                    state.reached_max = True
+                    summary = f'Model accepted all {max_attempts} tested image(s); limit is at least {max_attempts}.'
+                else:
+                    state.reached_max = False
+                    if last_error:
+                        summary = f'Estimated limit: {detected_limit} image(s). Last error: {last_error}'
+                    else:
+                        summary = f'Estimated limit: {detected_limit} image(s).'
+
+    state.detected_limit = detected_limit
+    state.error_message = last_error if not state.reached_max else None
 
     if state.result_label is not None:
         state.result_label.text = summary
     else:
         ui.notify(summary, color='positive')
 
-    if state.update_button is not None:
-        state.update_button.visible = bool(state.detected_limit and state.detected_limit > 0)
+    if state.update_hint is not None:
+        if state.detected_limit and state.detected_limit > 0:
+            state.update_hint.text = (
+                f"Update config.yaml manually: iteration.input_screenshots.model_limits['{slug}'] = {state.detected_limit}"
+            )
+        else:
+            state.update_hint.text = 'No limit detected; rerun or adjust settings before updating config.'
 
     state.is_running = False
     if state.detect_button is not None:
@@ -236,19 +260,6 @@ def _load_model_limits_from_yaml() -> dict[str, int]:
                     limits[str(key)] = parsed
     return limits
 
-
-
-
-def _apply_literal_strings(payload: dict) -> None:
-    templates = payload.get('templates')
-    if not isinstance(templates, dict):
-        return
-    for key in ('code', 'vision'):
-        value = templates.get(key)
-        if isinstance(value, str) and '\n' in value:
-            templates[key] = _LiteralString(value)
-
-
 def _update_current_limit_label(slug: str) -> None:
     if state.current_limit_label is None:
         return
@@ -268,65 +279,10 @@ def _on_selection_change(value: str) -> None:
     state.model_slug = slug
     _update_current_limit_label(slug)
 
-
-def _write_limit_to_config() -> None:
-    if not state.model_slug or not state.detected_limit or state.detected_limit <= 0:
-        ui.notify('Run detection successfully before updating config.yaml', color='negative')
-        return
-
-    cfg_path = ROOT / 'config.yaml'
-    try:
-        text = cfg_path.read_text(encoding='utf-8')
-        data = yaml.safe_load(text) or {}
-    except Exception as exc:
-        ui.notify(f'Failed to read config.yaml: {exc}', color='negative')
-        return
-
-    if not isinstance(data, dict):
-        data = {}
-
-    iteration = data.setdefault('iteration', {})
-    if not isinstance(iteration, dict):
-        iteration = {}
-        data['iteration'] = iteration
-
-    screenshots = iteration.setdefault('input_screenshots', {})
-    if not isinstance(screenshots, dict):
-        screenshots = {}
-        iteration['input_screenshots'] = screenshots
-
-    limits = screenshots.setdefault('model_limits', {})
-    if not isinstance(limits, dict):
-        limits = {}
-        screenshots['model_limits'] = limits
-
-    limits[state.model_slug] = int(state.detected_limit)
-
-    _apply_literal_strings(data)
-
-    try:
-        dumped = yaml.safe_dump(
-            data,
-            sort_keys=False,
-            allow_unicode=True,
-            default_flow_style=False,
-        )
-        cfg_path.write_text(dumped, encoding='utf-8')
-    except Exception as exc:
-        ui.notify(f'Failed to update config.yaml: {exc}', color='negative')
-        return
-
-    ui.notify(f'Updated config.yaml: {state.model_slug} -> {state.detected_limit} image(s)', color='positive')
-    if state.current_limit_label is not None:
-        state.current_limit_label.text = f'Current config limit: {state.detected_limit} image(s).'
-
-
 # ---------------- UI wiring ---------------- #
-app_config = get_config()
 apply_theme()
 
-initial_slug = DEFAULT_MODEL_SLUG or getattr(app_config, 'vision_model', '')
-initial_slug = initial_slug.strip()
+initial_slug = ''
 
 with ui.column().classes('max-w-3xl mx-auto p-6 gap-4'):
     ui.label('Model Image Limit Detector').classes('text-2xl font-semibold')
@@ -343,18 +299,10 @@ with ui.column().classes('max-w-3xl mx-auto p-6 gap-4'):
             label='Vision model',
         )
         state.current_limit_label = ui.label('Select a model to see its saved limit.').classes('text-sm text-gray-400')
-        state.max_attempt_input = ui.number('Max attempts', value=_MAX_ATTEMPTS_DEFAULT, min=1, max=32, step=1).props('outlined dense').classes('w-40')
+        state.max_attempt_input = ui.number('Max attempts', value=_MAX_ATTEMPTS_DEFAULT, min=1, max=128, step=1).props('outlined dense').classes('w-40')
         state.result_label = ui.label('Select a model and click "Detect limit".').classes('text-sm')
         state.log_output = ui.textarea('Detection log', value='').props('readonly auto-grow').classes('w-full text-sm')
         state.detect_button = ui.button('Detect limit', on_click=_detect_limit).classes('self-start')
-        state.update_button = ui.button('Update config.yaml', on_click=_write_limit_to_config).classes('self-start')
-        state.update_button.visible = False
-
-    # Initialize label for the default selection
-    if initial_slug:
-        state.model_slug = initial_slug
-        state.selector.set_value(initial_slug)
-        _on_selection_change(initial_slug)
-
+        state.update_hint = ui.label('Detected limits are not saved automatically; update config.yaml manually.').classes('text-xs text-gray-500')
 
 ui.run(native=False, title='Model Image Limit Detector', reload=False)
