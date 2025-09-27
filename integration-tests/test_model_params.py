@@ -38,20 +38,41 @@ async def test_param_application() -> Tuple[bool, str]:
     mp = importlib.import_module('model_params')
 
     cfg = app_config.get_config()
-    # Use free DeepSeek for cost control and stability in tests
-    slug = 'deepseek/deepseek-chat-v3.1:free'
+
+    preferred_slugs = []
+    # Prefer whatever the app is configured to use so behavior matches production
+    if getattr(cfg, "code_model", None):
+        preferred_slugs.append(cfg.code_model)
+    # Fallback to a well-behaved free tier model known to support max_tokens
+    preferred_slugs.append('x-ai/grok-4-fast:free')
+
+    slug = preferred_slugs[-1]
+    try:
+        models = await or_client.list_models(force_refresh=False, limit=2000)
+        supports = {
+            m.id: {param.lower() for param in (m.supported_parameters or [])}
+            for m in models
+        }
+        for candidate in preferred_slugs:
+            params = supports.get(candidate)
+            if params and 'max_tokens' in params:
+                slug = candidate
+                break
+    except Exception:
+        # Best-effort selection only; keep fallback slug on lookup errors
+        pass
 
     # Start clean
     mp.set_params(slug, {})
     try:
         # Ask for long output and measure size differences
         prompt = (
-            "Respond ONLY with the letter X repeated as much as possible. "
-            "No spaces, no punctuation, no explanations."
+            "Give a detailed explanation of how rainbows form. "
+            "Use as much depth as the token limit allows while staying under 120 words."
         )
 
         # Apply tight limit and compare content lengths
-        mp.set_params(slug, {"max_tokens": "16"})
+        mp.set_params(slug, {"max_tokens": "64"})
         short_content, short_meta = await or_client.chat_with_meta(messages=[{"role": "user", "content": prompt}], model=slug, temperature=0)
         short_len = len((short_content or '').strip())
 
@@ -60,8 +81,13 @@ async def test_param_application() -> Tuple[bool, str]:
         long_content, long_meta = await or_client.chat_with_meta(messages=[{"role": "user", "content": prompt}], model=slug, temperature=0)
         long_len = len((long_content or '').strip())
 
-        ok = (long_len > short_len) and (long_len >= max(40, short_len + 10))
+        ok = (
+            short_len >= 40 and
+            long_len > short_len and
+            long_len >= short_len + 40
+        )
         details = json.dumps({
+            "model": slug,
             "short_len": short_len,
             "long_len": long_len,
             "short_preview": (short_content or "")[:40]

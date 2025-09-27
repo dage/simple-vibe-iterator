@@ -27,10 +27,30 @@ def inject_src() -> None:
 
 
 async def test_generation_metadata() -> Tuple[bool, str]:
+    import config as app_config
     import or_client
 
-    # Use a low-cost/free model commonly used in other tests
-    slug = 'deepseek/deepseek-chat-v3.1:free'
+    cfg = app_config.get_config()
+
+    preferred_slugs = []
+    if getattr(cfg, "code_model", None):
+        preferred_slugs.append(cfg.code_model)
+    preferred_slugs.append('x-ai/grok-4-fast:free')
+
+    slug = preferred_slugs[-1]
+    try:
+        models = await or_client.list_models(force_refresh=False, limit=2000)
+        supports = {
+            m.id: {param.lower() for param in (m.supported_parameters or [])}
+            for m in models
+        }
+        for candidate in preferred_slugs:
+            params = supports.get(candidate)
+            if params and 'max_tokens' in params:
+                slug = candidate
+                break
+    except Exception:
+        pass
     prompt = 'Reply with the word: hello'
 
     content, meta = await or_client.chat_with_meta(
@@ -52,6 +72,7 @@ async def test_generation_metadata() -> Tuple[bool, str]:
 
     ok = ok_content and ok_cost and ok_time
     details = json.dumps({
+        'model': slug,
         'content_preview': (content or '')[:40],
         'total_cost': total_cost,
         'generation_time': generation_time,

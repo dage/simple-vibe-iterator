@@ -183,8 +183,7 @@ class TestModelLoading:
 
 async def run_integration_tests():
     """Run all integration tests manually (for development)."""
-    print("🧪 Running Model Loading Integration Tests")
-    print("=" * 60)
+    print("🧪 Running Model Loading Integration Tests\n")
     
     test_instance = TestModelLoading()
     
@@ -223,9 +222,7 @@ async def run_integration_tests():
         print("\n🔄 Test 10: Real data quality...")
         await test_instance.test_real_model_data_quality()
         
-        print("\n" + "=" * 60)
-        print("🎉 ALL INTEGRATION TESTS PASSED!")
-        print("=" * 60)
+        print("\n🎉 Model loading integration checks passed")
         return True
         
     except Exception as e:
