@@ -28,7 +28,7 @@ templates:
     - This is an iterative process - use console.log() extensively for debugging future iterations
     - If something works, continue improving and enhancing it across iterations
     - We are aiming for stunning results so be generous with the amount of effects and everything that can trigger a WOW!
-    - Load external libraries (three.js, etc.) from reliable CDNs when needed
+    - When using Three.js, use reliable CDN sources like https://unpkg.com/three/build/three.module.js or https://cdn.jsdelivr.net/npm/three/build/three.module.js for the core library, and for addons use the corresponding /examples/jsm/ path such as https://unpkg.com/three/examples/jsm/controls/OrbitControls.js. Include an import map in your HTML if using bare module specifiers like 'three', and avoid outdated threejs.org/examples/ URLs which are no longer accessible.
 
     ITERATION GUIDANCE:
     - Direct screenshot mode also runs vision analysis; both are provided
