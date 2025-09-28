@@ -1,0 +1,10 @@
+Make an amazing 3d demo using three.js where you combine the different resources from the table bellow to create an immersive and interactive experience.
+
+Name                |  URL                                                                                                                  |  Description                                         
+--------------------+-----------------------------------------------------------------------------------------------------------------------+------------------------------------------------------
+Tree OBJ            |  https://raw.githubusercontent.com/mrdoob/three.js/master/examples/models/obj/tree.obj                                |  Simple tree geometry in OBJ format, verified working
+Duck GLB            |  https://raw.githubusercontent.com/mrdoob/three.js/master/examples/models/gltf/duck.glb                               |  Classic duck model in GLB format                    
+DamagedHelmet GLTF  |  https://raw.githubusercontent.com/mrdoob/three.js/master/examples/models/gltf/DamagedHelmet/glTF/DamagedHelmet.gltf  |  Helmet in GLTF format with separate files      
+BoomBox GLB         |  https://raw.githubusercontent.com/mrdoob/three.js/master/examples/models/gltf/BoomBox.glb                            |  Retro boombox 3D model                              
+Soldier GLB         |  https://raw.githubusercontent.com/mrdoob/three.js/master/examples/models/gltf/Soldier.glb                            |  Animated character model                            
+Crate Texture       |  https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/crate.gif                                 |  Classic wooden crate texture for testing materials  
