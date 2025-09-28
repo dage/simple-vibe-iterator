@@ -46,7 +46,8 @@ class PlaywrightBrowserService(BrowserService):
         base_html = self._out_dir / f"page_{digest}_{token}.html"
         base_html.write_text(html_code, encoding="utf-8")
         png_paths = [self._out_dir / f"page_{digest}_{token}_{idx}.png" for idx in range(count)]
-        op_status.set_phase(worker, "Playwright: Capture screenshot")
+        # Structured phase: "Screenshot|Playwright: capture"
+        op_status.set_phase(worker, "Screenshot|Playwright")
         async with self._lock:
             logs = await asyncio.to_thread(
                 capture_html,
@@ -85,7 +86,8 @@ class OpenRouterAICodeService(AICodeService):
         from . import or_client
 
         # Minimal call: the controller provides a full prompt with context
-        op_status.set_phase(worker, f"Code: {model}")
+        # Structured phase: "Coding|<model>"
+        op_status.set_phase(worker, f"Coding|{model}")
 
         if os.getenv("APP_USE_MOCK_AI") == "ui-reasoning":
             # Extract messages for mock case too
@@ -148,7 +150,8 @@ class OpenRouterVisionService(VisionService):
     ) -> str:
         from . import or_client
 
-        op_status.set_phase(worker, f"Vision: {model}")
+        # Structured phase: "Vision|<model>"
+        op_status.set_phase(worker, f"Vision|{model}")
         parts = [{"type": "text", "text": prompt}]
         for path in screenshot_paths:
             if not (path or "").strip():

@@ -798,9 +798,35 @@ class NiceGUIView(IterationEventListener):
             with self._status_container:
                 with ui.row().classes(box_classes):
                     ui.spinner('dots', color='indigo').classes('w-5 h-5')
+                    # Parse structured phase in the form "Headline|detail"
+                    try:
+                        raw = str(phase or '')
+                    except Exception:
+                        raw = ''
+                    headline = ''
+                    detail = raw
+                    if '|' in raw:
+                        parts = raw.split('|', 1)
+                        headline = (parts[0] or '').strip()
+                        detail = (parts[1] or '').strip()
+                    else:
+                        # Back-compat for older phase texts
+                        lower = raw.lower()
+                        if lower.startswith('code:'):
+                            headline = 'Coding'
+                            detail = raw.split(':', 1)[1].strip() if ':' in raw else ''
+                        elif lower.startswith('vision:'):
+                            headline = 'Vision'
+                            detail = raw.split(':', 1)[1].strip() if ':' in raw else ''
+                        elif 'playwright' in lower:
+                            headline = 'Screenshot'
+                            detail = raw
+                        else:
+                            headline = 'Working'
+                            detail = raw
                     with ui.column().classes('leading-none gap-0'):
-                        ui.label('Iterate').classes('font-mono text-sm')
-                        ui.label(f"{phase} · {elapsed:.1f}s").classes('font-mono text-xs text-gray-600 dark:text-indigo-200')
+                        ui.label(headline or 'Working').classes('font-mono text-sm')
+                        ui.label(f"{detail} · {elapsed:.1f}s").classes('font-mono text-xs text-gray-600 dark:text-indigo-200')
 
 
     # --- Utilities ---
