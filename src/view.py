@@ -30,8 +30,9 @@ class NiceGUIView(IterationEventListener):
     def __init__(self, controller: IterationController):
         self.controller = controller
         self.controller.add_listener(self)
-        self.node_cards: Dict[str, ui.card] = {}
+        self.node_panels: Dict[str, ui.element] = {}
         self.chat_container: ui.element | None = None
+        self.start_panel: ui.element | None = None
         self.scroll_area: ui.scroll_area | None = None
         self.initial_goal_input: ui.textarea | None = None
         # --- Operation status & lock ---
@@ -60,65 +61,80 @@ class NiceGUIView(IterationEventListener):
             with ui.scroll_area().classes('flex-grow w-full') as scroll:
                 self.scroll_area = scroll
                 with ui.column().classes('w-full gap-4'):
-                    # Start area with full settings editor (scrollable like normal cards)
-                    with ui.card().classes('w-full p-4'):
-                        init_settings = self._default_settings(overall_goal='')
-                        inputs = self._render_settings_editor(init_settings, allow_mode_switch=True)
-                        async def _start() -> None:
-                            og = (inputs['overall_goal'].value or '').strip()
-                            if not og:
-                                ui.notify('Please enter an overall goal', color='negative', timeout=0, close_button=True)
-                                return
-                            if not self._begin_operation('Start'):
-                                return
-                            try:
-                                # Update app-wide keep_history setting from UI if changed
-                                from .settings import get_settings
-                                settings_manager = get_settings()
-
-                                if 'keep_history' in inputs and inputs['keep_history'] is not None:
-                                    try:
-                                        new_keep_history = bool(inputs['keep_history'].value)
-                                        settings_manager.keep_history = new_keep_history
-                                    except Exception:
-                                        pass
-
-                                try:
-                                    raw_shots = getattr(inputs['input_screenshot_count'], 'value', init_settings.input_screenshot_count)
-                                    shot_value = int(raw_shots)
-                                except Exception:
-                                    shot_value = init_settings.input_screenshot_count
-                                if shot_value < 1:
-                                    shot_value = 1
-
-                                settings = TransitionSettings(
-                                    code_model=inputs['code_model'].value or '',
-                                    vision_model=inputs['vision_model'].value or '',
-                                    overall_goal=og,
-                                    user_steering=inputs['user_steering'].value or '',
-                                    code_template=inputs['code_template'].value or '',
-                                    vision_template=inputs['vision_template'].value or '',
-                                    input_screenshot_count=shot_value,
-                                    mode=self._extract_mode(inputs['mode']),
-                                    keep_history=get_settings().keep_history
-                                )
-                                get_settings().save_settings(settings)
-                                if self.controller.has_nodes():
-                                    root = self.controller.get_root()
-                                    if root and root.settings.mode != settings.mode:
-                                        self.controller.reset()
-                                        if self.chat_container is not None:
-                                            self.chat_container.clear()
-                                            self.node_cards.clear()
-                                await self.controller.apply_transition(None, settings)
-                            except Exception as exc:
-                                ui.notify(f'Start failed: {exc}', color='negative', timeout=0, close_button=True)
-                            finally:
-                                self._end_operation()
-                        ui.button('Start', on_click=_start).classes('w-full')
+                    # Start area rendered as collapsible panel like iterations
+                    self.start_panel = self._create_start_panel()
 
                     # Iteration chain container
                     self.chat_container = ui.column().classes('w-full gap-4')
+
+    def _create_start_panel(self) -> ui.element:
+        init_settings = self._default_settings(overall_goal='')
+        with ui.expansion('Start', value=True).classes(
+            'w-full shadow-sm rounded-lg border border-gray-200/70 dark:border-gray-700/50'
+        ) as panel:
+            with ui.column().classes('w-full gap-4 p-4'):
+                inputs = self._render_settings_editor(init_settings, allow_mode_switch=True)
+
+                async def _start() -> None:
+                    og = (inputs['overall_goal'].value or '').strip()
+                    if not og:
+                        ui.notify('Please enter an overall goal', color='negative', timeout=0, close_button=True)
+                        return
+                    if not self._begin_operation('Start'):
+                        return
+                    try:
+                        # Update app-wide keep_history setting from UI if changed
+                        from .settings import get_settings
+                        settings_manager = get_settings()
+
+                        if 'keep_history' in inputs and inputs['keep_history'] is not None:
+                            try:
+                                new_keep_history = bool(inputs['keep_history'].value)
+                                settings_manager.keep_history = new_keep_history
+                            except Exception:
+                                pass
+
+                        try:
+                            raw_shots = getattr(inputs['input_screenshot_count'], 'value', init_settings.input_screenshot_count)
+                            shot_value = int(raw_shots)
+                        except Exception:
+                            shot_value = init_settings.input_screenshot_count
+                        if shot_value < 1:
+                            shot_value = 1
+
+                        settings = TransitionSettings(
+                            code_model=inputs['code_model'].value or '',
+                            vision_model=inputs['vision_model'].value or '',
+                            overall_goal=og,
+                            user_steering=inputs['user_steering'].value or '',
+                            code_template=inputs['code_template'].value or '',
+                            vision_template=inputs['vision_template'].value or '',
+                            input_screenshot_count=shot_value,
+                            mode=self._extract_mode(inputs['mode']),
+                            keep_history=get_settings().keep_history
+                        )
+                        get_settings().save_settings(settings)
+                        if self.controller.has_nodes():
+                            root = self.controller.get_root()
+                            if root and root.settings.mode != settings.mode:
+                                self.controller.reset()
+                                if self.chat_container is not None:
+                                    self.chat_container.clear()
+                                self.node_panels.clear()
+                                if self.start_panel is not None:
+                                    try:
+                                        self.start_panel.value = True
+                                    except Exception:
+                                        pass
+                        await self.controller.apply_transition(None, settings)
+                    except Exception as exc:
+                        ui.notify(f'Start failed: {exc}', color='negative', timeout=0, close_button=True)
+                    finally:
+                        self._end_operation()
+
+                ui.button('Start', on_click=_start).classes('w-full')
+
+        return panel
 
     def _default_settings(self, overall_goal: str) -> TransitionSettings:
         return get_settings().load_settings(overall_goal=overall_goal)
@@ -142,11 +158,18 @@ class NiceGUIView(IterationEventListener):
         chain.reverse()
 
         self.chat_container.clear()
-        self.node_cards.clear()
+        self.node_panels.clear()
+        total = len(chain)
         with self.chat_container:
             for idx, node in enumerate(chain, start=1):
-                card = self._create_node_card(idx, node)
-                self.node_cards[node.id] = card
+                panel = self._create_node_panel(idx, node, expanded=(idx == total))
+                self.node_panels[node.id] = panel
+
+        if self.start_panel is not None:
+            try:
+                self.start_panel.value = (total == 0)
+            except Exception:
+                pass
 
     def _render_settings_editor(self, initial: TransitionSettings, *, allow_mode_switch: bool = False) -> Dict[str, ui.element]:
         # Left-side settings editor used in both Start area and iteration cards
@@ -376,10 +399,24 @@ class NiceGUIView(IterationEventListener):
             result['keep_history'] = keep_history_checkbox
         return result
 
-    def _create_node_card(self, index: int, node: IterationNode) -> ui.card:
+    def _create_node_panel(self, index: int, node: IterationNode, *, expanded: bool) -> ui.element:
+        with ui.expansion(f'Iteration {index}', value=expanded).classes(
+            'w-full shadow-sm rounded-lg border border-gray-200/70 dark:border-gray-700/50'
+        ) as panel:
+            self._build_node_card(index, node, show_heading=False)
+
+        try:
+            panel.value = expanded
+        except Exception:
+            pass
+
+        return panel
+
+    def _build_node_card(self, index: int, node: IterationNode, *, show_heading: bool = True) -> ui.card:
         with ui.card().classes('w-full p-4') as card:
-            with ui.row().classes('items-center justify-between w-full'):
-                ui.label(f'Iteration {index}').classes('text-lg font-semibold')
+            if show_heading:
+                with ui.row().classes('items-center justify-between w-full'):
+                    ui.label(f'Iteration {index}').classes('text-lg font-semibold')
 
             with ui.row().classes('w-full items-start gap-6 flex-nowrap'):
                 with ui.column().classes('basis-5/12 min-w-0 gap-3'):
