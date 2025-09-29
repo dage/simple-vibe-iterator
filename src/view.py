@@ -18,12 +18,8 @@ from . import prefs
 from .model_selector import ModelSelector
 from .settings import get_settings
 from .ui_theme import apply_theme
-
-
-def format_html_size(html: str) -> str:
-    """Return size of HTML in kilobytes with two decimal places."""
-    size_kb = len((html or "").encode("utf-8")) / 1024
-    return f"{size_kb:.2f} KB"
+from .view_utils import format_html_size
+from .node_summary_dialog import create_node_summary_dialog
 
 
 class NiceGUIView(IterationEventListener):
@@ -549,10 +545,15 @@ class NiceGUIView(IterationEventListener):
                                     raw_toggle.on_value_change(lambda _: _toggle_raw())
                                     _toggle_raw()
 
-                    # Messages button (positioned above INPUT SCREENSHOT)
-                    if messages_dialog:
-                        with ui.row().classes('items-center gap-2 mb-2'):
-                            ui.button('📋 Messages', on_click=messages_dialog.open).props('flat dense').classes('text-sm p-0 min-h-0')
+                    summary_dialog, summary_button_label, summary_disabled = create_node_summary_dialog(node)
+
+                    with ui.row().classes('w-full items-start gap-2 mb-2'):
+                        if messages_dialog:
+                            ui.button('📋 Messages', on_click=messages_dialog.open).props('flat dense').classes('text-sm p-0 min-h-0 self-start')
+                        summary_handler = summary_dialog.open if not summary_disabled else (lambda: None)
+                        summary_btn = ui.button(summary_button_label, on_click=summary_handler).props('flat dense').classes('text-sm p-0 min-h-0 self-start')
+                        if summary_disabled:
+                            summary_btn.props('disable')
 
                     with ui.row().classes('w-full items-start gap-6 flex-nowrap'):
                         with ui.column().classes('basis-1/2 min-w-0 gap-2'):
