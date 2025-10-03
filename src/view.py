@@ -20,6 +20,7 @@ from .settings import get_settings
 from .ui_theme import apply_theme
 from .view_utils import format_html_size
 from .node_summary_dialog import create_node_summary_dialog
+from .status_panel import StatusPanel
 
 
 class NiceGUIView(IterationEventListener):
@@ -33,10 +34,9 @@ class NiceGUIView(IterationEventListener):
         self.initial_goal_input: ui.textarea | None = None
         # --- Operation status & lock ---
         self._op_busy: bool = False
-        self._status_container: ui.element | None = None
         self._status_timer: ui.timer | None = None
-        self._last_status_hash: str = ""
         self._notif_timer: ui.timer | None = None
+        self._status_panel: StatusPanel | None = None
 
         # Set some default styling
         apply_theme()
@@ -47,8 +47,8 @@ class NiceGUIView(IterationEventListener):
             ui.label('Simple Vibe Iterator').classes('text-2xl font-bold')
 
             # Container for worker status boxes
-            with ui.column().classes('fixed top-2 right-2 z-50 gap-2 items-end') as sc:
-                self._status_container = sc
+            self._status_panel = StatusPanel()
+            self._status_panel.build()
             self._status_timer = ui.timer(0.25, self._refresh_phase)
             # Drain background notifications in UI context
             self._notif_timer = ui.timer(0.25, self._flush_notifications)
@@ -769,65 +769,11 @@ class NiceGUIView(IterationEventListener):
         self._refresh_phase()
 
     def _refresh_phase(self) -> None:
-        if self._status_container is None:
+        if self._status_panel is None:
             return
-        
+
         phases = op_status.get_all_phases()
-        # Only update UI if status actually changed
-        import json
-        current_hash = json.dumps(phases, sort_keys=True) + str(self._op_busy)
-        if current_hash == self._last_status_hash:
-            return
-        self._last_status_hash = current_hash
-        
-        self._status_container.clear()
-        box_classes = (
-            'items-start gap-2 bg-white/90 border border-gray-300 rounded px-3 py-2 shadow '
-            'dark:bg-indigo-600/20 dark:border-indigo-400/30 dark:text-indigo-100 backdrop-blur-sm'
-        )
-        if not phases:
-            with self._status_container:
-                with ui.row().classes(box_classes):
-                    if self._op_busy:
-                        ui.spinner('dots', color='indigo').classes('w-5 h-5')
-                        ui.label('Starting...').classes('font-mono text-sm')
-                    else:
-                        ui.icon('check_circle', color='green').classes('w-5 h-5')
-                        ui.label('No operation running').classes('font-mono text-sm')
-            return
-        for worker, (phase, elapsed) in phases.items():
-            with self._status_container:
-                with ui.row().classes(box_classes):
-                    ui.spinner('dots', color='indigo').classes('w-5 h-5')
-                    # Parse structured phase in the form "Headline|detail"
-                    try:
-                        raw = str(phase or '')
-                    except Exception:
-                        raw = ''
-                    headline = ''
-                    detail = raw
-                    if '|' in raw:
-                        parts = raw.split('|', 1)
-                        headline = (parts[0] or '').strip()
-                        detail = (parts[1] or '').strip()
-                    else:
-                        # Back-compat for older phase texts
-                        lower = raw.lower()
-                        if lower.startswith('code:'):
-                            headline = 'Coding'
-                            detail = raw.split(':', 1)[1].strip() if ':' in raw else ''
-                        elif lower.startswith('vision:'):
-                            headline = 'Vision'
-                            detail = raw.split(':', 1)[1].strip() if ':' in raw else ''
-                        elif 'playwright' in lower:
-                            headline = 'Screenshot'
-                            detail = raw
-                        else:
-                            headline = 'Working'
-                            detail = raw
-                    with ui.column().classes('leading-none gap-0'):
-                        ui.label(headline or 'Working').classes('font-mono text-sm')
-                        ui.label(f"{detail} · {elapsed:.1f}s").classes('font-mono text-xs text-gray-600 dark:text-indigo-200')
+        self._status_panel.update(phases, busy=self._op_busy)
 
 
     # --- Utilities ---
