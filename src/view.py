@@ -15,6 +15,7 @@ from .controller import IterationController
 from .interfaces import IterationEventListener, IterationNode, IterationMode, TransitionSettings
 from . import op_status
 from . import prefs
+from . import task_registry
 from .model_selector import ModelSelector
 from .settings import get_settings
 from .ui_theme import apply_theme
@@ -47,7 +48,7 @@ class NiceGUIView(IterationEventListener):
             ui.label('Simple Vibe Iterator').classes('text-2xl font-bold')
 
             # Container for worker status boxes
-            self._status_panel = StatusPanel()
+            self._status_panel = StatusPanel(on_cancel=self._cancel_worker)
             self._status_panel.build()
             self._status_timer = ui.timer(0.25, self._refresh_phase)
             # Drain background notifications in UI context
@@ -123,6 +124,8 @@ class NiceGUIView(IterationEventListener):
                                     except Exception:
                                         pass
                         await self.controller.apply_transition(None, settings)
+                    except asyncio.CancelledError:
+                        ui.notify('Operation cancelled', color='warning', timeout=2000)
                     except Exception as exc:
                         ui.notify(f'Start failed: {exc}', color='negative', timeout=0, close_button=True)
                     finally:
@@ -740,6 +743,8 @@ class NiceGUIView(IterationEventListener):
                                             )
                                             get_settings().save_settings(updated)
                                             await self.controller.apply_transition(node.id, updated, slug)
+                                        except asyncio.CancelledError:
+                                            ui.notify(f'Cancelled {slug}', color='warning', timeout=2000)
                                         except Exception as exc:
                                             # Route error to UI via notification queue (safe from background tasks)
                                             op_status.enqueue_notification(f'Iterate failed: {exc}', color='negative', timeout=0, close_button=True)
@@ -756,6 +761,7 @@ class NiceGUIView(IterationEventListener):
             return False
         self._op_busy = True
         op_status.clear_all()
+        task_registry.clear_all_tasks()
         self._refresh_phase()
         return True
 
@@ -764,6 +770,7 @@ class NiceGUIView(IterationEventListener):
         # Ensure UI resets cleanly on success or error
         try:
             op_status.clear_all()
+            task_registry.clear_all_tasks()
         except Exception:
             pass
         self._refresh_phase()
@@ -774,6 +781,35 @@ class NiceGUIView(IterationEventListener):
 
         phases = op_status.get_all_phases()
         self._status_panel.update(phases, busy=self._op_busy)
+
+    def _cancel_worker(self, worker: str) -> None:
+        phases = op_status.get_all_phases()
+        phase_info = phases.get(worker)
+        is_coding = False
+        if phase_info is not None:
+            raw_phase = phase_info[0] if isinstance(phase_info, (tuple, list)) and phase_info else phase_info
+            try:
+                text = str(raw_phase or '')
+            except Exception:
+                text = ''
+            if '|' in text:
+                head = text.split('|', 1)[0].strip().lower()
+                is_coding = head == 'coding'
+            else:
+                is_coding = text.lower().startswith('coding')
+        if not is_coding:
+            ui.notify('Cancellation available only during coding phase', color='info', timeout=2000)
+            return
+        success = False
+        try:
+            success = task_registry.cancel_task(worker)
+        except Exception:
+            success = False
+        if success:
+            op_status.clear_phase(worker)
+            ui.notify(f'Cancelled {worker}', color='warning', timeout=2000)
+        else:
+            ui.notify(f'Worker {worker} already completed or not found', color='info', timeout=2000)
 
 
     # --- Utilities ---

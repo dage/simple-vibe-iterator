@@ -19,6 +19,7 @@ from .interfaces import (
     ModelOutput,
 )
 from . import op_status
+from . import task_registry
 from .prompt_builder import build_code_payload, build_vision_prompt
 from .model_capabilities import get_image_limit, get_input_screenshot_interval
 
@@ -104,36 +105,54 @@ async def δ(
     interpretation = await _interpret_input(settings, context, vision_service)
 
     async def _worker(model: str) -> Tuple[str, str, str, dict | None, TransitionArtifacts]:
-        payload = build_code_payload(
-            html_input=context.html_input,
-            settings=settings,
-            interpretation_summary=interpretation.summary,
-            console_logs=context.input_console_logs,
-            html_diff=context.html_diff,
-            attachments=interpretation.attachments,
-            message_history=message_history,
-        )
-        html_output, reasoning, meta = await ai_service.generate_html(payload, model, worker=model)
-        out_screenshots, out_console_logs = await browser_service.render_and_capture(html_output, worker=model)
-        out_screenshot_path = out_screenshots[0] if out_screenshots else ""
-        artifacts = _create_artifacts(
-            model=model,
-            context=context,
-            interpretation=interpretation,
-            screenshot_path=out_screenshot_path,
-            console_logs=out_console_logs,
-            vision_output=interpretation.summary,
-        )
-        return model, html_output, (reasoning or ""), (meta or None), artifacts
+        try:
+            payload = build_code_payload(
+                html_input=context.html_input,
+                settings=settings,
+                interpretation_summary=interpretation.summary,
+                console_logs=context.input_console_logs,
+                html_diff=context.html_diff,
+                attachments=interpretation.attachments,
+                message_history=message_history,
+            )
+            html_output, reasoning, meta = await ai_service.generate_html(payload, model, worker=model)
+            out_screenshots, out_console_logs = await browser_service.render_and_capture(html_output, worker=model)
+            out_screenshot_path = out_screenshots[0] if out_screenshots else ""
+            artifacts = _create_artifacts(
+                model=model,
+                context=context,
+                interpretation=interpretation,
+                screenshot_path=out_screenshot_path,
+                console_logs=out_console_logs,
+                vision_output=interpretation.summary,
+            )
+            return model, html_output, (reasoning or ""), (meta or None), artifacts
+        finally:
+            try:
+                op_status.clear_phase(model)
+            except Exception:
+                pass
 
-    tasks = [_worker(m) for m in models]
-    gathered = await asyncio.gather(*tasks, return_exceptions=True)
+    task_entries: List[Tuple[str, asyncio.Task[Tuple[str, str, str, dict | None, TransitionArtifacts]]]] = []
+    for model in models:
+        task = asyncio.create_task(_worker(model))
+        task_registry.register_task(model, task)
+        task_entries.append((model, task))
+    try:
+        gathered = await asyncio.gather(*(task for _, task in task_entries), return_exceptions=True)
+    finally:
+        for model, _ in task_entries:
+            task_registry.remove_task(model)
 
     results: Dict[str, Tuple[str, str, dict | None, TransitionArtifacts]] = {}
     failed_models: List[Tuple[str, Exception]] = []
+    cancelled_models: List[str] = []
 
-    for i, result in enumerate(gathered):
-        model = models[i]
+    for index, result in enumerate(gathered):
+        model = task_entries[index][0]
+        if isinstance(result, asyncio.CancelledError):
+            cancelled_models.append(model)
+            continue
         if isinstance(result, Exception):
             failed_models.append((model, result))
             print(f"❌ Model '{model}' failed: {type(result).__name__}: {result}")
@@ -151,7 +170,11 @@ async def δ(
             results[model_name] = (html_output, reasoning_text, meta, artifacts)
 
     if not results:
+        if cancelled_models and not failed_models:
+            raise asyncio.CancelledError()
         model_names = [name for name, _ in failed_models]
+        if cancelled_models:
+            model_names.extend(cancelled_models)
         raise RuntimeError(f"All models failed: {', '.join(model_names)}")
 
     return results
