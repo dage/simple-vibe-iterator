@@ -757,7 +757,7 @@ class NiceGUIView(IterationEventListener):
     # --- Operation status helpers ---
     def _begin_operation(self, title: str) -> bool:
         if self._op_busy:
-            ui.notify('Another operation is running. Please wait until it finishes.', color='warning')
+            op_status.enqueue_notification('Another operation is running. Please wait until it finishes.', color='warning')
             return False
         self._op_busy = True
         op_status.clear_all()
