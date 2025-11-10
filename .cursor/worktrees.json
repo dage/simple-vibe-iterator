@@ -1,5 +1,14 @@
 {
-  "setup-worktree": [
-    "npm install"
+  "setup-worktree-unix": [
+    "if [ -f $ROOT_WORKTREE_PATH/.env ]; then cp $ROOT_WORKTREE_PATH/.env .env; fi",
+    "if [ -f $ROOT_WORKTREE_PATH/model_params.json ]; then cp $ROOT_WORKTREE_PATH/model_params.json model_params.json; fi",
+    "mkdir -p .cursor",
+    "cp $ROOT_WORKTREE_PATH/.cursor/worktrees.json .cursor/worktrees.json"
+  ],
+  "setup-worktree-windows": [
+    "if exist %ROOT_WORKTREE_PATH%\\.env copy /Y %ROOT_WORKTREE_PATH%\\.env .env",
+    "if exist %ROOT_WORKTREE_PATH%\\model_params.json copy /Y %ROOT_WORKTREE_PATH%\\model_params.json model_params.json",
+    "if not exist .cursor mkdir .cursor",
+    "copy /Y %ROOT_WORKTREE_PATH%\\.cursor\\worktrees.json .cursor\\worktrees.json"
   ]
 }
