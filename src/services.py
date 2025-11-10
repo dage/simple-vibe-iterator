@@ -132,7 +132,7 @@ class OpenRouterAICodeService(AICodeService):
         # Add messages and assistant response to meta so controller can extract them for ModelOutput
         if meta is None:
             meta = {}
-        meta["messages"] = messages
+        meta.setdefault("messages", messages)
         meta["assistant_response"] = content or ""
 
         op_status.clear_phase(worker)

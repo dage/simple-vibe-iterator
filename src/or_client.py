@@ -16,9 +16,9 @@ Docs: OpenRouter is OpenAI-compatible; images accept base64 data URLs; attributi
 
 from __future__ import annotations
 from functools import lru_cache
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Iterable, List, Optional, Union
 from pathlib import Path
-import base64, mimetypes, asyncio, random, os, time
+import base64, mimetypes, asyncio, random, os, time, json
 
 from openai import (
     AsyncOpenAI,
@@ -29,6 +29,12 @@ from openai import (
 )
 from dotenv import load_dotenv
 from dataclasses import dataclass, field
+
+try:
+    from . import js_tool, tool_logging
+except (ImportError, ModuleNotFoundError):  # pragma: no cover - fallback for tooling/tests
+    import js_tool  # type: ignore
+    import tool_logging  # type: ignore
 
 # ---------------- Settings & client ---------------- #
 
@@ -115,6 +121,8 @@ _MODELS_CACHE: Optional[List[ModelInfo]] = None
 _CACHE_TIMESTAMP: Optional[float] = None
 _CACHE_DURATION = 3600.0  # 1 hour
 _FETCH_LOCK = asyncio.Lock()
+DEFAULT_TOOL_SPECS: List[Dict[str, Any]] = [js_tool.JS_TOOL_SPEC]
+_MODEL_INDEX: Dict[str, ModelInfo] = {}
 
 
 async def _fetch_all_models() -> List[ModelInfo]:
@@ -133,6 +141,13 @@ async def _fetch_all_models() -> List[ModelInfo]:
         return models
     except Exception as e:
         raise RuntimeError(f"Failed to fetch models from OpenRouter API: {e}")
+
+
+def _remember_models(models: Iterable[ModelInfo]) -> None:
+    for model in models:
+        if not model or not getattr(model, "id", None):
+            continue
+        _MODEL_INDEX[model.id] = model
 
 
 def _parse_model_data(data: Dict[str, Any]) -> Optional[ModelInfo]:
@@ -179,6 +194,29 @@ def _parse_model_data(data: Dict[str, Any]) -> Optional[ModelInfo]:
         return None
 
 
+async def _execute_tool_call(model_slug: str, name: str, arguments: str) -> str:
+    try:
+        payload = json.loads(arguments or "{}") if arguments else {}
+    except json.JSONDecodeError:
+        payload = {"code": arguments}
+
+    code = str(payload.get("code", ""))
+    if name != js_tool.TOOL_NAME:
+        return json.dumps({"error": f"Unknown tool: {name}"}, ensure_ascii=False)
+    if not code.strip():
+        return json.dumps({"error": "Missing JavaScript code"}, ensure_ascii=False)
+    try:
+        result = await js_tool.execute_tool(code)
+    except Exception as exc:
+        return json.dumps({"error": f"Tool execution failed: {exc}"}, ensure_ascii=False)
+
+    try:
+        tool_logging.log_tool_call(model=model_slug, tool=name, code=code, output=result)
+    except Exception:
+        pass
+    return result
+
+
 async def list_models(query: str = "", vision_only: bool = False, limit: int = 20, force_refresh: bool = False) -> List[ModelInfo]:
     """List available models with filtering and 1-hour caching.
     
@@ -203,10 +241,13 @@ async def list_models(query: str = "", vision_only: bool = False, limit: int = 2
             try:
                 _MODELS_CACHE = await _fetch_all_models()
                 _CACHE_TIMESTAMP = now
+                _remember_models(_MODELS_CACHE)
                 print(f"✅ Successfully loaded {len(_MODELS_CACHE)} available models")
             except Exception as e:
                 print(f"❌ Failed to fetch models from API: {e}")
                 raise
+        elif _MODELS_CACHE:
+            _remember_models(_MODELS_CACHE)
     
     models = _MODELS_CACHE or []
     
@@ -219,6 +260,27 @@ async def list_models(query: str = "", vision_only: bool = False, limit: int = 2
         models = [m for m in models if query_lower in m.id.lower() or query_lower in m.name.lower()]
     
     return models[:limit]
+
+
+async def _get_model_info(slug: Optional[str]) -> Optional[ModelInfo]:
+    if not slug:
+        return None
+    info = _MODEL_INDEX.get(slug)
+    if info is not None:
+        return info
+    try:
+        await list_models(limit=2000)
+    except Exception:
+        return None
+    return _MODEL_INDEX.get(slug)
+
+
+def _model_supports_tools(info: Optional[ModelInfo]) -> bool:
+    if not info:
+        return False
+    params = {str(p).strip().lower() for p in (info.supported_parameters or [])}
+    tool_keys = {"tools", "function_calling", "function_call", "tool_choice", "parallel_tool_calls"}
+    return bool(params.intersection(tool_keys))
 
 
 # -------------- Internal helpers -------------- #
@@ -278,6 +340,10 @@ async def _merge_model_params(model: Optional[str], kwargs: Dict[str, Any]) -> D
                 merged_kwargs[k] = v
     except Exception:
         pass
+
+    # Tool availability is managed centrally; ignore external overrides
+    merged_kwargs.pop("tools", None)
+    merged_kwargs.pop("tool_choice", None)
 
     return merged_kwargs
 
@@ -410,14 +476,46 @@ async def chat_with_meta(
     # Merge stored per-model params (if any), filtered to supported keys, as in chat()
     merged_kwargs = await _merge_model_params(model, kwargs)
 
-    async def call():
-        return await _client().chat.completions.create(
-            model=model or s.code_model,
-            messages=messages,
-            extra_body=merged_kwargs or None,
-        )
+    slug = model or s.code_model
+    conversation = [dict(m) for m in messages]
+    info = await _get_model_info(slug)
+    tool_specs = list(DEFAULT_TOOL_SPECS) if _model_supports_tools(info) else []
+    max_tool_hops = 4
+    res = None
 
-    res = await _retry(call)
+    for _ in range(max_tool_hops):
+        async def call():
+            payload = {
+                "model": slug,
+                "messages": conversation,
+                "extra_body": merged_kwargs or None,
+            }
+            if tool_specs:
+                payload["tools"] = tool_specs
+                payload["tool_choice"] = "auto"
+            return await _client().chat.completions.create(**payload)
+
+        res = await _retry(call)
+        msg = res.choices[0].message
+        tool_calls = list(getattr(msg, "tool_calls", []) or [])
+        if tool_specs and tool_calls:
+            conversation.append(msg.model_dump(exclude_none=True))
+            for tc in tool_calls:
+                fn = getattr(tc, "function", None)
+                if not fn:
+                    continue
+                output = await _execute_tool_call(slug, fn.name, fn.arguments)
+                conversation.append({
+                    "role": "tool",
+                    "tool_call_id": getattr(tc, "id", ""),
+                    "name": fn.name,
+                    "content": output,
+                })
+            continue
+        break
+
+    if res is None:
+        raise RuntimeError("Failed to obtain response from OpenRouter")
     content: str = ""
     reasoning: str = ""
     req_id: Optional[str] = None
@@ -508,4 +606,5 @@ async def chat_with_meta(
         "total_cost": total_cost,
         "generation_time": generation_time,
     }
+    meta["messages"] = conversation
     return (content or "", meta)
