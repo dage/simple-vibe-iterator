@@ -91,6 +91,19 @@ Workflow:
 - Click "Iterate" on any node to create its next child; descendants of that node are replaced by the new chain.
  - While an operation is running, the status shows the current phase and seconds elapsed; other actions are temporarily blocked.
 
+### Model selector harness
+Use the NiceGUI harness to exercise the `ModelSelector` with deterministic mock data before changing its columns or iconography. It now focuses solely on coding models so tool-access updates can be previewed without vision-model noise while still showing which code models accept vision input:
+
+```bash
+# interactive server (http://localhost:8060)
+python experiments/model_selector_artifact.py --serve
+
+# headless capture written to artifacts/experiments/model_selector/*.png
+python experiments/model_selector_artifact.py --capture
+```
+
+The harness pre-populates the code-model selector, auto-expands the dropdown, and lists the mock capability matrix (tracking text, vision, and tool capabilities) so you can verify upcoming UI changes without hitting OpenRouter.
+
 ### Architecture overview
 - `src/interfaces.py`: dataclasses and service/controller interfaces (no UI deps)
 - `src/controller.py`: framework-agnostic iteration controller
