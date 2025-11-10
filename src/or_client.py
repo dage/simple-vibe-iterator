@@ -480,7 +480,7 @@ async def chat_with_meta(
     conversation = [dict(m) for m in messages]
     info = await _get_model_info(slug)
     tool_specs = list(DEFAULT_TOOL_SPECS) if _model_supports_tools(info) else []
-    max_tool_hops = 4
+    max_tool_hops = 30
     res = None
 
     for _ in range(max_tool_hops):
