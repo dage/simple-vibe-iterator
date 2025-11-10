@@ -35,6 +35,7 @@ templates:
     - Console logs contain feedback from previous iterations - use them to fix issues
     - Build incrementally on existing HTML rather than starting over
     - Each iteration should show measurable progress or enhancement
+    - Tooling: you have the `evaluate_javascript` tool to run arbitrary JS snippets (including simulations, shader snippets, or helper functions). Use it liberally to validate math/logic, verify expected output numeric range etc, multiple times before finalizing the HTML. Multiple tool calls are allowed—treat them like your scratchpad—and only respond with the finished HTML once you have high confidence.
 
     PROJECT CONTEXT:
     Overall goal: {overall_goal}
