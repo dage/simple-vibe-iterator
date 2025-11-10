@@ -1,5 +1,5 @@
 models:
-  code: x-ai/grok-4-fast:free
+  code: x-ai/grok-4-fast
   vision: google/gemini-2.5-flash-image-preview
 
 iteration:
@@ -9,7 +9,7 @@ iteration:
     interval_seconds: 10
     model_limits:
       google/gemini-2.5-flash-preview-09-2025: 32
-      x-ai/grok-4-fast:free: 32
+      x-ai/grok-4-fast: 32
       qwen/qwen3-vl-235b-a22b-thinking: 32
 
 templates:

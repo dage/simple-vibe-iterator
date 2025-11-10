@@ -130,7 +130,7 @@ async def _run_case(case: _Case, tmp_dir: Path) -> Tuple[bool, str]:
     }
     ai_limits = {
         "google/gemini-2.5-flash-preview-09-2025": 8,
-        "x-ai/grok-4-fast:free": 4,
+        "x-ai/grok-4-fast": 4,
     }
     vision = _LimitingVisionService(vision_limits)
     ai = _StubAICodeService(ai_limits)
@@ -222,11 +222,11 @@ async def main() -> int:
         ),
         _Case(
             name="grok-clamped",
-            code_model="x-ai/grok-4-fast:free",
+            code_model="x-ai/grok-4-fast",
             vision_model="qwen/qwen3-vl-235b-a22b-thinking",
             requested=6,
             expected=4,
-            limit_source="x-ai/grok-4-fast:free",
+            limit_source="x-ai/grok-4-fast",
         ),
     ]
 
