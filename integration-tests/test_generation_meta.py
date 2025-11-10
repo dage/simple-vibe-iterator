@@ -35,7 +35,7 @@ async def test_generation_metadata() -> Tuple[bool, str]:
     preferred_slugs = []
     if getattr(cfg, "code_model", None):
         preferred_slugs.append(cfg.code_model)
-    preferred_slugs.append('x-ai/grok-4-fast:free')
+    preferred_slugs.append('x-ai/grok-4-fast')
 
     slug = preferred_slugs[-1]
     try:

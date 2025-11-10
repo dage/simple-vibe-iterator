@@ -44,7 +44,7 @@ async def test_param_application() -> Tuple[bool, str]:
     if getattr(cfg, "code_model", None):
         preferred_slugs.append(cfg.code_model)
     # Fallback to a well-behaved free tier model known to support max_tokens
-    preferred_slugs.append('x-ai/grok-4-fast:free')
+    preferred_slugs.append('x-ai/grok-4-fast')
 
     slug = preferred_slugs[-1]
     try:

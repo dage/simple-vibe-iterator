@@ -54,6 +54,7 @@ class ModelSelector:
         self._models: List[orc.ModelInfo] = []
         self._focused_index: int = -1
         self._row_entries: List[Dict[str, object]] = []
+        self._tool_param_keys: Set[str] = {'tools', 'function_calling', 'tool_choice', 'parallel_tool_calls'}
 
         with ui.column().classes('w-full gap-1') as root:
             self.root = root
@@ -96,7 +97,10 @@ class ModelSelector:
                     ui.label('')
                     ui.label('')
                     ui.label('')
-                    ui.label('T/V').classes('text-center')
+                    with ui.row().classes('gap-1 justify-center items-center text-gray-500 dark:text-gray-300'):
+                        ui.icon('text_fields').classes('text-xs').props('aria-label="Text input capability"')
+                        ui.icon('image').classes('text-xs').props('aria-label="Vision input capability"')
+                        ui.icon('handyman').classes('text-xs').props('aria-label="Tool calling capability"')
                     ui.label('Pricing ($/M)').classes('text-center')
                     ui.label('Created').classes('text-center')
 
@@ -262,11 +266,14 @@ class ModelSelector:
                     with ui.column().classes('truncate gap-0'):
                         ui.label(m.name).classes('text-sm truncate')
                         ui.label(m.id).classes('text-[10px] text-gray-500 dark:text-gray-400 truncate')
+                    tool_capable = self._supports_tool_calls(m)
                     with ui.row().classes('gap-1 justify-center'):
                         ui.icon('check_circle' if m.has_text_input else 'cancel',
-                                color='green' if m.has_text_input else 'grey').classes('text-sm')
+                                color='green' if m.has_text_input else 'grey').classes('text-sm').props('aria-label="Text input capability"')
                         ui.icon('check_circle' if m.has_image_input else 'cancel',
-                                color='green' if m.has_image_input else 'grey').classes('text-sm')
+                                color='green' if m.has_image_input else 'grey').classes('text-sm').props('aria-label="Vision input capability"')
+                        ui.icon('handyman',
+                                color='green' if tool_capable else 'grey').classes('text-sm').props('aria-label="Tool calling capability"')
                     ui.label(format_price(m.prompt_price, m.completion_price)).classes('text-sm text-center')
                     ui.label(format_date(m.created)).classes('text-sm text-center')
 
@@ -320,6 +327,14 @@ class ModelSelector:
                     cb.on('update:model-value', lambda v, mid=m.id, cb_ref=cb: asyncio.create_task(_handle_cb_change(mid=mid, cb_ref=cb_ref)))
 
                 self._row_entries.append({'row': row, 'checkbox': cb, 'id': m.id})
+
+    def _supports_tool_calls(self, model: orc.ModelInfo) -> bool:
+        try:
+            params = getattr(model, 'supported_parameters', []) or []
+        except Exception:
+            return False
+        normalized = {str(p).strip().lower() for p in params if str(p).strip()}
+        return bool(normalized.intersection(self._tool_param_keys))
 
     def _set_focus(self, new_index: int) -> None:
         if not self._models:

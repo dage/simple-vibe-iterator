@@ -52,7 +52,7 @@ async def test_deepseek_reasoning_vs_plain() -> Tuple[bool, str]:
     ]
     if getattr(cfg, "code_model", None):
         preferred_slugs.append(cfg.code_model)
-    preferred_slugs.append('x-ai/grok-4-fast:free')
+    preferred_slugs.append('x-ai/grok-4-fast')
     slug = preferred_slugs[-1]
     try:
         models = await or_client.list_models(force_refresh=False, limit=2000)
