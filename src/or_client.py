@@ -16,7 +16,7 @@ Docs: OpenRouter is OpenAI-compatible; images accept base64 data URLs; attributi
 
 from __future__ import annotations
 from functools import lru_cache
-from typing import Any, Dict, Iterable, List, Optional, Union
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 from pathlib import Path
 import base64, mimetypes, asyncio, random, os, time, json
 
@@ -482,6 +482,8 @@ async def chat_with_meta(
     tool_specs = list(DEFAULT_TOOL_SPECS) if _model_supports_tools(info) else []
     max_tool_hops = 30
     res = None
+    last_tool_calls: Sequence[Any] = []
+    completed = False
 
     for _ in range(max_tool_hops):
         async def call():
@@ -498,6 +500,7 @@ async def chat_with_meta(
         res = await _retry(call)
         msg = res.choices[0].message
         tool_calls = list(getattr(msg, "tool_calls", []) or [])
+        last_tool_calls = tool_calls
         if tool_specs and tool_calls:
             conversation.append(msg.model_dump(exclude_none=True))
             for tc in tool_calls:
@@ -512,7 +515,24 @@ async def chat_with_meta(
                     "content": output,
                 })
             continue
+        completed = True
         break
+
+    if not completed and tool_specs and last_tool_calls:
+        async def final_call():
+            payload = {
+                "model": slug,
+                "messages": conversation,
+                "extra_body": merged_kwargs or None,
+            }
+            return await _client().chat.completions.create(**payload)
+
+        res = await _retry(final_call)
+        msg = res.choices[0].message
+        tool_calls = list(getattr(msg, "tool_calls", []) or [])
+        if tool_calls:
+            raise RuntimeError("Exceeded max tool hops without final completion")
+        conversation.append(msg.model_dump(exclude_none=True))
 
     if res is None:
         raise RuntimeError("Failed to obtain response from OpenRouter")
