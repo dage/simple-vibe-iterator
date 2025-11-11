@@ -59,7 +59,8 @@ class StatusPanel:
                 self._rows[worker] = row
 
             headline, detail = self._parse_phase(phase_text)
-            detail_text = f"{detail} · {elapsed:.1f}s"
+            elapsed_display = max(0, int(elapsed))
+            detail_text = f"{detail} · {elapsed_display}s"
 
             if row.headline_text != headline:
                 row.headline_label.set_text(headline)

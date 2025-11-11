@@ -6,6 +6,7 @@ import json
 from typing import Any, Dict, List
 from pathlib import Path
 from types import SimpleNamespace
+import time
 
 from nicegui import ui
 from diff_match_patch import diff_match_patch
@@ -38,11 +39,17 @@ class NiceGUIView(IterationEventListener):
         self._status_timer: ui.timer | None = None
         self._notif_timer: ui.timer | None = None
         self._status_panel: StatusPanel | None = None
+        self._persistent_selectors: List[ModelSelector] = []
+        self._ephemeral_selectors: List[ModelSelector] = []
+        self._shutdown_called: bool = False
+        self._status_refresh_interval: float = 1.0
+        self._last_status_refresh: float = 0.0
 
         # Set some default styling
         apply_theme()
 
     def render(self) -> None:
+        self._stop_timers()
         # Scoped CSS: Make the default CLOSE button text black on error notifications
         with ui.column().classes('w-full h-screen p-4 gap-3'):
             ui.label('Simple Vibe Iterator').classes('text-2xl font-bold')
@@ -50,10 +57,10 @@ class NiceGUIView(IterationEventListener):
             # Container for worker status boxes
             self._status_panel = StatusPanel(on_cancel=self._cancel_worker)
             self._status_panel.build()
-            self._status_timer = ui.timer(0.25, self._refresh_phase)
+            self._status_timer = ui.timer(0.25, lambda: self._refresh_phase())
             # Drain background notifications in UI context
             self._notif_timer = ui.timer(0.25, self._flush_notifications)
-            self._refresh_phase()
+            self._refresh_phase(force=True)
 
             with ui.scroll_area().classes('flex-grow w-full') as scroll:
                 self.scroll_area = scroll
@@ -146,6 +153,7 @@ class NiceGUIView(IterationEventListener):
             self.scroll_area.scroll_to(percent=1.0)
 
     async def _rebuild_chain(self, leaf_id: str) -> None:
+        self._dispose_ephemeral_selectors()
         if self.chat_container is None:
             return
         # Build linear chain from root -> leaf by following parents
@@ -234,23 +242,23 @@ class NiceGUIView(IterationEventListener):
         user_steering = ui.textarea(label='Optional user steering', value=initial.user_steering).classes('w-full')
 
         with ui.expansion('Coding').classes('w-full') as code_exp:
-            code_selector = ModelSelector(
+            code_selector = self._register_selector(ModelSelector(
                 initial_value=initial.code_model,
                 vision_only=False,
                 label='model',
                 on_change=lambda v: None,
-            )
+            ), persistent=allow_mode_switch)
             code_model = code_selector.input
             code_tmpl = ui.textarea(label='coding template', value=initial.code_template).classes('w-full')
 
         with ui.expansion('Vision').classes('w-full') as vision_exp:
-            vision_selector = ModelSelector(
+            vision_selector = self._register_selector(ModelSelector(
                 initial_value=initial.vision_model,
                 vision_only=True,
                 label='model',
                 on_change=lambda v: None,
                 single_selection=True,
-            )
+            ), persistent=allow_mode_switch)
             vision_model = vision_selector.input
             vision_tmpl = ui.textarea(label='vision template', value=initial.vision_template).classes('w-full')
 
@@ -426,133 +434,23 @@ class NiceGUIView(IterationEventListener):
 
                     # Messages dialog (showing full JSON as sent to LLM)
                     messages_dialog = None
+                    open_messages_handler = None
                     if first_output and hasattr(first_output, 'messages') and first_output.messages:
                         messages_dialog = ui.dialog()
                         messages_dialog.props('persistent')
-                        with messages_dialog:
-                            with ui.card().classes('w-[90vw] max-w-[1200px]'):
-                                with ui.row().classes('items-center justify-between w-full'):
-                                    ui.label('Message History').classes('text-lg font-semibold')
-                                    ui.button(icon='close', on_click=messages_dialog.close).props('flat round dense')
-                                ui.html('''<style>
-                                .messages-container { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; background: #0b0f17; color: #e5e7eb; border: 1px solid #334155; border-radius: 6px; padding: 16px; max-height: 70vh; overflow: auto; }
-                                .msg-pre { white-space: pre-wrap; word-break: break-word; background: #0b0f17; color: #e5e7eb; border: 1px solid #334155; border-radius: 6px; padding: 10px; }
-                                .msg-thumb { width: 260px; height: auto; border: 1px solid #334155; border-radius: 6px; }
-                                .msg-expansion .q-item__label { border-radius: 9999px; padding: 2px 8px; font-size: 12px; font-weight: 600; display: inline-block; }
-                                .msg-expansion.chip-system .q-item__label { background: #1f2937; color: #93c5fd; }
-                                .msg-expansion.chip-user .q-item__label { background: #0f766e; color: #a7f3d0; }
-                                .msg-expansion.chip-assistant .q-item__label { background: #4c1d95; color: #c4b5fd; }
-                                .msg-expansion.chip-tool .q-item__label { background: #374151; color: #f59e0b; }
-                                </style>''')
-                                msgs = list(first_output.messages)
-                                with ui.column().classes('w-full').style('gap: 10px;'):
-                                    # Toggle between structured view and raw JSON
-                                    with ui.row().classes('items-center justify-between w-full'):
-                                        raw_toggle = ui.checkbox('Raw JSON', value=False).props('dense')
-                                        ui.button(icon='close', on_click=messages_dialog.close).props('flat round dense')
+                        msgs_snapshot = list(first_output.messages)
 
-                                    structured_container = ui.column().classes('w-full').style('gap: 10px;')
-                                    raw_container = ui.column().classes('w-full').style('gap: 10px; display: none;')
+                        def _open_messages_dialog(msgs=msgs_snapshot) -> None:
+                            self._render_messages_dialog(messages_dialog, msgs)
+                            messages_dialog.open()
 
-                                    # Raw container content
-                                    with raw_container:
-                                        messages_json = json.dumps(msgs, indent=2, ensure_ascii=False)
-                                        escaped_json = _html.escape(messages_json)
-                                        ui.html(f"<div class='messages-container'><pre class='messages-content'>{escaped_json}</pre></div>")
-
-                                    # Structured container content
-                                    with structured_container:
-                                        for m in msgs:
-                                            role = str(m.get('role', '')) if isinstance(m, dict) else ''
-                                            content = m.get('content') if isinstance(m, dict) else m
-                                            # Normalize content into parts
-                                            parts: List[Dict[str, Any]] = []
-                                            try:
-                                                if isinstance(content, list):
-                                                    for p in content:
-                                                        if isinstance(p, dict) and p.get('type') == 'image_url':
-                                                            url = p.get('image_url', {})
-                                                            if isinstance(url, dict):
-                                                                url = url.get('url', '')
-                                                            parts.append({'type': 'image_url', 'url': str(url)})
-                                                        elif isinstance(p, dict) and p.get('type') == 'text':
-                                                            parts.append({'type': 'text', 'text': str(p.get('text', ''))})
-                                                        else:
-                                                            parts.append({'type': 'text', 'text': json.dumps(p, ensure_ascii=False)})
-                                                elif isinstance(content, dict):
-                                                    parts.append({'type': 'text', 'text': json.dumps(content, ensure_ascii=False)})
-                                                else:
-                                                    parts.append({'type': 'text', 'text': str(content)})
-                                            except Exception:
-                                                parts.append({'type': 'text', 'text': str(content)})
-
-                                            # Header with role chip (left) and size (right); expanded by default
-                                            exp = ui.expansion('').classes('msg-expansion ' + (
-                                                'chip-user' if role == 'user' else ('chip-assistant' if role == 'assistant' else ('chip-system' if role == 'system' else 'chip-tool'))
-                                            ))
-                                            # Custom header slot
-                                            try:
-                                                pretty = json.dumps(m, ensure_ascii=False)
-                                                kb = len(pretty.encode('utf-8')) / 1024.0
-                                                size_label = f"{kb:.2f} KB"
-                                            except Exception:
-                                                size_label = ''
-                                            with exp.add_slot('header'):
-                                                with ui.row().classes('items-center justify-between w-full'):
-                                                    role_class = 'chip-user' if role == 'user' else ('chip-assistant' if role == 'assistant' else ('chip-system' if role == 'system' else 'chip-tool'))
-                                                    ui.html(f"<span class='msg-chip {role_class}'>{_html.escape(role or 'unknown')}</span>")
-                                                    ui.label(size_label).classes('text-xs text-gray-400')
-                                            try:
-                                                exp.set_value(False)
-                                            except Exception:
-                                                try:
-                                                    exp.value = False
-                                                except Exception:
-                                                    pass
-                                            with exp:
-                                                with ui.row().classes('items-center justify-end w-full'):
-                                                    if any(p.get('type') == 'text' and p.get('text') for p in parts):
-                                                        _copy_text = '\n\n'.join([p.get('text','') for p in parts if p.get('type')=='text'])
-                                                        ui.button('Copy', on_click=(lambda t=_copy_text: (lambda: self._copy_to_clipboard(t)))()).props('flat dense')
-                                                # Order parts: user role shows images first, others keep text first
-                                                image_parts = [p for p in parts if p.get('type') == 'image_url']
-                                                text_parts = [p for p in parts if p.get('type') == 'text']
-                                                ordered = (image_parts + text_parts) if role == 'user' else (text_parts + image_parts)
-                                                for p in ordered:
-                                                    if p.get('type') == 'text':
-                                                        safe = _html.escape(str(p.get('text') or ''), quote=False)
-                                                        ui.html(f"<pre class='msg-pre'>{safe}</pre>")
-                                                    elif p.get('type') == 'image_url':
-                                                        url = str(p.get('url') or '')
-                                                        with ui.row().classes('items-center gap-2'):
-                                                            if url:
-                                                                ui.image(url).classes('msg-thumb')
-                                                            else:
-                                                                ui.label('(invalid image url)')
-
-                                    # Toggle behavior
-                                    def _toggle_raw() -> None:
-                                        try:
-                                            is_raw = bool(getattr(raw_toggle, 'value', False))
-                                        except Exception:
-                                            is_raw = False
-                                        try:
-                                            raw_container.style('display: block;' if is_raw else 'display: none;')
-                                        except Exception:
-                                            pass
-                                        try:
-                                            structured_container.style('display: none;' if is_raw else 'display: block;')
-                                        except Exception:
-                                            pass
-
-                                    raw_toggle.on_value_change(lambda _: _toggle_raw())
-                                    _toggle_raw()
-
+                        messages_dialog.on('hide', lambda _: messages_dialog.clear())
+                        open_messages_handler = _open_messages_dialog
                     summary_dialog, summary_button_label, summary_disabled = create_node_summary_dialog(node)
 
                     with ui.row().classes('w-full items-start gap-2 mb-2'):
-                        if messages_dialog:
-                            ui.button('📋 Messages', on_click=messages_dialog.open).props('flat dense').classes('text-sm p-0 min-h-0 self-start')
+                        if open_messages_handler:
+                            ui.button('📋 Messages', on_click=open_messages_handler).props('flat dense').classes('text-sm p-0 min-h-0 self-start')
                         summary_handler = summary_dialog.open if not summary_disabled else (lambda: None)
                         summary_btn = ui.button(summary_button_label, on_click=summary_handler).props('flat dense').classes('text-sm p-0 min-h-0 self-start')
                         if summary_disabled:
@@ -762,7 +660,7 @@ class NiceGUIView(IterationEventListener):
         self._op_busy = True
         op_status.clear_all()
         task_registry.clear_all_tasks()
-        self._refresh_phase()
+        self._refresh_phase(force=True)
         return True
 
     def _end_operation(self) -> None:
@@ -773,11 +671,15 @@ class NiceGUIView(IterationEventListener):
             task_registry.clear_all_tasks()
         except Exception:
             pass
-        self._refresh_phase()
+        self._refresh_phase(force=True)
 
-    def _refresh_phase(self) -> None:
+    def _refresh_phase(self, *, force: bool = False) -> None:
         if self._status_panel is None:
             return
+        now = time.monotonic()
+        if not force and (now - self._last_status_refresh) < self._status_refresh_interval:
+            return
+        self._last_status_refresh = now
 
         phases = op_status.get_all_phases()
         self._status_panel.update(phases, busy=self._op_busy)
@@ -849,6 +751,188 @@ class NiceGUIView(IterationEventListener):
             except Exception:
                 # Best-effort; drop malformed items
                 pass
+
+    def _render_messages_dialog(self, dialog: ui.dialog, messages: List[Dict[str, Any]]) -> None:
+        """Lazy-render the heavy message history dialog only when the user opens it."""
+        dialog.clear()
+        with dialog:
+            with ui.card().classes('w-[90vw] max-w-[1200px]'):
+                with ui.row().classes('items-center justify-between w-full'):
+                    ui.label('Message History').classes('text-lg font-semibold')
+                    ui.button(icon='close', on_click=dialog.close).props('flat round dense')
+                ui.html('''<style>
+                .messages-container { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; background: #0b0f17; color: #e5e7eb; border: 1px solid #334155; border-radius: 6px; padding: 16px; max-height: 70vh; overflow: auto; }
+                .msg-pre { white-space: pre-wrap; word-break: break-word; background: #0b0f17; color: #e5e7eb; border: 1px solid #334155; border-radius: 6px; padding: 10px; }
+                .msg-thumb { width: 260px; height: auto; border: 1px solid #334155; border-radius: 6px; }
+                .msg-expansion .q-item__label { border-radius: 9999px; padding: 2px 8px; font-size: 12px; font-weight: 600; display: inline-block; }
+                .msg-expansion.chip-system .q-item__label { background: #1f2937; color: #93c5fd; }
+                .msg-expansion.chip-user .q-item__label { background: #0f766e; color: #a7f3d0; }
+                .msg-expansion.chip-assistant .q-item__label { background: #4c1d95; color: #c4b5fd; }
+                .msg-expansion.chip-tool .q-item__label { background: #374151; color: #f59e0b; }
+                </style>''')
+                msgs = list(messages)
+                with ui.column().classes('w-full').style('gap: 10px;'):
+                    with ui.row().classes('items-center justify-between w-full'):
+                        raw_toggle = ui.checkbox('Raw JSON', value=False).props('dense')
+                        ui.button(icon='close', on_click=dialog.close).props('flat round dense')
+
+                    structured_container = ui.column().classes('w-full').style('gap: 10px;')
+                    raw_container = ui.column().classes('w-full').style('gap: 10px; display: none;')
+
+                    with raw_container:
+                        messages_json = json.dumps(msgs, indent=2, ensure_ascii=False)
+                        escaped_json = _html.escape(messages_json)
+                        ui.html(f"<div class='messages-container'><pre class='messages-content'>{escaped_json}</pre></div>")
+
+                    with structured_container:
+                        for m in msgs:
+                            role = str(m.get('role', '')) if isinstance(m, dict) else ''
+                            content = m.get('content') if isinstance(m, dict) else m
+                            parts: List[Dict[str, Any]] = []
+                            try:
+                                if isinstance(content, list):
+                                    for p in content:
+                                        if isinstance(p, dict) and p.get('type') == 'image_url':
+                                            url = p.get('image_url', {})
+                                            if isinstance(url, dict):
+                                                url = url.get('url', '')
+                                            parts.append({'type': 'image_url', 'url': str(url)})
+                                        elif isinstance(p, dict) and p.get('type') == 'text':
+                                            parts.append({'type': 'text', 'text': str(p.get('text', ''))})
+                                        else:
+                                            parts.append({'type': 'text', 'text': json.dumps(p, ensure_ascii=False)})
+                                elif isinstance(content, dict):
+                                    parts.append({'type': 'text', 'text': json.dumps(content, ensure_ascii=False)})
+                                else:
+                                    parts.append({'type': 'text', 'text': str(content)})
+                            except Exception:
+                                parts.append({'type': 'text', 'text': str(content)})
+
+                            exp = ui.expansion('').classes('msg-expansion ' + (
+                                'chip-user' if role == 'user' else ('chip-assistant' if role == 'assistant' else ('chip-system' if role == 'system' else 'chip-tool'))
+                            ))
+                            try:
+                                pretty = json.dumps(m, ensure_ascii=False)
+                                kb = len(pretty.encode('utf-8')) / 1024.0
+                                size_label = f"{kb:.2f} KB"
+                            except Exception:
+                                size_label = ''
+                            with exp.add_slot('header'):
+                                with ui.row().classes('items-center justify-between w-full'):
+                                    role_class = 'chip-user' if role == 'user' else ('chip-assistant' if role == 'assistant' else ('chip-system' if role == 'system' else 'chip-tool'))
+                                    ui.html(f"<span class='msg-chip {role_class}'>{_html.escape(role or 'unknown')}</span>")
+                                    ui.label(size_label).classes('text-xs text-gray-400')
+                            try:
+                                exp.set_value(False)
+                            except Exception:
+                                try:
+                                    exp.value = False
+                                except Exception:
+                                    pass
+                            with exp:
+                                with ui.row().classes('items-center justify-end w-full'):
+                                    if any(p.get('type') == 'text' and p.get('text') for p in parts):
+                                        _copy_text = '\n\n'.join([p.get('text','') for p in parts if p.get('type')=='text'])
+                                        ui.button('Copy', on_click=(lambda t=_copy_text: (lambda: self._copy_to_clipboard(t)))()).props('flat dense')
+                                image_parts = [p for p in parts if p.get('type') == 'image_url']
+                                text_parts = [p for p in parts if p.get('type') == 'text']
+                                ordered = (image_parts + text_parts) if role == 'user' else (text_parts + image_parts)
+                                for p in ordered:
+                                    if p.get('type') == 'text':
+                                        safe = _html.escape(str(p.get('text') or ''), quote=False)
+                                        ui.html(f"<pre class='msg-pre'>{safe}</pre>")
+                                    elif p.get('type') == 'image_url':
+                                        url = str(p.get('url') or '')
+                                        with ui.row().classes('items-center gap-2'):
+                                            if url:
+                                                ui.image(url).classes('msg-thumb')
+                                            else:
+                                                ui.label('(invalid image url)')
+
+                    def _toggle_raw() -> None:
+                        try:
+                            is_raw = bool(getattr(raw_toggle, 'value', False))
+                        except Exception:
+                            is_raw = False
+                        try:
+                            raw_container.style('display: block;' if is_raw else 'display: none;')
+                        except Exception:
+                            pass
+                        try:
+                            structured_container.style('display: none;' if is_raw else 'display: block;')
+                        except Exception:
+                            pass
+
+                    raw_toggle.on_value_change(lambda _: _toggle_raw())
+                    _toggle_raw()
+
+    def _register_selector(self, selector: ModelSelector, *, persistent: bool) -> ModelSelector:
+        target = self._persistent_selectors if persistent else self._ephemeral_selectors
+        target.append(selector)
+        return selector
+
+    def _dispose_selector_list(self, selectors: List[ModelSelector]) -> None:
+        while selectors:
+            selector = selectors.pop()
+            try:
+                selector.dispose()
+            except Exception:
+                pass
+
+    def _dispose_ephemeral_selectors(self) -> None:
+        self._dispose_selector_list(self._ephemeral_selectors)
+
+    def _dispose_all_selectors(self) -> None:
+        self._dispose_selector_list(self._ephemeral_selectors)
+        self._dispose_selector_list(self._persistent_selectors)
+
+    def _stop_timers(self) -> None:
+        for attr in ('_status_timer', '_notif_timer'):
+            timer = getattr(self, attr, None)
+            if timer is None:
+                continue
+            try:
+                timer.cancel()
+            except Exception:
+                pass
+            setattr(self, attr, None)
+
+    async def shutdown(self) -> None:
+        if self._shutdown_called:
+            return
+        self._shutdown_called = True
+        self._stop_timers()
+        self._dispose_all_selectors()
+        try:
+            task_registry.clear_all_tasks()
+        except Exception:
+            pass
+        try:
+            op_status.clear_all()
+            op_status.drain_notifications()
+        except Exception:
+            pass
+        try:
+            self.controller.remove_listener(self)
+        except Exception:
+            pass
+        if self._status_panel is not None:
+            try:
+                self._status_panel.clear()
+            except Exception:
+                pass
+            self._status_panel = None
+        self.node_panels.clear()
+        for attr in ('chat_container', 'start_panel', 'scroll_area'):
+            elem = getattr(self, attr, None)
+            if elem is None:
+                continue
+            try:
+                elem.clear()
+            except Exception:
+                pass
+            setattr(self, attr, None)
+        self._op_busy = False
 
 
 
