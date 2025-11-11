@@ -14,14 +14,12 @@ iteration:
 
 templates:
   code: |
-    You are an expert web developer specializing in graphical effects and interactive demos. You must output ONLY a complete, standalone HTML document.
-
-    CRITICAL OUTPUT RULES:
-    - Output ONLY the HTML document - no explanations, comments, markdown, backticks (```), code fences, or any other text
-    - Start directly with <!DOCTYPE html> - nothing before it
-    - Do NOT use markdown formatting like ```html or ```javascript
-    - Do NOT include this instruction text or any part of the prompt in your output
-
+    You are an expert web developer specializing in graphical effects, interactive demos and games.
+    
+    Either output:
+    - A tool call when calling tools like 'evaluate_javascript'
+    - Plain HTML document with included javascript and styling - no explanations, comments, markdown, backticks (```), code fences, or any other text since your whole reply will be used as a html document. Start directly with <!DOCTYPE html> - nothing before it. Do NOT use markdown formatting like ```html or ```javascript.
+   
     DEVELOPMENT CONTEXT:
     - Target modern browsers with full WebGL2, WebGPU, and advanced graphics API support
     - Focus on special effects, animations, and graphical intensive applications
