@@ -106,18 +106,22 @@ class NiceGUIView(IterationEventListener):
                         if shot_value < 1:
                             shot_value = 1
 
+                        mode = self._extract_mode(inputs['mode'])
+                        code_template = settings_manager.get_code_template(mode)
+                        vision_template = settings_manager.get_vision_template(mode)
+
                         settings = TransitionSettings(
                             code_model=inputs['code_model'].value or '',
                             vision_model=inputs['vision_model'].value or '',
                             overall_goal=og,
                             user_steering=inputs['user_steering'].value or '',
-                            code_template=inputs['code_template'].value or '',
-                            vision_template=inputs['vision_template'].value or '',
+                            code_template=code_template,
+                            vision_template=vision_template,
                             input_screenshot_count=shot_value,
-                            mode=self._extract_mode(inputs['mode']),
-                            keep_history=get_settings().keep_history
+                            mode=mode,
+                            keep_history=settings_manager.keep_history
                         )
-                        get_settings().save_settings(settings)
+                        settings_manager.save_settings(settings)
                         if self.controller.has_nodes():
                             root = self.controller.get_root()
                             if root and root.settings.mode != settings.mode:
@@ -241,7 +245,8 @@ class NiceGUIView(IterationEventListener):
         overall_goal = ui.textarea(label='Overall goal', value=initial.overall_goal).classes('w-full')
         user_steering = ui.textarea(label='Optional user steering', value=initial.user_steering).classes('w-full')
 
-        with ui.expansion('Coding').classes('w-full') as code_exp:
+        with ui.column().classes('w-full gap-2'):
+            ui.label('Coding models').classes('w-full text-base font-medium')
             code_selector = self._register_selector(ModelSelector(
                 initial_value=initial.code_model,
                 vision_only=False,
@@ -249,9 +254,9 @@ class NiceGUIView(IterationEventListener):
                 on_change=lambda v: None,
             ), persistent=allow_mode_switch)
             code_model = code_selector.input
-            code_tmpl = ui.textarea(label='coding template', value=initial.code_template).classes('w-full')
 
-        with ui.expansion('Vision').classes('w-full') as vision_exp:
+        with ui.column().classes('w-full gap-2 pt-2'):
+            ui.label('Vision models').classes('w-full text-base font-medium')
             vision_selector = self._register_selector(ModelSelector(
                 initial_value=initial.vision_model,
                 vision_only=True,
@@ -260,18 +265,14 @@ class NiceGUIView(IterationEventListener):
                 single_selection=True,
             ), persistent=allow_mode_switch)
             vision_model = vision_selector.input
-            vision_tmpl = ui.textarea(label='vision template', value=initial.vision_template).classes('w-full')
+
+        settings_manager = get_settings()
 
         def _apply_mode_state(label: str, *, reset_on_mode_change: bool = False) -> None:
             mapped_value = value_by_label.get(label, IterationMode.VISION_SUMMARY.value)
             require_image = mapped_value == IterationMode.DIRECT_TO_CODER.value
             try:
                 code_selector.set_require_image_input(require_image)
-            except Exception:
-                pass
-            # Keep vision settings visible for all modes (direct mode now also uses vision)
-            try:
-                vision_exp.visible = True
             except Exception:
                 pass
             if require_image and reset_on_mode_change:
@@ -308,13 +309,13 @@ class NiceGUIView(IterationEventListener):
                 vision_model=vision_selector.get_value(),
                 overall_goal=overall_goal.value or '',
                 user_steering=user_steering.value or '',
-                code_template=code_tmpl.value or '',
-                vision_template=vision_tmpl.value or '',
+                code_template=settings_manager.get_code_template(mode),
+                vision_template=settings_manager.get_vision_template(mode),
                 input_screenshot_count=shot_value,
                 mode=mode,
                 keep_history=keep_history_value,
             )
-            get_settings().save_settings(current)
+            settings_manager.save_settings(current)
 
         if allow_mode_switch:
             def _handle_mode_change(_=None) -> None:
@@ -329,8 +330,8 @@ class NiceGUIView(IterationEventListener):
                 except Exception:
                     new_mode = initial.mode if isinstance(initial.mode, IterationMode) else IterationMode.VISION_SUMMARY
 
-                get_settings().current_mode = new_mode
-                stored = get_settings().load_settings_for_mode(new_mode)
+                settings_manager.current_mode = new_mode
+                stored = settings_manager.load_settings_for_mode(new_mode)
 
                 code_selector.set_value(stored.code_model)
                 try:
@@ -343,16 +344,6 @@ class NiceGUIView(IterationEventListener):
                     vision_model.set_value(stored.vision_model)
                 except Exception:
                     vision_model.value = stored.vision_model
-
-                try:
-                    code_tmpl.set_value(stored.code_template)
-                except Exception:
-                    code_tmpl.value = stored.code_template
-
-                try:
-                    vision_tmpl.set_value(stored.vision_template)
-                except Exception:
-                    vision_tmpl.value = stored.vision_template
                 try:
                     screenshot_count.set_value(stored.input_screenshot_count)
                 except Exception:
@@ -383,8 +374,6 @@ class NiceGUIView(IterationEventListener):
             code_selector.on_change = _wrap_change(code_selector.on_change)
             vision_selector.on_change = _wrap_change(vision_selector.on_change)
 
-            code_tmpl.on('blur', lambda _: _persist_current())
-            vision_tmpl.on('blur', lambda _: _persist_current())
             if keep_history_checkbox is not None:
                 keep_history_checkbox.on_value_change(lambda _: _persist_current())
             screenshot_count.on_value_change(lambda _: _persist_current())
@@ -397,8 +386,6 @@ class NiceGUIView(IterationEventListener):
             'overall_goal': overall_goal,
             'code_model': code_model,
             'vision_model': vision_model,
-            'code_template': code_tmpl,
-            'vision_template': vision_tmpl,
             'input_screenshot_count': screenshot_count,
             'mode': mode_select,
         }
@@ -628,18 +615,22 @@ class NiceGUIView(IterationEventListener):
                                             if iter_shots < 1:
                                                 iter_shots = 1
 
+                                            mode = self._extract_mode(inputs['mode'])
+                                            code_template = settings_manager.get_code_template(mode)
+                                            vision_template = settings_manager.get_vision_template(mode)
+
                                             updated = TransitionSettings(
                                                 code_model=selected_model,
                                                 vision_model=inputs['vision_model'].value or '',
                                                 overall_goal=inputs['overall_goal'].value or '',
                                                 user_steering=inputs['user_steering'].value or '',
-                                                code_template=inputs['code_template'].value or '',
-                                                vision_template=inputs['vision_template'].value or '',
+                                                code_template=code_template,
+                                                vision_template=vision_template,
                                                 input_screenshot_count=iter_shots,
-                                                mode=self._extract_mode(inputs['mode']),
-                                                keep_history=get_settings().keep_history
+                                                mode=mode,
+                                                keep_history=settings_manager.keep_history
                                             )
-                                            get_settings().save_settings(updated)
+                                            settings_manager.save_settings(updated)
                                             await self.controller.apply_transition(node.id, updated, slug)
                                         except asyncio.CancelledError:
                                             ui.notify(f'Cancelled {slug}', color='warning', timeout=2000)

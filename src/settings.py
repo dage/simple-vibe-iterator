@@ -77,17 +77,13 @@ class Settings:
 
     def get_code_template(self, mode: Optional[IterationMode] = None) -> str:
         """Get the code template for the given mode."""
-        if mode is None:
-            mode = self.current_mode
         cfg = app_config.get_config()
-        return self._get_mode_value('template.code', mode, prefs.get('template.code', cfg.code_template))
+        return cfg.code_template
 
     def get_vision_template(self, mode: Optional[IterationMode] = None) -> str:
         """Get the vision template for the given mode."""
-        if mode is None:
-            mode = self.current_mode
         cfg = app_config.get_config()
-        return self._get_mode_value('template.vision', mode, prefs.get('template.vision', cfg.vision_template))
+        return cfg.vision_template
 
     def set_code_model(self, value: str, mode: Optional[IterationMode] = None) -> None:
         """Set the code model for the given mode."""
@@ -100,18 +96,6 @@ class Settings:
         if mode is None:
             mode = self.current_mode
         self._set_mode_value('model.vision', mode, value)
-
-    def set_code_template(self, value: str, mode: Optional[IterationMode] = None) -> None:
-        """Set the code template for the given mode."""
-        if mode is None:
-            mode = self.current_mode
-        self._set_mode_value('template.code', mode, value)
-
-    def set_vision_template(self, value: str, mode: Optional[IterationMode] = None) -> None:
-        """Set the vision template for the given mode."""
-        if mode is None:
-            mode = self.current_mode
-        self._set_mode_value('template.vision', mode, value)
 
     def get_input_screenshot_count(self, mode: Optional[IterationMode] = None) -> int:
         """Get the preferred number of input screenshots for the given mode."""
@@ -170,8 +154,6 @@ class Settings:
         self.current_mode = settings.mode
         self.set_code_model(settings.code_model, settings.mode)
         self.set_vision_model(settings.vision_model, settings.mode)
-        self.set_code_template(settings.code_template, settings.mode)
-        self.set_vision_template(settings.vision_template, settings.mode)
         self.set_input_screenshot_count(settings.input_screenshot_count, settings.mode)
         self.keep_history = settings.keep_history
 

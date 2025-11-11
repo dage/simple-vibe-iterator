@@ -18,6 +18,7 @@
 
 ## Configuration & Templates
 - Defaults load from `config.yaml` at startup; avoid hardcoding.
+- Coding and vision prompts are only editable via `config.yaml` (UI never overrides or persists them).
 - Templates support variables: `{overall_goal}`, `{user_steering}`, `{vision_output}`, `{console_logs}`, `{html_input}`.
 
 ## Coding Style & Naming Conventions

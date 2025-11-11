@@ -31,7 +31,7 @@ python -m playwright install
 4. Create `.env` from `.env_template` and fill values:
    - Required: `OPENROUTER_BASE_URL` (default provided), `OPENROUTER_API_KEY`
 
-5. The committed `config.yaml` at the project root is the default configuration for every new session. Edit it to change default models and templates:
+5. The committed `config.yaml` at the project root is the default configuration for every new session. Edit it to change default models and prompts (the UI no longer allows prompt editing; restart after updating the file):
 ```
 models:
   code: z-ai/glm-4.5-air
@@ -87,7 +87,7 @@ Then open `http://localhost:8055`.
 Workflow:
 - Create a root node: enter the overall goal, then click "Create root" (the coding agent creates the initial HTML).
 - Each node card shows: HTML Input (empty for root), HTML Output, Screenshot, Console Logs, and Vision Analysis.
-- Edit settings for the next iteration (model slugs default from `config.yaml`, plus instructions/templates/overall goal).
+- Edit settings for the next iteration (model slugs default from `config.yaml`, plus optional steering/overall goal text).
 - Click "Iterate" on any node to create its next child; descendants of that node are replaced by the new chain.
  - While an operation is running, the status shows the current phase and seconds elapsed; other actions are temporarily blocked.
 
