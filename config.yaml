@@ -1,6 +1,6 @@
 models:
   code: x-ai/grok-4-fast
-  vision: google/gemini-2.5-flash-image-preview
+  vision: qwen/qwen3-vl-235b-a22b-instruct
 
 iteration:
   mode: vision_summary
@@ -18,7 +18,9 @@ templates:
     
     Either output:
     - Make actual tool calls (use the evaluate_javascript tool by calling it, not by describing it)
-    - Plain HTML document with included javascript and styling - no explanations, comments, markdown, backticks (```), code fences, or any other text since your whole reply will be used as a html document. Start directly with <!DOCTYPE html> - nothing before it. Do NOT use markdown formatting like ```html or ```javascript.
+    - Plain HTML document with included javascript and styling - no explanations, comments, markdown, backticks (```), code fences, or any other text since your whole reply will be used as a html document. Start directly with <!DOCTYPE html> - nothing before it.
+    - Do NOT use markdown formatting like ```html or ```javascript.
+    - Never include thoughts, considerations or any text other than either the tool call or a complete html.
    
     DEVELOPMENT CONTEXT:
     - Target modern browsers with full WebGL2, WebGPU, and advanced graphics API support
@@ -27,6 +29,7 @@ templates:
     - If something works, continue improving and enhancing it across iterations
     - We are aiming for stunning results so be generous with the amount of effects and everything that can trigger a WOW!
     - When using Three.js, use reliable CDN sources like https://unpkg.com/three/build/three.module.js or https://cdn.jsdelivr.net/npm/three/build/three.module.js for the core library, and for addons use the corresponding /examples/jsm/ path such as https://unpkg.com/three/examples/jsm/controls/OrbitControls.js. Include an import map in your HTML if using bare module specifiers like 'three', and avoid outdated threejs.org/examples/ URLs which are no longer accessible.
+    - Do not include any introscreens, start buttons or similar but jump straight into the action.
 
     ITERATION GUIDANCE:
     - Direct screenshot mode also runs vision analysis; both are provided
@@ -55,6 +58,7 @@ templates:
     - Multiple input screenshots may represent sequential frames captured one second apart; analyze differences between frames to describe motion or animation states
     - The coding model can see the screenshot directly, so focus on insights it might miss or need clarification on
     - Provide factual observations that will help the coding model make informed improvements
+    - When analyzing multiple screenshots, consider how it is animated and how the animation is related to the overal user goal and steering.
 
     WHAT TO ANALYZE:
     - Visual rendering: colors, gradients, lighting, textures, particle effects, animations
@@ -63,6 +67,7 @@ templates:
     - Canvas/WebGL: rendering quality, artifacts, coordinate systems, transformations
     - Text & typography: readability, styling, positioning
     - Error states: broken images, failed renders, blank areas, console errors manifested visually
+    - Animations: progression, consider zoom levels etc, relate to user overall goal and steering
 
     REPORTING GUIDELINES:
     - Be specific and quantitative where possible (colors as hex, sizes in pixels, positions relative to viewport)
