@@ -20,7 +20,7 @@ from . import feedback_presets
 from .model_selector import ModelSelector
 from .settings import get_settings
 from .ui_theme import apply_theme
-from .view_utils import format_html_size
+from .view_utils import extract_vision_summary, format_html_size
 from .node_summary_dialog import create_node_summary_dialog
 from .status_panel import StatusPanel
 
@@ -561,15 +561,15 @@ class NiceGUIView(IterationEventListener):
                                 else:
                                     ui.label('(no console logs)')
                             # Show vision analysis section for any mode; direct mode now includes vision
-                            _va_raw = first_output.artifacts.vision_output if first_output else ''
+                            _va_raw = extract_vision_summary(first_output.artifacts if first_output else None)
                             _va_lines = [line for line in _va_raw.splitlines() if line.strip()]
                             va_title = f"Vision Analysis ({'empty' if len(_va_lines) == 0 else len(_va_lines)})"
                             with ui.expansion(va_title):
-                                va_text = first_output.artifacts.vision_output if first_output else ''
+                                va_text = _va_raw
                                 has_inputs = bool(getattr(first_output.artifacts, 'input_screenshot_filenames', []) if first_output else [])
                                 if not has_inputs:
                                     va_text = '(no input screenshot)'
-                                elif not (va_text or '').strip():
+                                elif not va_text.strip():
                                     va_text = '(pending)'
                                 else:
                                     va_text = va_text.replace('\n', '\n\n')
