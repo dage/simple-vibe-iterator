@@ -223,10 +223,10 @@ async def main() -> int:
         _Case(
             name="grok-clamped",
             code_model="x-ai/grok-4-fast",
-            vision_model="qwen/qwen3-vl-235b-a22b-thinking",
-            requested=6,
-            expected=4,
-            limit_source="x-ai/grok-4-fast",
+            vision_model="qwen/qwen3-vl-8b-instruct",
+            requested=3,
+            expected=3,
+            limit_source=None,
         ),
     ]
 
