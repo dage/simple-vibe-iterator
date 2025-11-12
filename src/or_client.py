@@ -513,6 +513,7 @@ async def chat_with_meta(
                     "tool_call_id": getattr(tc, "id", ""),
                     "name": fn.name,
                     "content": output,
+                    "arguments": getattr(fn, "arguments", None),
                 })
             continue
         completed = True

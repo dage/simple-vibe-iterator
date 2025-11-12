@@ -814,6 +814,105 @@ class NiceGUIView(IterationEventListener):
 
     def _render_messages_dialog(self, dialog: ui.dialog, messages: List[Dict[str, Any]]) -> None:
         """Lazy-render the heavy message history dialog only when the user opens it."""
+        def _format_structured_value(value: Any) -> str:
+            if isinstance(value, str):
+                return value
+            try:
+                return json.dumps(value, ensure_ascii=False, indent=2)
+            except Exception:
+                try:
+                    return str(value)
+                except Exception:
+                    return ""
+
+        def _append_text_part(parts: List[Dict[str, Any]], text: str | None) -> None:
+            if text:
+                parts.append({'type': 'text', 'text': str(text)})
+
+        def _append_tool_metadata(parts: List[Dict[str, Any]], message: Dict[str, Any]) -> None:
+            metadata_lines: List[str] = []
+            tool_name = message.get('name') or message.get('tool')
+            if tool_name:
+                metadata_lines.append(f"Tool: {tool_name}")
+            tool_id = message.get('tool_call_id')
+            if tool_id:
+                metadata_lines.append(f"Call ID: {tool_id}")
+            arguments = message.get('arguments')
+            if arguments is not None:
+                metadata_lines.append("Arguments:")
+                metadata_lines.append(_format_structured_value(arguments))
+            if metadata_lines:
+                _append_text_part(parts, "\n".join(metadata_lines))
+
+        def _append_tool_call_details(parts: List[Dict[str, Any]], message: Dict[str, Any]) -> bool:
+            tool_calls = message.get('tool_calls')
+            if not isinstance(tool_calls, list) or not tool_calls:
+                return False
+            handled_any = False
+            for idx, call in enumerate(tool_calls, start=1):
+                if not isinstance(call, dict):
+                    continue
+                lines: List[str] = [f"Tool call #{idx}"]
+                call_type = call.get('type')
+                if call_type:
+                    lines.append(f"Type: {call_type}")
+                call_id = call.get('id') or call.get('tool_call_id')
+                if call_id:
+                    lines.append(f"Call ID: {call_id}")
+                function_meta = call.get('function')
+                if isinstance(function_meta, dict):
+                    fn_name = function_meta.get('name')
+                    arguments = function_meta.get('arguments')
+                else:
+                    fn_name = call.get('name')
+                    arguments = call.get('arguments')
+                if fn_name:
+                    lines.append(f"Function: {fn_name}")
+                if arguments is not None:
+                    arg_value: Any = arguments
+                    if isinstance(arg_value, str):
+                        stripped = arg_value.strip()
+                        if stripped:
+                            try:
+                                arg_value = json.loads(stripped)
+                            except Exception:
+                                arg_value = stripped
+                    lines.append("Arguments:")
+                    lines.append(_format_structured_value(arg_value))
+                _append_text_part(parts, "\n".join(lines))
+                handled_any = True
+            return handled_any
+
+        def _handle_tool_output(parts: List[Dict[str, Any]], content: Any) -> bool:
+            if not isinstance(content, str):
+                return False
+            parsed: Any
+            try:
+                parsed = json.loads(content)
+            except Exception:
+                return False
+            if not isinstance(parsed, dict):
+                return False
+            handled = False
+            if 'result' in parsed:
+                _append_text_part(parts, f"Result:\n{_format_structured_value(parsed['result'])}")
+                handled = True
+            if 'console' in parsed:
+                console_raw = parsed['console']
+                lines: List[str]
+                if isinstance(console_raw, list):
+                    lines = [str(line) for line in console_raw]
+                else:
+                    lines = [str(console_raw)]
+                _append_text_part(parts, "Console:\n" + "\n".join(lines))
+                handled = True
+            for key in sorted(parsed.keys()):
+                if key in {'result', 'console'}:
+                    continue
+                _append_text_part(parts, f"{key}: {_format_structured_value(parsed[key])}")
+                handled = True
+            return handled
+
         dialog.clear()
         with dialog:
             with ui.card().classes('w-[90vw] max-w-[1200px]'):
@@ -849,25 +948,33 @@ class NiceGUIView(IterationEventListener):
                             role = str(m.get('role', '')) if isinstance(m, dict) else ''
                             content = m.get('content') if isinstance(m, dict) else m
                             parts: List[Dict[str, Any]] = []
-                            try:
-                                if isinstance(content, list):
-                                    for p in content:
-                                        if isinstance(p, dict) and p.get('type') == 'image_url':
-                                            url = p.get('image_url', {})
-                                            if isinstance(url, dict):
-                                                url = url.get('url', '')
-                                            parts.append({'type': 'image_url', 'url': str(url)})
-                                        elif isinstance(p, dict) and p.get('type') == 'text':
-                                            parts.append({'type': 'text', 'text': str(p.get('text', ''))})
-                                        else:
-                                            parts.append({'type': 'text', 'text': json.dumps(p, ensure_ascii=False)})
-                                elif isinstance(content, dict):
-                                    parts.append({'type': 'text', 'text': json.dumps(content, ensure_ascii=False)})
-                                else:
+                            message_dict = m if isinstance(m, dict) else {}
+                            has_tool_calls = bool(message_dict.get('tool_calls'))
+                            special_handled = False
+                            if role == 'tool':
+                                _append_tool_metadata(parts, message_dict)
+                                special_handled = _handle_tool_output(parts, content)
+                            elif role == 'assistant' and has_tool_calls:
+                                special_handled = _append_tool_call_details(parts, message_dict)
+                            if not special_handled:
+                                try:
+                                    if isinstance(content, list):
+                                        for p in content:
+                                            if isinstance(p, dict) and p.get('type') == 'image_url':
+                                                url = p.get('image_url', {})
+                                                if isinstance(url, dict):
+                                                    url = url.get('url', '')
+                                                parts.append({'type': 'image_url', 'url': str(url)})
+                                            elif isinstance(p, dict) and p.get('type') == 'text':
+                                                parts.append({'type': 'text', 'text': str(p.get('text', ''))})
+                                            else:
+                                                parts.append({'type': 'text', 'text': json.dumps(p, ensure_ascii=False)})
+                                    elif isinstance(content, dict):
+                                        parts.append({'type': 'text', 'text': json.dumps(content, ensure_ascii=False)})
+                                    else:
+                                        parts.append({'type': 'text', 'text': str(content)})
+                                except Exception:
                                     parts.append({'type': 'text', 'text': str(content)})
-                            except Exception:
-                                parts.append({'type': 'text', 'text': str(content)})
-
                             exp = ui.expansion('').classes('msg-expansion ' + (
                                 'chip-user' if role == 'user' else ('chip-assistant' if role == 'assistant' else ('chip-system' if role == 'system' else 'chip-tool'))
                             ))
@@ -880,7 +987,8 @@ class NiceGUIView(IterationEventListener):
                             with exp.add_slot('header'):
                                 with ui.row().classes('items-center justify-between w-full'):
                                     role_class = 'chip-user' if role == 'user' else ('chip-assistant' if role == 'assistant' else ('chip-system' if role == 'system' else 'chip-tool'))
-                                    ui.html(f"<span class='msg-chip {role_class}'>{_html.escape(role or 'unknown')}</span>")
+                                    chip_label = 'Tool response' if role == 'tool' else ('Assistant tool call' if role == 'assistant' and has_tool_calls else (role or 'unknown'))
+                                    ui.html(f"<span class='msg-chip {role_class}'>{_html.escape(chip_label)}</span>")
                                     ui.label(size_label).classes('text-xs text-gray-400')
                             try:
                                 exp.set_value(False)
