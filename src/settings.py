@@ -10,6 +10,7 @@ from typing import Optional
 from .interfaces import IterationMode, TransitionSettings
 from . import prefs
 from . import config as app_config
+from . import feedback_presets
 
 
 class Settings:
@@ -124,6 +125,23 @@ class Settings:
             count = 1
         self._set_mode_value('input.screenshot.count', mode, str(count))
 
+    def get_feedback_preset_id(self, mode: Optional[IterationMode] = None) -> str:
+        if mode is None:
+            mode = self.current_mode
+        fallback = feedback_presets.get_initial_preset_id()
+        raw = self._get_mode_value(
+            'feedback.preset.id',
+            mode,
+            prefs.get('feedback.preset.id', fallback),
+        )
+        return raw.strip() or fallback
+
+    def set_feedback_preset_id(self, preset_id: str | None, mode: Optional[IterationMode] = None) -> None:
+        if mode is None:
+            mode = self.current_mode
+        value = (preset_id or '').strip()
+        self._set_mode_value('feedback.preset.id', mode, value)
+
     # TransitionSettings compatibility
     def load_settings(self, overall_goal: str = '', user_steering: str = '') -> TransitionSettings:
         """Load complete settings for current mode."""
@@ -145,6 +163,7 @@ class Settings:
             code_template=self.get_code_template(mode),
             vision_template=self.get_vision_template(mode),
             input_screenshot_count=self.get_input_screenshot_count(mode),
+            feedback_preset_id=self.get_feedback_preset_id(mode),
             mode=mode,
             keep_history=self.keep_history,
         )
@@ -155,6 +174,7 @@ class Settings:
         self.set_code_model(settings.code_model, settings.mode)
         self.set_vision_model(settings.vision_model, settings.mode)
         self.set_input_screenshot_count(settings.input_screenshot_count, settings.mode)
+        self.set_feedback_preset_id(settings.feedback_preset_id, settings.mode)
         self.keep_history = settings.keep_history
 
     def with_mode(self, settings: TransitionSettings, mode: IterationMode) -> TransitionSettings:

@@ -4,6 +4,7 @@
 - Source: `src/` (framework‑agnostic controller/services and NiceGUI view)
   - `controller.py`, `services.py`, `interfaces.py`, `view.py`, `main.py`, `config.py`
 - Tests: `integration-tests/` (`test_*.py` and `run_all.py`)
+- Feedback presets: `feedback_presets.yaml` (declarative wait/keypress/screenshot recipes; override path via `FEEDBACK_PRESETS_PATH`)
 - Config: `config.yaml` (models/templates), `.env` (OpenRouter credentials; not committed)
 - Artifacts: `artifacts/` (HTML, screenshots, logs; gitignored, hash‑named files)
 
@@ -20,6 +21,8 @@
 - Defaults load from `config.yaml` at startup; avoid hardcoding.
 - Coding and vision prompts are only editable via `config.yaml` (UI never overrides or persists them).
 - Templates support variables: `{overall_goal}`, `{user_steering}`, `{vision_output}`, `{console_logs}`, `{html_input}`.
+- Feedback presets supply `{screenshots_feedback}` (a readable summary like `#1: press-w, #2: press-s`) to both code and vision templates so models can align each screenshot with its action.
+- Capture automation lives in `feedback_presets.yaml`. The packaged presets are “Single screenshot”, “Short animation”, “WSAD sweep”, and “Space press”, and the manual screenshot count control has been removed so only presets drive captures. Presets trigger as soon as the DOM ready event fires.
 
 ## Coding Style & Naming Conventions
 - Language: Python, 4‑space indentation, type hints encouraged (`from __future__ import annotations` used)
@@ -72,8 +75,9 @@ Note on sharing commit messages in chat:
 ## Development Rules & Invariants
 - No hardcoded fallback/mocked data; on API failure, surface the error.
 - Avoid scope creep; implement only requested changes.
-- Re‑running mid‑chain deletes descendants; do not bypass operation locking.
+- Re‑running mid-chain deletes descendants; do not bypass operation locking.
 - Preserve state‑machine flow: render → screenshot/console → vision → code → output.
+- Default preset-driven capture uses `code: x-ai/grok-4-fast` and `vision: qwen/qwen3-vl-235b-a22b-instruct`; keep those hardcoded inside preset artifacts unless product direction changes.
 
 ### Simplicity & Modularity
 - Prefer the simplest working approach. Avoid introducing fallback data or extra layers unless required by product constraints.

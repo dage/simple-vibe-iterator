@@ -1,0 +1,78 @@
+defaults:
+  models:
+    code: x-ai/grok-4-fast
+    vision: qwen/qwen3-vl-235b-a22b-instruct
+  ui:
+    initial_preset: short_animation
+
+presets:
+  - id: single_shot
+    label: 'Single screenshot'
+    description: 'Capture the current view once as soon as the DOM is ready.'
+    enabled: true
+    actions:
+      - action: screenshot
+        label: single-shot
+
+  - id: short_animation
+    label: 'Short animation'
+    description: 'Capture three frames in quick succession without extra input.'
+    enabled: true
+    actions:
+      - action: screenshot
+        label: keyframe-1
+      - action: wait
+        seconds: 2.0
+      - action: screenshot
+        label: keyframe-2
+      - action: wait
+        seconds: 2.0
+      - action: screenshot
+        label: keyframe-3
+
+  - id: wsad_controls
+    label: 'WSAD sweep'
+    description: 'Press W, S, A, and D in turn and capture each resulting view.'
+    enabled: true
+    actions:
+      - action: keypress
+        key: w
+        duration_ms: 1200
+      - action: screenshot
+        label: press-w
+      - action: wait
+        seconds: 0.5
+      - action: keypress
+        key: s
+        duration_ms: 1200
+      - action: screenshot
+        label: press-s
+      - action: wait
+        seconds: 0.5
+      - action: keypress
+        key: a
+        duration_ms: 1200
+      - action: screenshot
+        label: press-a
+      - action: wait
+        seconds: 0.5
+      - action: keypress
+        key: d
+        duration_ms: 1200
+      - action: screenshot
+        label: press-d
+
+  - id: space_press
+    label: 'Space press'
+    description: 'Capture before and during a 2-second spacebar hold.'
+    enabled: true
+    actions:
+      - action: screenshot
+        label: before-space
+      - action: keypress
+        key: space
+        duration_ms: 2000
+      - action: wait
+        seconds: 1.0
+      - action: screenshot
+        label: during-space

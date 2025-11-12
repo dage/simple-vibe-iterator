@@ -31,6 +31,7 @@ def _build_template_context(
     interpretation_summary: str = "",
     console_logs: List[str] | None = None,
     html_diff: str = "",
+    screenshots_feedback: str = "",
 ) -> Dict[str, Any]:
     """Shared context used for both code and vision templates."""
     raw = asdict(settings)
@@ -44,6 +45,7 @@ def _build_template_context(
             "vision_output": interpretation_summary or "",
             "console_logs": "\n".join(console_logs or []),
             "html_diff": html_diff or "",
+            "screenshots_feedback": screenshots_feedback or "",
         }
     )
     return ctx
@@ -54,6 +56,7 @@ def build_vision_prompt(
     settings: TransitionSettings,
     console_logs: List[str] | None,
     html_diff: str,
+    screenshot_feedback: str = "",
 ) -> str:
     ctx = _build_template_context(
         html_input=html_input,
@@ -61,6 +64,7 @@ def build_vision_prompt(
         interpretation_summary="",
         console_logs=console_logs,
         html_diff=html_diff,
+        screenshots_feedback=screenshot_feedback,
     )
     return settings.vision_template.format(**ctx)
 
@@ -73,6 +77,7 @@ def build_code_payload(
     html_diff: str,
     attachments: Iterable[IterationAsset],
     message_history: List[Dict[str, Any]] | None = None,
+    screenshot_feedback: str = "",
 ) -> PromptPayload:
     ctx = _build_template_context(
         html_input=html_input,
@@ -80,6 +85,7 @@ def build_code_payload(
         interpretation_summary=interpretation_summary,
         console_logs=console_logs,
         html_diff=html_diff,
+        screenshots_feedback=screenshot_feedback,
     )
     code_prompt = settings.code_template.format(**ctx)
 

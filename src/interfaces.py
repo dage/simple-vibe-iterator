@@ -4,7 +4,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 import uuid
-from typing import Any, Dict, List, Optional, Protocol, Sequence
+from typing import Any, Dict, List, Optional, Protocol, Sequence, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .feedback_presets import FeedbackPreset
 
 
 # ---- Data model for state-machine iterations ----
@@ -27,6 +30,7 @@ class TransitionSettings:
     code_template: str
     vision_template: str
     input_screenshot_count: int = 1
+    feedback_preset_id: str | None = None
     mode: IterationMode = IterationMode.VISION_SUMMARY
     keep_history: bool = False
 
@@ -89,6 +93,13 @@ class BrowserService(Protocol):
         capture_count: int = 1,
         interval_seconds: float = 1.0,
     ) -> tuple[List[str], List[str]]: ...
+
+    async def run_feedback_preset(
+        self,
+        html_code: str,
+        preset: "FeedbackPreset",
+        worker: str = "main",
+    ) -> tuple[List[str], List[str], List[str]]: ...
 
 
 class VisionService(Protocol):

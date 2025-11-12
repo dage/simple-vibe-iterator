@@ -4,7 +4,8 @@ from __future__ import annotations
 import asyncio
 import difflib
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+import json
+from typing import Any, Dict, List, Optional, Tuple
 
 from .interfaces import (
     AICodeService,
@@ -22,6 +23,7 @@ from . import op_status
 from . import task_registry
 from .prompt_builder import build_code_payload, build_vision_prompt
 from .model_capabilities import get_image_limit, get_input_screenshot_interval
+from . import feedback_presets
 
 try:  # pragma: no cover - import differs during tests
     from . import or_client as orc
@@ -60,6 +62,8 @@ class TransitionContext:
     input_screenshot_paths: List[str] = field(default_factory=list)
     input_console_logs: List[str] = field(default_factory=list)
     input_limit_note: str = ""
+    feedback_preset_id: str = ""
+    input_screenshot_labels: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -78,31 +82,46 @@ async def δ(
 ) -> Dict[str, Tuple[str, str, dict | None, TransitionArtifacts]]:
     context = TransitionContext(html_input=html_input or "", html_diff=html_diff or "")
 
-    requested_shots = 1
-    try:
-        requested_shots = int(getattr(settings, "input_screenshot_count", 1) or 1)
-    except Exception:
-        requested_shots = 1
-    requested_shots = max(1, requested_shots)
-    effective_shots, limit_note = _resolve_input_screenshot_plan(settings, requested_shots)
+    preset_id = (getattr(settings, "feedback_preset_id", "") or "").strip()
+    preset = feedback_presets.get_feedback_preset(preset_id) if preset_id else None
 
-    if (html_input or "").strip() and effective_shots > 0:
-        screenshots, console_logs = await browser_service.render_and_capture(
+    if preset and (html_input or "").strip():
+        screenshots, console_logs, labels = await browser_service.run_feedback_preset(
             html_input,
+            preset,
             worker="input",
-            capture_count=effective_shots,
-            interval_seconds=get_input_screenshot_interval(),
         )
         context.input_screenshot_paths = list(screenshots)
         context.input_console_logs = list(console_logs)
-        if limit_note:
-            context.input_limit_note = limit_note
-            try:
-                op_status.enqueue_notification(limit_note, color='warning', timeout=5000, close_button=True)
-            except Exception:
-                pass
+        context.feedback_preset_id = preset.id
+        context.input_screenshot_labels = list(labels)
+    else:
+        requested_shots = 1
+        try:
+            requested_shots = int(getattr(settings, "input_screenshot_count", 1) or 1)
+        except Exception:
+            requested_shots = 1
+        requested_shots = max(1, requested_shots)
+        effective_shots, limit_note = _resolve_input_screenshot_plan(settings, requested_shots)
+
+        if (html_input or "").strip() and effective_shots > 0:
+            screenshots, console_logs = await browser_service.render_and_capture(
+                html_input,
+                worker="input",
+                capture_count=effective_shots,
+                interval_seconds=get_input_screenshot_interval(),
+            )
+            context.input_screenshot_paths = list(screenshots)
+            context.input_console_logs = list(console_logs)
+            if limit_note:
+                context.input_limit_note = limit_note
+                try:
+                    op_status.enqueue_notification(limit_note, color='warning', timeout=5000, close_button=True)
+                except Exception:
+                    pass
 
     interpretation = await _interpret_input(settings, context, vision_service)
+    screenshot_feedback = _format_screenshot_feedback(context)
 
     async def _worker(model: str) -> Tuple[str, str, str, dict | None, TransitionArtifacts]:
         try:
@@ -112,6 +131,7 @@ async def δ(
                 interpretation_summary=interpretation.summary,
                 console_logs=context.input_console_logs,
                 html_diff=context.html_diff,
+                screenshot_feedback=screenshot_feedback,
                 attachments=interpretation.attachments,
                 message_history=message_history,
             )
@@ -249,18 +269,25 @@ async def _interpret_input(
                 kind="image",
                 path=path,
                 role="input",
-                metadata={"stage": "before", "index": str(idx)},
+                metadata={
+                    "stage": "before",
+                    "index": str(idx),
+                    "label": context.input_screenshot_labels[idx] if idx < len(context.input_screenshot_labels) else "",
+                },
             )
         )
 
     # Run vision analysis for all modes when a screenshot is available so that
     # direct-to-coder can also leverage a textual summary alongside raw pixels.
 
+    screenshot_feedback = _format_screenshot_feedback(context)
+
     vision_prompt = build_vision_prompt(
         html_input=context.html_input,
         settings=settings,
         console_logs=context.input_console_logs,
         html_diff=context.html_diff,
+        screenshot_feedback=screenshot_feedback,
     )
     analysis = await vision_service.analyze_screenshot(
         vision_prompt,
@@ -311,6 +338,13 @@ def _create_artifacts(
         analysis["input_screenshot_count"] = str(len(context.input_screenshot_paths))
         if context.input_limit_note:
             analysis["input_screenshot_limit"] = context.input_limit_note
+    if context.feedback_preset_id:
+        analysis["feedback_preset_id"] = context.feedback_preset_id
+    if context.input_screenshot_labels:
+        try:
+            analysis["input_screenshot_labels"] = json.dumps(context.input_screenshot_labels)
+        except Exception:
+            analysis["input_screenshot_labels"] = ",".join(context.input_screenshot_labels)
 
     return TransitionArtifacts(
         screenshot_filename=screenshot_path,
@@ -321,6 +355,16 @@ def _create_artifacts(
         assets=assets,
         analysis=analysis,
     )
+
+
+def _format_screenshot_feedback(context: TransitionContext) -> str:
+    labels = [str(label).strip() for label in context.input_screenshot_labels if str(label).strip()]
+    if not labels:
+        return ""
+    parts = [f"#{idx + 1}: {label}" for idx, label in enumerate(labels)]
+    if context.feedback_preset_id:
+        return f"Preset {context.feedback_preset_id} steps → " + ", ".join(parts)
+    return "Screenshots → " + ", ".join(parts)
 
 
 async def _ensure_models_support_mode(models: List[str], mode: IterationMode) -> None:

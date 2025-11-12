@@ -6,12 +6,13 @@ import hashlib
 import os
 import uuid
 from pathlib import Path
-from typing import List, Sequence
+from typing import Dict, List, Sequence
 
 from .interfaces import AICodeService, BrowserService, VisionService
 from . import op_status
-from .playwright_browser import capture_html, parse_viewport
+from .playwright_browser import capture_html, parse_viewport, run_feedback_sequence
 from .prompt_builder import PromptPayload
+from .feedback_presets import FeedbackPreset
 
 
 class PlaywrightBrowserService(BrowserService):
@@ -71,6 +72,81 @@ class PlaywrightBrowserService(BrowserService):
             except Exception:
                 pass
         return ([str(p) for p in png_paths], flat_logs)
+
+    async def run_feedback_preset(
+        self,
+        html_code: str,
+        preset: FeedbackPreset,
+        worker: str = "main",
+    ) -> tuple[List[str], List[str], List[str]]:
+        if not preset.actions:
+            return ([], [], [])
+        digest = hashlib.sha1(html_code.encode("utf-8")).hexdigest()[:12]
+        token = uuid.uuid4().hex[:8]
+        base_html = self._out_dir / f"preset_{digest}_{token}.html"
+        base_html.write_text(html_code, encoding="utf-8")
+
+        plan: List[Dict[str, object]] = []
+        screenshot_paths: List[Path] = []
+        screenshot_labels: List[str] = []
+        shot_idx = 0
+        for action in preset.actions:
+            kind = action.kind.lower()
+            if kind == "wait":
+                plan.append({"kind": "wait", "seconds": max(0.0, float(action.seconds))})
+            elif kind == "keypress":
+                plan.append(
+                    {
+                        "kind": "keypress",
+                        "key": action.key,
+                        "duration_ms": max(0, int(action.duration_ms)),
+                    }
+                )
+            elif kind == "screenshot":
+                filename = f"preset_{preset.id}_{token}_{shot_idx}.png"
+                shot_idx += 1
+                path = self._out_dir / filename
+                label = action.label or f"shot-{shot_idx}"
+                plan.append(
+                    {
+                        "kind": "screenshot",
+                        "path": path,
+                        "full_page": bool(action.full_page),
+                        "label": label,
+                    }
+                )
+                screenshot_paths.append(path)
+                screenshot_labels.append(label)
+
+        op_status.set_phase(worker, f"Feedback|{preset.label or preset.id}")
+
+        def _update_action(desc: str) -> None:
+            text = desc or preset.label or preset.id
+            op_status.set_phase(worker, f"Feedback|{text}")
+
+        async with self._lock:
+            logs = await asyncio.to_thread(
+                run_feedback_sequence,
+                base_html,
+                plan,
+                self._viewport,
+                _update_action,
+            )
+        flat_logs: List[str] = []
+        for entry in logs:
+            t = str(entry.get("type") or "log")
+            msg = str(entry.get("text") or "")
+            flat_logs.append(f"[{t}] {msg}")
+        op_status.clear_phase(worker)
+
+        for png in screenshot_paths:
+            html_copy = png.with_suffix(".html")
+            try:
+                if not html_copy.exists():
+                    html_copy.write_text(html_code, encoding="utf-8")
+            except Exception:
+                pass
+        return ([str(p) for p in screenshot_paths], flat_logs, list(screenshot_labels))
 
 
 # ---- OpenRouter-backed services ----

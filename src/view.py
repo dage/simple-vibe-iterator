@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import json
 from typing import Any, Dict, List
-from pathlib import Path
 from types import SimpleNamespace
 import time
 
@@ -17,6 +16,7 @@ from .interfaces import IterationEventListener, IterationNode, IterationMode, Tr
 from . import op_status
 from . import prefs
 from . import task_registry
+from . import feedback_presets
 from .model_selector import ModelSelector
 from .settings import get_settings
 from .ui_theme import apply_theme
@@ -98,15 +98,8 @@ class NiceGUIView(IterationEventListener):
                             except Exception:
                                 pass
 
-                        try:
-                            raw_shots = getattr(inputs['input_screenshot_count'], 'value', init_settings.input_screenshot_count)
-                            shot_value = int(raw_shots)
-                        except Exception:
-                            shot_value = init_settings.input_screenshot_count
-                        if shot_value < 1:
-                            shot_value = 1
-
                         mode = self._extract_mode(inputs['mode'])
+                        feedback_preset_id = self._extract_preset_id(inputs['feedback_preset'])
                         code_template = settings_manager.get_code_template(mode)
                         vision_template = settings_manager.get_vision_template(mode)
 
@@ -117,7 +110,8 @@ class NiceGUIView(IterationEventListener):
                             user_steering=inputs['user_steering'].value or '',
                             code_template=code_template,
                             vision_template=vision_template,
-                            input_screenshot_count=shot_value,
+                            input_screenshot_count=settings_manager.get_input_screenshot_count(mode),
+                            feedback_preset_id=feedback_preset_id,
                             mode=mode,
                             keep_history=settings_manager.keep_history
                         )
@@ -228,19 +222,64 @@ class NiceGUIView(IterationEventListener):
             initial_label = label_by_value.get(mode_value, 'Vision analysis (separate model)')
             mode_select = SimpleNamespace(value=initial_label, _mode_value_map=value_by_label)
 
-        try:
-            initial_shots = int(getattr(initial, 'input_screenshot_count', 1) or 1)
-        except Exception:
-            initial_shots = 1
-        if initial_shots < 1:
-            initial_shots = 1
-        screenshot_count = ui.number(
-            label='Input screenshots',
-            value=initial_shots,
-            min=1,
-            max=16,
-            step=1,
+        settings_manager = get_settings()
+
+        preset_entries = list(feedback_presets.list_enabled_presets())
+        preset_lookup = {p.id: p for p in preset_entries}
+        preset_label_to_id = {preset.label: preset.id for preset in preset_entries}
+        preset_id_to_label = {preset.id: preset.label for preset in preset_entries}
+        first_preset_label = next(iter(preset_label_to_id.keys()), '')
+        initial_preset_id = (
+            (getattr(initial, 'feedback_preset_id', None) or settings_manager.get_feedback_preset_id(initial.mode)).strip()
+        )
+        initial_preset_label = preset_id_to_label.get(initial_preset_id, first_preset_label)
+        feedback_preset_select = ui.select(
+            options=list(preset_label_to_id.keys()),
+            value=initial_preset_label,
+            label='Feedback preset',
         ).props('dense outlined').classes('w-full')
+        feedback_preset_select._preset_value_map = preset_label_to_id  # type: ignore[attr-defined]
+        preset_summary_label = ui.label('').classes('text-xs text-gray-500 self-start')
+
+        def _summarize_preset(label: str) -> str:
+            preset_id = preset_label_to_id.get(label, '')
+            preset = preset_lookup.get(preset_id)
+            if not preset:
+                return 'Fallback to classic screenshot cadence.'
+            fragments: List[str] = []
+            for action in preset.actions:
+                if action.kind == 'wait':
+                    fragments.append(f"wait {action.seconds:.1f}s")
+                elif action.kind == 'keypress':
+                    fragments.append(f"key {action.key} ({action.duration_ms}ms)")
+                elif action.kind == 'screenshot':
+                    fragments.append(f"shot \"{action.label}\"")
+            summary = ', '.join(fragments[:6])
+            if len(fragments) > 6:
+                summary += f", +{len(fragments) - 6} more"
+            desc = preset.description or ''
+            if desc and summary:
+                return f"{desc} Actions: {summary}"
+            if desc:
+                return desc
+            return f"Actions: {summary}" if summary else 'Preset ready.'
+
+        def _update_preset_summary() -> None:
+            try:
+                current_label = str(getattr(feedback_preset_select, 'value', initial_preset_label) or initial_preset_label)
+            except Exception:
+                current_label = initial_preset_label
+            summary = _summarize_preset(current_label)
+            try:
+                preset_summary_label.text = summary
+            except Exception:
+                try:
+                    preset_summary_label.set_text(summary)  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+
+
+        _update_preset_summary()
 
         overall_goal = ui.textarea(label='Overall goal', value=initial.overall_goal).classes('w-full')
         user_steering = ui.textarea(label='Optional user steering', value=initial.user_steering).classes('w-full')
@@ -265,8 +304,6 @@ class NiceGUIView(IterationEventListener):
                 single_selection=True,
             ), persistent=allow_mode_switch)
             vision_model = vision_selector.input
-
-        settings_manager = get_settings()
 
         def _apply_mode_state(label: str, *, reset_on_mode_change: bool = False) -> None:
             mapped_value = value_by_label.get(label, IterationMode.VISION_SUMMARY.value)
@@ -297,12 +334,7 @@ class NiceGUIView(IterationEventListener):
                 except Exception:
                     keep_history_value = initial.keep_history
 
-            try:
-                shot_value = int(getattr(screenshot_count, 'value', initial_shots) or initial_shots)
-            except Exception:
-                shot_value = initial_shots
-            if shot_value < 1:
-                shot_value = 1
+            preset_id = self._extract_preset_id(feedback_preset_select)
 
             current = TransitionSettings(
                 code_model=code_selector.get_value(),
@@ -311,7 +343,8 @@ class NiceGUIView(IterationEventListener):
                 user_steering=user_steering.value or '',
                 code_template=settings_manager.get_code_template(mode),
                 vision_template=settings_manager.get_vision_template(mode),
-                input_screenshot_count=shot_value,
+                input_screenshot_count=settings_manager.get_input_screenshot_count(mode),
+                feedback_preset_id=preset_id,
                 mode=mode,
                 keep_history=keep_history_value,
             )
@@ -345,10 +378,15 @@ class NiceGUIView(IterationEventListener):
                 except Exception:
                     vision_model.value = stored.vision_model
                 try:
-                    screenshot_count.set_value(stored.input_screenshot_count)
+                    preset_label_value = preset_id_to_label.get(
+                        stored.feedback_preset_id or '',
+                        next(iter(preset_label_to_id.keys()), '')
+                    )
+                    if preset_label_value:
+                        feedback_preset_select.set_value(preset_label_value)
                 except Exception:
-                    screenshot_count.value = stored.input_screenshot_count
-                # Update keep_history checkbox to match loaded settings
+                    pass
+                _update_preset_summary()
                 if keep_history_checkbox is not None:
                     try:
                         keep_history_checkbox.set_value(stored.keep_history)
@@ -360,7 +398,6 @@ class NiceGUIView(IterationEventListener):
             mode_select.on_value_change(lambda _: _handle_mode_change())
             mode_select.on('update:model-value', lambda _: _handle_mode_change())
 
-            # Persist changes as users tweak values in the start editor
             def _wrap_change(orig):
                 def handler(value: str) -> None:
                     _persist_current()
@@ -376,18 +413,30 @@ class NiceGUIView(IterationEventListener):
 
             if keep_history_checkbox is not None:
                 keep_history_checkbox.on_value_change(lambda _: _persist_current())
-            screenshot_count.on_value_change(lambda _: _persist_current())
-            screenshot_count.on('update:model-value', lambda _: _persist_current())
+
+            def _handle_preset_change() -> None:
+                _update_preset_summary()
+                _persist_current()
+
+            feedback_preset_select.on_value_change(lambda _: _handle_preset_change())
+            feedback_preset_select.on('update:model-value', lambda _: _handle_preset_change())
         else:
             prefs.set('iteration.mode', self._extract_mode(mode_select).value)
+
+        if not allow_mode_switch:
+            def _refresh_summary_only() -> None:
+                _update_preset_summary()
+
+            feedback_preset_select.on_value_change(lambda _: _refresh_summary_only())
+            feedback_preset_select.on('update:model-value', lambda _: _refresh_summary_only())
 
         result = {
             'user_steering': user_steering,
             'overall_goal': overall_goal,
             'code_model': code_model,
             'vision_model': vision_model,
-            'input_screenshot_count': screenshot_count,
             'mode': mode_select,
+            'feedback_preset': feedback_preset_select,
         }
         if keep_history_checkbox is not None:
             result['keep_history'] = keep_history_checkbox
@@ -409,8 +458,8 @@ class NiceGUIView(IterationEventListener):
     def _build_node_card(self, index: int, node: IterationNode, *, show_heading: bool = True) -> ui.card:
         with ui.card().classes('w-full p-4') as card:
             if show_heading:
-                with ui.row().classes('items-center justify-between w-full'):
-                    ui.label(f'Iteration {index}').classes('text-lg font-semibold')
+                    with ui.row().classes('items-center justify-between w-full'):
+                        ui.label(f'Iteration {index}').classes('text-lg font-semibold')
 
             with ui.row().classes('w-full items-start gap-6 flex-nowrap'):
                 with ui.column().classes('basis-5/12 min-w-0 gap-3'):
@@ -418,6 +467,12 @@ class NiceGUIView(IterationEventListener):
 
                 with ui.column().classes('basis-7/12 min-w-0 gap-4'):
                     first_output = next(iter(node.outputs.values())) if node.outputs else None
+                    analysis_map: Dict[str, Any] = {}
+                    if first_output:
+                        try:
+                            analysis_map = dict(getattr(first_output.artifacts, 'analysis', {}) or {})
+                        except Exception:
+                            analysis_map = {}
 
                     # Messages dialog (showing full JSON as sent to LLM)
                     messages_dialog = None
@@ -444,6 +499,14 @@ class NiceGUIView(IterationEventListener):
                             summary_btn.props('disable')
 
                     with ui.row().classes('w-full items-start gap-6 flex-nowrap'):
+                        asset_label_map = {}
+                        try:
+                            assets = list(first_output.artifacts.assets or [])
+                            for asset in assets:
+                                if asset.role == 'input':
+                                    asset_label_map[asset.path] = str(asset.metadata.get('label', '') or '').strip()
+                        except Exception:
+                            asset_label_map = {}
                         with ui.column().classes('basis-1/2 min-w-0 gap-2'):
                             ui.label('INPUT SCREENSHOTS').classes('text-sm font-semibold')
                             input_entries: List[tuple[int, str, str, str]] = []
@@ -462,7 +525,7 @@ class NiceGUIView(IterationEventListener):
                                     input_entries.append((idx, raw_path, artifact_url, html_url))
                                     if not primary_html_url and html_url:
                                         primary_html_url = html_url
-                                limit_note = (getattr(first_output.artifacts, 'analysis', {}) or {}).get('input_screenshot_limit', '')
+                                limit_note = analysis_map.get('input_screenshot_limit', '') if isinstance(analysis_map, dict) else ''
                             except Exception:
                                 input_entries = []
                                 limit_note = ''
@@ -478,7 +541,8 @@ class NiceGUIView(IterationEventListener):
                                             with ui.link('', target_link, new_tab=True).classes('block no-underline'):
                                                 ui.image(raw_path).classes('w-[120px] h-[80px] object-cover border border-gray-600 rounded hover:border-blue-400 transition-colors duration-150')
                                             with ui.row().classes('items-center justify-between w-full'):
-                                                ui.label(f'#{idx + 1}').classes('text-xs text-gray-400')
+                                                label_text = asset_label_map.get(raw_path) or f'#{idx + 1}'
+                                                ui.label(label_text).classes('text-xs text-gray-400')
                                 size = format_html_size(node.html_input)
                                 with ui.row().classes('items-center gap-2 mt-1'):
                                     ui.icon('content_copy').classes('text-sm cursor-pointer').on('click', lambda html=node.html_input: self._copy_to_clipboard(html))
@@ -498,7 +562,7 @@ class NiceGUIView(IterationEventListener):
                                     ui.label('(no console logs)')
                             # Show vision analysis section for any mode; direct mode now includes vision
                             _va_raw = first_output.artifacts.vision_output if first_output else ''
-                            _va_lines = [l for l in _va_raw.splitlines() if l.strip()]
+                            _va_lines = [line for line in _va_raw.splitlines() if line.strip()]
                             va_title = f"Vision Analysis ({'empty' if len(_va_lines) == 0 else len(_va_lines)})"
                             with ui.expansion(va_title):
                                 va_text = first_output.artifacts.vision_output if first_output else ''
@@ -607,15 +671,10 @@ class NiceGUIView(IterationEventListener):
                                                 except Exception:
                                                     pass
 
-                                            try:
-                                                raw_iter_shots = getattr(inputs['input_screenshot_count'], 'value', node.settings.input_screenshot_count)
-                                                iter_shots = int(raw_iter_shots)
-                                            except Exception:
-                                                iter_shots = node.settings.input_screenshot_count
-                                            if iter_shots < 1:
-                                                iter_shots = 1
-
                                             mode = self._extract_mode(inputs['mode'])
+                                            iter_shots = settings_manager.get_input_screenshot_count(mode)
+
+                                            feedback_preset_id = self._extract_preset_id(inputs['feedback_preset'])
                                             code_template = settings_manager.get_code_template(mode)
                                             vision_template = settings_manager.get_vision_template(mode)
 
@@ -627,6 +686,7 @@ class NiceGUIView(IterationEventListener):
                                                 code_template=code_template,
                                                 vision_template=vision_template,
                                                 input_screenshot_count=iter_shots,
+                                                feedback_preset_id=feedback_preset_id,
                                                 mode=mode,
                                                 keep_history=settings_manager.keep_history
                                             )
@@ -717,6 +777,15 @@ class NiceGUIView(IterationEventListener):
             return IterationMode(str(mapped or IterationMode.VISION_SUMMARY.value))
         except Exception:
             return IterationMode.VISION_SUMMARY
+
+    def _extract_preset_id(self, element: ui.element) -> str:
+        try:
+            raw = getattr(element, 'value', '')
+            value_map = getattr(element, '_preset_value_map', {}) or {}
+            mapped = value_map.get(raw, raw)
+        except Exception:
+            mapped = ''
+        return str(mapped or '')
 
     def _copy_to_clipboard(self, text: str) -> None:
         try:

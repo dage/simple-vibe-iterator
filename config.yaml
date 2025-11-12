@@ -44,12 +44,13 @@ templates:
 
     Vision analysis (feedback from vision service): {vision_output}
     Console logs (previous iteration feedback): {console_logs}
+    Screenshots feedback (preset summary): {screenshots_feedback}
 
     Existing HTML (build upon this): {html_input}
     Recent changes (what was modified): {html_diff}
 
   vision: |
-    You are a vision analysis expert providing technical feedback to a coding model that might have direct access to the same screenshot. Your analysis will help improve graphical effects and interactive web applications.
+    You are a vision analysis expert providing technical feedback to a coding model that might have direct access to the same screenshot. The new feedback preset system drives exactly what actions and screenshots the agent sees, so highlight what each labeled frame reveals and what the coder might miss. Your analysis will help improve graphical effects and interactive web applications.
 
     CRITICAL ROLE:
     - Keep focus on the Overal Goal and the User Steering
@@ -80,6 +81,7 @@ templates:
     Context (for understanding analysis scope):
     Overall goal: {overall_goal}
     User steering: {user_steering}
+    Screenshots feedback: {screenshots_feedback}
 
     Output format (bullet points only, no headers or code blocks):
     - Observation 1

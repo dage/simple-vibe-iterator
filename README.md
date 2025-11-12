@@ -46,6 +46,20 @@ templates:
 
 We automatically load `.env` and `config.yaml` at app startup. You do not need to `export` variables in your shell.
 
+### Feedback presets
+- Declarative capture/key automation lives in `feedback_presets.yaml`. The packaged presets are:
+  1. *Single screenshot*: take the frame immediately after DOM ready.
+  2. *Short animation*: capture three keyframes in succession without extra input.
+  3. *WSAD sweep*: press W, S, A, and D in sequence and capture each resulting view.
+  4. *Space press*: capture a frame before the spacebar and another 1 s into a 2 s hold.
+- Selecting a preset now replaces the old manual “Input screenshots” mechanism so there’s a single capture pipeline.
+- Presets begin executing as soon as the DOM ready event fires, removing the need for artificial waits.
+- Input screenshots shown in the UI now display the preset action label (like “press-w” or “frame-2”) instead of just ordinal numbers.
+- Set `FEEDBACK_PRESETS_PATH` to point at an alternate YAML file when iterating locally (tests use this to inject harness presets).
+- Keypress actions keep the key held for the configured `duration_ms` while subsequent waits/screenshots run. Screenshots therefore happen *between* the key-down and key-up events.
+- Defaults hardcode the requested models (`code: x-ai/grok-4-fast`, `vision: qwen/qwen3-vl-235b-a22b-instruct`) inside the preset file so you can re-run the same capture recipe across projects.
+- Templates now receive `{screenshots_feedback}` summarizing the preset step descriptions (e.g., `#1: press-w, #2: press-s`) so both vision and coding models can connect each screenshot to the action that produced it.
+
 ### Run state-machine tests
 Execute:
 ```
@@ -127,3 +141,9 @@ Notes:
 - Enter booleans/numbers/objects as JSON to ensure correct typing. Examples:
   - `include_reasoning`: `true`
   - `reasoning`: `{ "effort": "high" }`
+### Feedback preset harness
+Execute:
+```
+python integration-tests/test_feedback_presets.py
+```
+This integration test spins up Playwright against an embedded HTML harness, runs a temporary preset (with long-duration key holds), and uses Pillow to confirm the screenshot captured the key-down state while also verifying that key-up events eventually fire via console logs.
