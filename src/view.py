@@ -236,7 +236,7 @@ class NiceGUIView(IterationEventListener):
         feedback_preset_select = ui.select(
             options=list(preset_label_to_id.keys()),
             value=initial_preset_label,
-            label='Feedback preset',
+            label='Feedback',
         ).props('dense outlined').classes('w-full')
         feedback_preset_select._preset_value_map = preset_label_to_id  # type: ignore[attr-defined]
         preset_summary_label = ui.label('').classes('text-xs text-gray-500 self-start')
