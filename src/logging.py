@@ -181,7 +181,7 @@ class JsonlLogger:
     def _writer_loop(self) -> None:
         while not self._stop_event.is_set() or not self._queue.empty():
             try:
-                line = self._queue.get(timeout=0.25)
+                line = self._queue.get(timeout=1.0)
             except queue.Empty:
                 continue
             try:
