@@ -18,7 +18,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 from pathlib import Path
-import base64, mimetypes, asyncio, random, os, time, json
+import base64, mimetypes, asyncio, random, os, time, json, sys
 
 from openai import (
     AsyncOpenAI,
@@ -29,12 +29,19 @@ from openai import (
 )
 from dotenv import load_dotenv
 from dataclasses import dataclass, field
+import importlib.util
 
 try:
-    from . import js_tool, tool_logging
+    from . import js_tool
+    from . import logging as log_utils
 except (ImportError, ModuleNotFoundError):  # pragma: no cover - fallback for tooling/tests
     import js_tool  # type: ignore
-    import tool_logging  # type: ignore
+    MODULE_DIR = Path(__file__).resolve().parent
+    _spec = importlib.util.spec_from_file_location("src.logging_fallback", MODULE_DIR / "logging.py")
+    assert _spec and _spec.loader
+    log_utils = importlib.util.module_from_spec(_spec)  # type: ignore[assignment]
+    sys.modules.setdefault(_spec.name, log_utils)
+    _spec.loader.exec_module(log_utils)  # type: ignore[arg-type]
 
 # ---------------- Settings & client ---------------- #
 
@@ -211,7 +218,7 @@ async def _execute_tool_call(model_slug: str, name: str, arguments: str) -> str:
         return json.dumps({"error": f"Tool execution failed: {exc}"}, ensure_ascii=False)
 
     try:
-        tool_logging.log_tool_call(model=model_slug, tool=name, code=code, output=result)
+        log_utils.log_tool_call(model=model_slug, tool=name, code=code, output=result)
     except Exception:
         pass
     return result

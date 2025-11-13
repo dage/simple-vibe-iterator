@@ -14,6 +14,7 @@ from .services import (
     OpenRouterVisionService,
 )
 from .view import NiceGUIView
+from .logging import start_auto_logger
 
 
 def kill_port_process(port: int) -> None:
@@ -59,6 +60,7 @@ def create_app() -> NiceGUIView:
     controller = IterationController(ai_service, browser_service, vision_service)
     view = NiceGUIView(controller)
     view.render()
+    start_auto_logger()
     return view
 
 

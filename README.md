@@ -121,7 +121,15 @@ The harness pre-populates the code-model selector, auto-expands the dropdown, an
 ### JavaScript code interpreter tool
 - Every code/vision model that advertises tool-calling support automatically receives the `evaluate_javascript` QuickJS tool. The agent uses it to execute snippets for verification and there is no UI toggle to disable it.
 - The tool captures `console.log` output and returns both the evaluated result and logs so model reasoning can cite concrete evidence.
-- Each invocation is appended to `artifacts/tool_calls.log` (JSON per line) so you can audit which model ran which snippet and what the tool returned.
+- Each invocation is appended to `logs/tool_calls.jsonl` (JSON per line) so you can audit which model ran which snippet and what the tool returned.
+
+### Logging & diagnostics
+- `src/logging.py` centralizes structured logging. All JSONL logs live in `logs/` by default (override with `APP_LOG_DIR`).
+- Tool executions append to `logs/tool_calls.jsonl` and truncate themselves when the file reaches 10 MB by removing the oldest 25 % of entries.
+- The auto-logger captures every function call inside `src/` via `sys.setprofile` and writes the traces to `logs/auto_logger.jsonl`, trimming back to 75 % of its 100 MB budget when necessary.
+- Logs are line-delimited JSON with ISO timestamps so you can grep for modules/functions and replay what happened without enabling verbose console output.
+- Disable the auto-logger via `AUTO_LOGGER_DISABLED=1` or override individual paths with `TOOL_CALL_LOG` / `AUTO_LOG_FILE` when running experiments in isolated directories.
+- These logs are the first stop for debugging “what happened?” questions, especially in headless or CI runs where reproducing the UI can be costly.
 
 ### Architecture overview
 - `src/interfaces.py`: dataclasses and service/controller interfaces (no UI deps)

@@ -4,3 +4,4 @@ output/
 artifacts/
 .DS_Store
 *.log
+logs/auto_logger.jsonl

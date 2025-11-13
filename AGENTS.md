@@ -6,7 +6,8 @@
 - Tests: `integration-tests/` (`test_*.py` and `run_all.py`)
 - Feedback presets: `feedback_presets.yaml` (declarative wait/keypress/screenshot recipes; override path via `FEEDBACK_PRESETS_PATH`)
 - Config: `config.yaml` (models/templates), `.env` (OpenRouter credentials; not committed)
-- Artifacts: `artifacts/` (HTML, screenshots, logs; gitignored, hash‑named files)
+- Artifacts: `artifacts/` (HTML, screenshots; gitignored, hash‑named files)
+- Logs: `logs/` (JSONL tool + auto-logger traces; gitignored)
 
 ## Setup, Run, and Tests
 - Install deps: `pip install -r requirements.txt`
@@ -52,6 +53,13 @@
 - Only send parameters explicitly stored by the user per model. Do not invent defaults.
 - Filter stored params to the model’s `supported_parameters` when available; if unknown, pass through.
 - Call‑site kwargs take precedence over stored params unless product direction states otherwise.
+
+### Logging & Diagnostics
+- `src/logging.py` owns JSONL logging. Auto-importing `src` boots the profiler so every function call inside `src/` is traced to `logs/auto_logger.jsonl`.
+- Tool invocations append to `logs/tool_calls.jsonl`; both logs self-trim by deleting the oldest 25 % of lines once they reach 10 MB (tools) or 100 MB (auto logger).
+- Override paths with `APP_LOG_DIR`, `TOOL_CALL_LOG`, and `AUTO_LOG_FILE`. Disable tracing with `AUTO_LOGGER_DISABLED=1` if you are profiling performance locally.
+- JSONL schema: one object per line with ISO-8601 `timestamp`, `event` (`call.start`, `call.success`, `call.exception`, `tool_call`), `module` (dotted import path), `function`, and `call_id`. Start events include `parameters`, success events include `result` plus `duration_ms`, and exception events add `exception.type/message`.
+- Use the auto-logger when debugging ambiguous failures—the JSONL stream shows exact parameter/result pairs for each function entry/exit without needing extra print statements.
 
 ### External Knowledge & Fresh Docs
 - When allowed by the environment and approvals, search for recent solutions and updated docs (e.g., NiceGUI/Quasar slot usage, OpenRouter parameter schema changes) before implementing.
