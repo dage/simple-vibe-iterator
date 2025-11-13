@@ -318,7 +318,7 @@ class NiceGUIView(IterationEventListener):
         else:
             overall_goal = SimpleNamespace(value=initial.overall_goal or '')
         if show_user_feedback:
-            user_feedback = ui.textarea(label='Optional user feedback', value=initial.user_feedback).classes('w-full')
+            user_feedback = ui.textarea(label='User feedback', value=initial.user_feedback).classes('w-full')
         else:
             user_feedback = SimpleNamespace(value=initial.user_feedback or '')
 
@@ -607,10 +607,10 @@ class NiceGUIView(IterationEventListener):
                             size = format_html_size(node.html_input)
                             with ui.row().classes('items-center gap-2 mt-1'):
                                 ui.icon('content_copy').classes('text-sm cursor-pointer').on('click', lambda html=node.html_input: self._copy_to_clipboard(html))
-                                ui.label('HTML source').classes('text-sm')
+                                ui.label('HTML').classes('text-sm')
+                                ui.label(f'({size})').classes('text-sm text-gray-600 dark:text-gray-400')
                                 if primary_html_url:
                                     ui.link('Open', primary_html_url, new_tab=True).classes('text-sm')
-                                ui.label(f'({size})').classes('text-sm text-gray-600 dark:text-gray-400')
                         else:
                             ui.label('(no input screenshots)').classes('text-sm text-gray-500')
 
