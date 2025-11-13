@@ -121,7 +121,7 @@ async def δ(
                     pass
 
     interpretation = await _interpret_input(settings, context, vision_service)
-    screenshot_feedback = _format_screenshot_feedback(context)
+    auto_feedback = _format_auto_feedback(context)
 
     async def _worker(model: str) -> Tuple[str, str, str, dict | None, TransitionArtifacts]:
         try:
@@ -131,7 +131,7 @@ async def δ(
                 interpretation_summary=interpretation.summary,
                 console_logs=context.input_console_logs,
                 html_diff=context.html_diff,
-                screenshot_feedback=screenshot_feedback,
+                auto_feedback=auto_feedback,
                 attachments=interpretation.attachments,
                 message_history=message_history,
             )
@@ -280,14 +280,14 @@ async def _interpret_input(
     # Run vision analysis for all modes when a screenshot is available so that
     # direct-to-coder can also leverage a textual summary alongside raw pixels.
 
-    screenshot_feedback = _format_screenshot_feedback(context)
+    auto_feedback = _format_auto_feedback(context)
 
     vision_prompt = build_vision_prompt(
         html_input=context.html_input,
         settings=settings,
         console_logs=context.input_console_logs,
         html_diff=context.html_diff,
-        screenshot_feedback=screenshot_feedback,
+        auto_feedback=auto_feedback,
     )
     analysis = await vision_service.analyze_screenshot(
         vision_prompt,
@@ -357,14 +357,14 @@ def _create_artifacts(
     )
 
 
-def _format_screenshot_feedback(context: TransitionContext) -> str:
+def _format_auto_feedback(context: TransitionContext) -> str:
     labels = [str(label).strip() for label in context.input_screenshot_labels if str(label).strip()]
     if not labels:
         return ""
     parts = [f"#{idx + 1}: {label}" for idx, label in enumerate(labels)]
     if context.feedback_preset_id:
         return f"Preset {context.feedback_preset_id} steps → " + ", ".join(parts)
-    return "Screenshots → " + ", ".join(parts)
+    return "Auto feedback → " + ", ".join(parts)
 
 
 async def _ensure_models_support_mode(models: List[str], mode: IterationMode) -> None:

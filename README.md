@@ -58,7 +58,7 @@ We automatically load `.env` and `config.yaml` at app startup. You do not need t
 - Set `FEEDBACK_PRESETS_PATH` to point at an alternate YAML file when iterating locally (tests use this to inject harness presets).
 - Keypress actions keep the key held for the configured `duration_ms` while subsequent waits/screenshots run. Screenshots therefore happen *between* the key-down and key-up events.
 - Defaults hardcode the requested models (`code: x-ai/grok-4-fast`, `vision: qwen/qwen3-vl-235b-a22b-instruct`) inside the preset file so you can re-run the same capture recipe across projects.
-- Templates now receive `{screenshots_feedback}` summarizing the preset step descriptions (e.g., `#1: press-w, #2: press-s`) so both vision and coding models can connect each screenshot to the action that produced it.
+- Templates now receive `{auto_feedback}` summarizing the preset step descriptions (e.g., `#1: press-w, #2: press-s`) so both vision and coding models can connect each screenshot to the action that produced it.
 
 ### Run state-machine tests
 Execute:
@@ -69,7 +69,7 @@ This will:
 - Validate linear chains and correct parent-child links
 - Verify re-running mid-chain deletes descendants and applies updated settings
 - Ensure artifacts exist (screenshot, console logs, vision output)
-- Verify prompt template substitution uses `{html_input}`, `{user_steering}`, `{overall_goal}`, `{vision_output}`
+- Verify prompt template substitution uses `{html_input}`, `{user_feedback}`, `{auto_feedback}`, `{overall_goal}`, `{vision_output}`
 
 ### Run OpenRouter integration checks
 Execute:
@@ -101,7 +101,7 @@ Then open `http://localhost:8055`.
 Workflow:
 - Create a root node: enter the overall goal, then click "Create root" (the coding agent creates the initial HTML).
 - Each node card shows: HTML Input (empty for root), HTML Output, Screenshot, Console Logs, and Vision Analysis.
-- Edit settings for the next iteration (model slugs default from `config.yaml`, plus optional steering/overall goal text).
+- Edit settings for the next iteration (model slugs default from `config.yaml`, plus optional user feedback text).
 - Click "Iterate" on any node to create its next child; descendants of that node are replaced by the new chain.
  - While an operation is running, the status shows the current phase and seconds elapsed; other actions are temporarily blocked.
 

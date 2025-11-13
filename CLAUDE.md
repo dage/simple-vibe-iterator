@@ -60,7 +60,7 @@ Each iteration follows: `render → screenshot/console → vision analysis → c
 
 ### Configuration System
 - **`config.yaml`**: Default models and prompt templates loaded at startup
-- Templates support variable substitution: `{overall_goal}`, `{user_steering}`, `{vision_output}`, `{console_logs}`, `{html_input}`
+- Templates support variable substitution: `{overall_goal}`, `{user_feedback}`, `{vision_output}`, `{console_logs}`, `{html_input}`, `{auto_feedback}`
 - Models configurable per iteration via UI settings
 
 ### Service Architecture

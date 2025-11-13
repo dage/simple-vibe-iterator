@@ -140,7 +140,7 @@ async def _run_case(case: _Case, tmp_dir: Path) -> Tuple[bool, str]:
         code_model=case.code_model,
         vision_model=case.vision_model,
         overall_goal="Test multi-screenshot capture",
-        user_steering="",
+        user_feedback="",
         code_template="Return HTML",
         vision_template="Describe",
         mode=IterationMode.DIRECT_TO_CODER,

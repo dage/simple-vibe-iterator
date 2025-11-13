@@ -31,12 +31,14 @@ def _build_template_context(
     interpretation_summary: str = "",
     console_logs: List[str] | None = None,
     html_diff: str = "",
-    screenshots_feedback: str = "",
+    auto_feedback: str = "",
 ) -> Dict[str, Any]:
     """Shared context used for both code and vision templates."""
     raw = asdict(settings)
     # Templates themselves should not appear in the context to avoid recursive formatting issues.
     raw.pop("code_template", None)
+    raw.pop("code_system_prompt_template", None)
+    raw.pop("code_non_cumulative_template", None)
     raw.pop("vision_template", None)
     ctx = raw
     ctx.update(
@@ -45,10 +47,43 @@ def _build_template_context(
             "vision_output": interpretation_summary or "",
             "console_logs": "\n".join(console_logs or []),
             "html_diff": html_diff or "",
-            "screenshots_feedback": screenshots_feedback or "",
+            "auto_feedback": auto_feedback or "",
         }
     )
     return ctx
+
+
+def _format_template(template: str, ctx: Dict[str, Any]) -> str:
+    if not template:
+        return ""
+    try:
+        return template.format(**ctx)
+    except Exception:
+        return template
+
+
+def _build_user_message(
+    mode: IterationMode,
+    prompt_text: str,
+    attachments: List[IterationAsset],
+) -> Dict[str, Any]:
+    if mode == IterationMode.DIRECT_TO_CODER:
+        parts: List[Dict[str, Any]] = []
+        if prompt_text.strip():
+            parts.append({"type": "text", "text": prompt_text})
+        for asset in attachments:
+            if asset.kind != "image" or not asset.path:
+                continue
+            try:
+                data_url = orc.encode_image_to_data_url(asset.path)
+            except Exception:
+                continue
+            parts.append({"type": "image_url", "image_url": {"url": data_url}})
+        if not parts:
+            parts = [{"type": "text", "text": prompt_text}]
+        return {"role": "user", "content": parts}
+
+    return {"role": "user", "content": prompt_text}
 
 
 def build_vision_prompt(
@@ -56,7 +91,7 @@ def build_vision_prompt(
     settings: TransitionSettings,
     console_logs: List[str] | None,
     html_diff: str,
-    screenshot_feedback: str = "",
+    auto_feedback: str = "",
 ) -> str:
     ctx = _build_template_context(
         html_input=html_input,
@@ -64,7 +99,7 @@ def build_vision_prompt(
         interpretation_summary="",
         console_logs=console_logs,
         html_diff=html_diff,
-        screenshots_feedback=screenshot_feedback,
+        auto_feedback=auto_feedback,
     )
     return settings.vision_template.format(**ctx)
 
@@ -77,72 +112,34 @@ def build_code_payload(
     html_diff: str,
     attachments: Iterable[IterationAsset],
     message_history: List[Dict[str, Any]] | None = None,
-    screenshot_feedback: str = "",
+    auto_feedback: str = "",
 ) -> PromptPayload:
+    attachments = list(attachments)
     ctx = _build_template_context(
         html_input=html_input,
         settings=settings,
         interpretation_summary=interpretation_summary,
         console_logs=console_logs,
         html_diff=html_diff,
-        screenshots_feedback=screenshot_feedback,
+        auto_feedback=auto_feedback,
     )
-    code_prompt = settings.code_template.format(**ctx)
+    base_iteration_prompt = _format_template(settings.code_template, ctx)
+    system_template = getattr(settings, "code_system_prompt_template", "") or settings.code_template
+    system_prompt = _format_template(system_template, ctx)
+    non_cumulative_template = getattr(settings, "code_non_cumulative_template", "") or settings.code_template
+    non_cumulative_prompt = _format_template(non_cumulative_template, ctx)
 
-    # If keep_history is enabled and we have message history, use it
-    if settings.keep_history and message_history:
-        # Start with the cumulative message history
-        messages = list(message_history)
-
-        # Add the current iteration's user message
-        if settings.mode == IterationMode.DIRECT_TO_CODER:
-            # In direct mode, we still include the computed vision summary in the
-            # textual prompt, but we also attach the screenshot so the coder can
-            # reason directly over pixels. Keep the text intact.
-            # Attach any provided images to the user message; coder must rely on raw pixels.
-            parts: List[Dict[str, Any]] = []
-            if code_prompt.strip():
-                parts.append({"type": "text", "text": code_prompt})
-            for asset in attachments:
-                if asset.kind != "image" or not asset.path:
-                    continue
-                try:
-                    data_url = orc.encode_image_to_data_url(asset.path)
-                except Exception:
-                    continue
-                parts.append({"type": "image_url", "image_url": {"url": data_url}})
-            if not parts:
-                # Fallback to plain text to avoid empty prompt edge case.
-                parts = [{"type": "text", "text": code_prompt}]
-            messages.append({"role": "user", "content": parts})
-        else:
-            messages.append({"role": "user", "content": code_prompt})
-
+    if settings.keep_history:
+        messages = list(message_history or [])
+        if not messages or str(messages[0].get("role")) != "system":
+            if system_prompt.strip():
+                messages.insert(0, {"role": "system", "content": system_prompt})
+        user_message = _build_user_message(settings.mode, base_iteration_prompt, attachments)
+        messages.append(user_message)
         return PromptPayload(messages)
 
-    # Original behavior when keep_history is disabled or no history available
-    if settings.mode == IterationMode.DIRECT_TO_CODER:
-        # Include the vision summary in the textual prompt and attach the image
-        # so the coder has both sources of signal.
-        # Attach any provided images to the user message; coder must rely on raw pixels.
-        parts: List[Dict[str, Any]] = []
-        if code_prompt.strip():
-            parts.append({"type": "text", "text": code_prompt})
-        for asset in attachments:
-            if asset.kind != "image" or not asset.path:
-                continue
-            try:
-                data_url = orc.encode_image_to_data_url(asset.path)
-            except Exception:
-                continue
-            parts.append({"type": "image_url", "image_url": {"url": data_url}})
-        if not parts:
-            # Fallback to plain text to avoid empty prompt edge case.
-            parts = [{"type": "text", "text": code_prompt}]
-        return PromptPayload([{"role": "user", "content": parts}])
-
-    # Default: plain text prompt identical to legacy behavior.
-    return PromptPayload([{"role": "user", "content": code_prompt}])
+    user_message = _build_user_message(settings.mode, non_cumulative_prompt, attachments)
+    return PromptPayload([user_message])
 
 
 def _strip_vision_mentions(prompt: str) -> str:

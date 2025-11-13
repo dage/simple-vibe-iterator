@@ -81,6 +81,18 @@ class Settings:
         cfg = app_config.get_config()
         return cfg.code_template
 
+    def get_code_system_prompt_template(self, mode: Optional[IterationMode] = None) -> str:
+        """Get the system prompt template for cumulative mode."""
+        del mode  # mode-agnostic for now
+        cfg = app_config.get_config()
+        return cfg.code_system_prompt_template
+
+    def get_code_non_cumulative_template(self, mode: Optional[IterationMode] = None) -> str:
+        """Get the template used when keep_history is disabled."""
+        del mode  # mode-agnostic for now
+        cfg = app_config.get_config()
+        return cfg.code_non_cumulative_template
+
     def get_vision_template(self, mode: Optional[IterationMode] = None) -> str:
         """Get the vision template for the given mode."""
         cfg = app_config.get_config()
@@ -143,24 +155,26 @@ class Settings:
         self._set_mode_value('feedback.preset.id', mode, value)
 
     # TransitionSettings compatibility
-    def load_settings(self, overall_goal: str = '', user_steering: str = '') -> TransitionSettings:
+    def load_settings(self, overall_goal: str = '', user_feedback: str = '') -> TransitionSettings:
         """Load complete settings for current mode."""
-        return self.load_settings_for_mode(self.current_mode, overall_goal=overall_goal, user_steering=user_steering)
+        return self.load_settings_for_mode(self.current_mode, overall_goal=overall_goal, user_feedback=user_feedback)
 
     def load_settings_for_mode(
         self,
         mode: IterationMode,
         *,
         overall_goal: str = '',
-        user_steering: str = '',
+        user_feedback: str = '',
     ) -> TransitionSettings:
         """Load complete settings for the given mode."""
         return TransitionSettings(
             code_model=self.get_code_model(mode),
             vision_model=self.get_vision_model(mode),
             overall_goal=overall_goal,
-            user_steering=user_steering,
+            user_feedback=user_feedback,
             code_template=self.get_code_template(mode),
+            code_system_prompt_template=self.get_code_system_prompt_template(mode),
+            code_non_cumulative_template=self.get_code_non_cumulative_template(mode),
             vision_template=self.get_vision_template(mode),
             input_screenshot_count=self.get_input_screenshot_count(mode),
             feedback_preset_id=self.get_feedback_preset_id(mode),
@@ -182,7 +196,7 @@ class Settings:
         replacement = self.load_settings_for_mode(
             mode,
             overall_goal=settings.overall_goal,
-            user_steering=settings.user_steering,
+            user_feedback=settings.user_feedback,
         )
         return replace(replacement, mode=mode)
 
@@ -218,21 +232,21 @@ def set_mode(mode: IterationMode) -> None:
     settings.current_mode = mode
 
 
-def load_settings(overall_goal: str = '', user_steering: str = '') -> TransitionSettings:
+def load_settings(overall_goal: str = '', user_feedback: str = '') -> TransitionSettings:
     """Legacy compatibility: load settings."""
     settings = get_settings()
-    return settings.load_settings(overall_goal, user_steering)
+    return settings.load_settings(overall_goal, user_feedback)
 
 
 def load_settings_for_mode(
     mode: IterationMode,
     *,
     overall_goal: str = '',
-    user_steering: str = '',
+    user_feedback: str = '',
 ) -> TransitionSettings:
     """Legacy compatibility: load settings for mode."""
     settings = get_settings()
-    return settings.load_settings_for_mode(mode, overall_goal=overall_goal, user_steering=user_steering)
+    return settings.load_settings_for_mode(mode, overall_goal=overall_goal, user_feedback=user_feedback)
 
 
 def save_settings(settings: TransitionSettings) -> None:

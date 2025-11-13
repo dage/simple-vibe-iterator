@@ -26,9 +26,11 @@ class TransitionSettings:
     code_model: str
     vision_model: str
     overall_goal: str
-    user_steering: str
+    user_feedback: str
     code_template: str
     vision_template: str
+    code_system_prompt_template: str = ""
+    code_non_cumulative_template: str = ""
     input_screenshot_count: int = 1
     feedback_preset_id: str | None = None
     mode: IterationMode = IterationMode.VISION_SUMMARY

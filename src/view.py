@@ -44,6 +44,8 @@ class NiceGUIView(IterationEventListener):
         self._shutdown_called: bool = False
         self._status_refresh_interval: float = 1.0
         self._last_status_refresh: float = 0.0
+        self._goal_heading_label: ui.element | None = None
+        self._current_overall_goal: str = ""
 
         # Set some default styling
         apply_theme()
@@ -53,6 +55,8 @@ class NiceGUIView(IterationEventListener):
         # Scoped CSS: Make the default CLOSE button text black on error notifications
         with ui.column().classes('w-full h-screen p-4 gap-3'):
             ui.label('Simple Vibe Iterator').classes('text-2xl font-bold')
+            self._goal_heading_label = ui.label('').classes('text-lg font-semibold text-primary-600')
+            self._set_overall_goal_heading(self._current_overall_goal)
 
             # Container for worker status boxes
             self._status_panel = StatusPanel(on_cancel=self._cancel_worker)
@@ -77,7 +81,11 @@ class NiceGUIView(IterationEventListener):
             'w-full shadow-sm rounded-lg border border-gray-200/70 dark:border-gray-700/50'
         ) as panel:
             with ui.column().classes('w-full gap-4 p-4'):
-                inputs = self._render_settings_editor(init_settings, allow_mode_switch=True)
+                inputs = self._render_settings_editor(
+                    init_settings,
+                    allow_mode_switch=True,
+                    show_user_feedback=False,
+                )
 
                 async def _start() -> None:
                     og = (inputs['overall_goal'].value or '').strip()
@@ -107,8 +115,10 @@ class NiceGUIView(IterationEventListener):
                             code_model=inputs['code_model'].value or '',
                             vision_model=inputs['vision_model'].value or '',
                             overall_goal=og,
-                            user_steering=inputs['user_steering'].value or '',
+                            user_feedback=inputs['user_feedback'].value or '',
                             code_template=code_template,
+                            code_system_prompt_template=settings_manager.get_code_system_prompt_template(mode),
+                            code_non_cumulative_template=settings_manager.get_code_non_cumulative_template(mode),
                             vision_template=vision_template,
                             input_screenshot_count=settings_manager.get_input_screenshot_count(mode),
                             feedback_preset_id=feedback_preset_id,
@@ -129,6 +139,7 @@ class NiceGUIView(IterationEventListener):
                                     except Exception:
                                         pass
                         await self.controller.apply_transition(None, settings)
+                        self._set_overall_goal_heading(og)
                     except asyncio.CancelledError:
                         ui.notify('Operation cancelled', color='warning', timeout=2000)
                     except Exception as exc:
@@ -142,6 +153,20 @@ class NiceGUIView(IterationEventListener):
 
     def _default_settings(self, overall_goal: str) -> TransitionSettings:
         return get_settings().load_settings(overall_goal=overall_goal)
+
+    def _set_overall_goal_heading(self, goal: str) -> None:
+        self._current_overall_goal = goal.strip()
+        label = self._goal_heading_label
+        if label is None:
+            return
+        text = f"Goal: {self._current_overall_goal}" if self._current_overall_goal else ''
+        try:
+            label.text = text
+        except Exception:
+            try:
+                label.set_text(text)  # type: ignore[attr-defined]
+            except Exception:
+                pass
 
     # IterationEventListener
     async def on_node_created(self, node: IterationNode) -> None:
@@ -176,7 +201,14 @@ class NiceGUIView(IterationEventListener):
             except Exception:
                 pass
 
-    def _render_settings_editor(self, initial: TransitionSettings, *, allow_mode_switch: bool = False) -> Dict[str, ui.element]:
+    def _render_settings_editor(
+        self,
+        initial: TransitionSettings,
+        *,
+        allow_mode_switch: bool = False,
+        show_user_feedback: bool = True,
+        allow_overall_goal_edit: bool = True,
+    ) -> Dict[str, ui.element]:
         # Left-side settings editor used in both Start area and iteration cards
 
         # Settings section (only visible for start node with allow_mode_switch=True)
@@ -236,7 +268,7 @@ class NiceGUIView(IterationEventListener):
         feedback_preset_select = ui.select(
             options=list(preset_label_to_id.keys()),
             value=initial_preset_label,
-            label='Feedback',
+            label='Auto feedback',
         ).props('dense outlined').classes('w-full')
         feedback_preset_select._preset_value_map = preset_label_to_id  # type: ignore[attr-defined]
         preset_summary_label = ui.label('').classes('text-xs text-gray-500 self-start')
@@ -259,10 +291,10 @@ class NiceGUIView(IterationEventListener):
                 summary += f", +{len(fragments) - 6} more"
             desc = preset.description or ''
             if desc and summary:
-                return f"{desc} Actions: {summary}"
+                return f"{desc} · Auto feedback: {summary}"
             if desc:
                 return desc
-            return f"Actions: {summary}" if summary else 'Preset ready.'
+            return f"Auto feedback: {summary}" if summary else 'Auto feedback ready.'
 
         def _update_preset_summary() -> None:
             try:
@@ -281,8 +313,14 @@ class NiceGUIView(IterationEventListener):
 
         _update_preset_summary()
 
-        overall_goal = ui.textarea(label='Overall goal', value=initial.overall_goal).classes('w-full')
-        user_steering = ui.textarea(label='Optional user steering', value=initial.user_steering).classes('w-full')
+        if allow_overall_goal_edit:
+            overall_goal = ui.textarea(label='Overall goal', value=initial.overall_goal).classes('w-full')
+        else:
+            overall_goal = SimpleNamespace(value=initial.overall_goal or '')
+        if show_user_feedback:
+            user_feedback = ui.textarea(label='Optional user feedback', value=initial.user_feedback).classes('w-full')
+        else:
+            user_feedback = SimpleNamespace(value=initial.user_feedback or '')
 
         with ui.column().classes('w-full gap-2'):
             ui.label('Coding models').classes('w-full text-base font-medium')
@@ -340,8 +378,10 @@ class NiceGUIView(IterationEventListener):
                 code_model=code_selector.get_value(),
                 vision_model=vision_selector.get_value(),
                 overall_goal=overall_goal.value or '',
-                user_steering=user_steering.value or '',
+                user_feedback=user_feedback.value or '',
                 code_template=settings_manager.get_code_template(mode),
+                code_system_prompt_template=settings_manager.get_code_system_prompt_template(mode),
+                code_non_cumulative_template=settings_manager.get_code_non_cumulative_template(mode),
                 vision_template=settings_manager.get_vision_template(mode),
                 input_screenshot_count=settings_manager.get_input_screenshot_count(mode),
                 feedback_preset_id=preset_id,
@@ -431,7 +471,7 @@ class NiceGUIView(IterationEventListener):
             feedback_preset_select.on('update:model-value', lambda _: _refresh_summary_only())
 
         result = {
-            'user_steering': user_steering,
+            'user_feedback': user_feedback,
             'overall_goal': overall_goal,
             'code_model': code_model,
             'vision_model': vision_model,
@@ -461,122 +501,147 @@ class NiceGUIView(IterationEventListener):
                     with ui.row().classes('items-center justify-between w-full'):
                         ui.label(f'Iteration {index}').classes('text-lg font-semibold')
 
+            first_output = next(iter(node.outputs.values())) if node.outputs else None
+            first_output_slug = next(iter(node.outputs.keys())) if node.outputs else None
+            analysis_map: Dict[str, Any] = {}
+            if first_output:
+                try:
+                    analysis_map = dict(getattr(first_output.artifacts, 'analysis', {}) or {})
+                except Exception:
+                    analysis_map = {}
+
+            input_messages = self._get_input_messages(node, first_output_slug)
+
+            messages_dialog = None
+            open_messages_handler = None
+            if input_messages:
+                messages_dialog = ui.dialog()
+                messages_dialog.props('persistent')
+                msgs_snapshot = list(input_messages)
+
+                def _open_messages_dialog(msgs=msgs_snapshot) -> None:
+                    self._render_messages_dialog(messages_dialog, list(msgs))
+                    messages_dialog.open()
+
+                messages_dialog.on('hide', lambda _: messages_dialog.clear())
+                open_messages_handler = _open_messages_dialog
+
+            summary_dialog, summary_button_label, summary_disabled = create_node_summary_dialog(node)
+
+            meta_rendered = False
+
+            def _render_meta_controls() -> None:
+                nonlocal meta_rendered
+                if meta_rendered:
+                    return
+                with ui.row().classes('w-full items-center gap-2 mb-2'):
+                    if open_messages_handler:
+                        ui.button('📋 Messages', on_click=open_messages_handler).props('flat dense').classes('text-sm p-0 min-h-0 self-start')
+                    summary_handler = summary_dialog.open if not summary_disabled else (lambda: None)
+                    summary_btn = ui.button(summary_button_label, on_click=summary_handler).props('flat dense').classes('text-sm p-0 min-h-0 self-start')
+                    if summary_disabled:
+                        summary_btn.props('disable')
+                meta_rendered = True
+
+            show_input_column = index > 1
+            swap_columns = show_input_column and index >= 2
+            settings_basis = 'basis-1/3' if show_input_column else 'basis-1/2'
+            output_basis = 'basis-1/3' if show_input_column else 'basis-1/2'
+
             with ui.row().classes('w-full items-start gap-6 flex-nowrap'):
-                with ui.column().classes('basis-5/12 min-w-0 gap-3'):
-                    inputs = self._render_settings_editor(node.settings)
+                settings_order = 'order-2' if swap_columns else 'order-1'
+                with ui.column().classes(f'{settings_basis} min-w-0 gap-3 {settings_order}'):
+                    inputs = self._render_settings_editor(
+                        node.settings,
+                        allow_overall_goal_edit=False,
+                    )
 
-                with ui.column().classes('basis-7/12 min-w-0 gap-4'):
-                    first_output = next(iter(node.outputs.values())) if node.outputs else None
-                    analysis_map: Dict[str, Any] = {}
-                    if first_output:
-                        try:
-                            analysis_map = dict(getattr(first_output.artifacts, 'analysis', {}) or {})
-                        except Exception:
-                            analysis_map = {}
-
-                    # Messages dialog (showing full JSON as sent to LLM)
-                    messages_dialog = None
-                    open_messages_handler = None
-                    if first_output and hasattr(first_output, 'messages') and first_output.messages:
-                        messages_dialog = ui.dialog()
-                        messages_dialog.props('persistent')
-                        msgs_snapshot = list(first_output.messages)
-
-                        def _open_messages_dialog(msgs=msgs_snapshot) -> None:
-                            self._render_messages_dialog(messages_dialog, msgs)
-                            messages_dialog.open()
-
-                        messages_dialog.on('hide', lambda _: messages_dialog.clear())
-                        open_messages_handler = _open_messages_dialog
-                    summary_dialog, summary_button_label, summary_disabled = create_node_summary_dialog(node)
-
-                    with ui.row().classes('w-full items-start gap-2 mb-2'):
-                        if open_messages_handler:
-                            ui.button('📋 Messages', on_click=open_messages_handler).props('flat dense').classes('text-sm p-0 min-h-0 self-start')
-                        summary_handler = summary_dialog.open if not summary_disabled else (lambda: None)
-                        summary_btn = ui.button(summary_button_label, on_click=summary_handler).props('flat dense').classes('text-sm p-0 min-h-0 self-start')
-                        if summary_disabled:
-                            summary_btn.props('disable')
-
-                    with ui.row().classes('w-full items-start gap-6 flex-nowrap'):
+                if show_input_column:
+                    input_order = 'order-1' if swap_columns else 'order-2'
+                    with ui.column().classes(f'basis-1/3 min-w-0 gap-4 {input_order}'):
+                        _render_meta_controls()
                         asset_label_map = {}
                         try:
-                            assets = list(first_output.artifacts.assets or [])
+                            assets = list(first_output.artifacts.assets or []) if first_output else []
                             for asset in assets:
                                 if asset.role == 'input':
                                     asset_label_map[asset.path] = str(asset.metadata.get('label', '') or '').strip()
                         except Exception:
                             asset_label_map = {}
-                        with ui.column().classes('basis-1/2 min-w-0 gap-2'):
-                            ui.label('INPUT SCREENSHOTS').classes('text-sm font-semibold')
-                            input_entries: List[tuple[int, str, str, str]] = []
-                            primary_html_url = ''
+
+                        ui.label('AUTO FEEDBACK').classes('text-sm font-semibold')
+                        input_entries: List[tuple[int, str, str, str]] = []
+                        primary_html_url = ''
+                        limit_note = ''
+                        try:
+                            from pathlib import Path as _P
+                            raw_paths = list(getattr(first_output.artifacts, 'input_screenshot_filenames', []) if first_output else [])
+                            for idx, raw_path in enumerate(raw_paths):
+                                if not (raw_path or '').strip():
+                                    continue
+                                p = _P(raw_path)
+                                artifact_url = f"/artifacts/{p.name}" if p.exists() else ''
+                                html_candidate = p.with_suffix('.html')
+                                html_url = f"/artifacts/{html_candidate.name}" if html_candidate.exists() else ''
+                                input_entries.append((idx, raw_path, artifact_url, html_url))
+                                if not primary_html_url and html_url:
+                                    primary_html_url = html_url
+                            limit_note = analysis_map.get('input_screenshot_limit', '') if isinstance(analysis_map, dict) else ''
+                        except Exception:
+                            input_entries = []
                             limit_note = ''
-                            try:
-                                from pathlib import Path as _P
-                                raw_paths = list(getattr(first_output.artifacts, 'input_screenshot_filenames', []) if first_output else [])
-                                for idx, raw_path in enumerate(raw_paths):
-                                    if not (raw_path or '').strip():
-                                        continue
-                                    p = _P(raw_path)
-                                    artifact_url = f"/artifacts/{p.name}" if p.exists() else ''
-                                    html_candidate = p.with_suffix('.html')
-                                    html_url = f"/artifacts/{html_candidate.name}" if html_candidate.exists() else ''
-                                    input_entries.append((idx, raw_path, artifact_url, html_url))
-                                    if not primary_html_url and html_url:
-                                        primary_html_url = html_url
-                                limit_note = analysis_map.get('input_screenshot_limit', '') if isinstance(analysis_map, dict) else ''
-                            except Exception:
-                                input_entries = []
-                                limit_note = ''
-                                primary_html_url = ''
+                            primary_html_url = ''
 
-                            if input_entries:
-                                if limit_note:
-                                    ui.label(limit_note).classes('text-xs text-amber-300')
-                                with ui.row().classes('w-full gap-2 flex-wrap'):
-                                    for idx, raw_path, artifact_url, html_url in input_entries:
-                                        with ui.column().classes('gap-1 w-[120px]'):
-                                            target_link = artifact_url or raw_path
-                                            with ui.link('', target_link, new_tab=True).classes('block no-underline'):
-                                                ui.image(raw_path).classes('w-[120px] h-[80px] object-cover border border-gray-600 rounded hover:border-blue-400 transition-colors duration-150')
-                                            with ui.row().classes('items-center justify-between w-full'):
-                                                label_text = asset_label_map.get(raw_path) or f'#{idx + 1}'
-                                                ui.label(label_text).classes('text-xs text-gray-400')
-                                size = format_html_size(node.html_input)
-                                with ui.row().classes('items-center gap-2 mt-1'):
-                                    ui.icon('content_copy').classes('text-sm cursor-pointer').on('click', lambda html=node.html_input: self._copy_to_clipboard(html))
-                                    ui.label('HTML source').classes('text-sm')
-                                    if primary_html_url:
-                                        ui.link('Open', primary_html_url, new_tab=True).classes('text-sm')
-                                    ui.label(f'({size})').classes('text-sm text-gray-600 dark:text-gray-400')
+                        if input_entries:
+                            if limit_note:
+                                ui.label(limit_note).classes('text-xs text-amber-300')
+                            with ui.row().classes('w-full gap-2 flex-wrap'):
+                                for idx, raw_path, artifact_url, html_url in input_entries:
+                                    with ui.column().classes('gap-1 w-[120px]'):
+                                        target_link = artifact_url or raw_path
+                                        with ui.link('', target_link, new_tab=True).classes('block no-underline'):
+                                            ui.image(raw_path).classes('w-[120px] h-[80px] object-cover border border-gray-600 rounded hover:border-blue-400 transition-colors duration-150')
+                                        with ui.row().classes('items-center justify-between w-full'):
+                                            label_text = asset_label_map.get(raw_path) or f'#{idx + 1}'
+                                            ui.label(label_text).classes('text-xs text-gray-400')
+                            size = format_html_size(node.html_input)
+                            with ui.row().classes('items-center gap-2 mt-1'):
+                                ui.icon('content_copy').classes('text-sm cursor-pointer').on('click', lambda html=node.html_input: self._copy_to_clipboard(html))
+                                ui.label('HTML source').classes('text-sm')
+                                if primary_html_url:
+                                    ui.link('Open', primary_html_url, new_tab=True).classes('text-sm')
+                                ui.label(f'({size})').classes('text-sm text-gray-600 dark:text-gray-400')
+                        else:
+                            ui.label('(no input screenshots)').classes('text-sm text-gray-500')
+
+                        in_logs = list(getattr(first_output.artifacts, 'input_console_logs', []) if first_output else [])
+                        in_title = f"Console logs ({'empty' if len(in_logs) == 0 else len(in_logs)})"
+                        with ui.expansion(in_title):
+                            if in_logs:
+                                in_logs_text = '\n\n'.join(in_logs)
+                                ui.markdown(in_logs_text)
                             else:
-                                ui.label('(no input screenshots)').classes('text-sm text-gray-500')
-                            in_logs = list(getattr(first_output.artifacts, 'input_console_logs', []) if first_output else [])
-                            in_title = f"Console logs ({'empty' if len(in_logs) == 0 else len(in_logs)})"
-                            with ui.expansion(in_title):
-                                if in_logs:
-                                    in_logs_text = '\n\n'.join(in_logs)
-                                    ui.markdown(in_logs_text)
-                                else:
-                                    ui.label('(no console logs)')
-                            # Show vision analysis section for any mode; direct mode now includes vision
-                            _va_raw = extract_vision_summary(first_output.artifacts if first_output else None)
-                            _va_lines = [line for line in _va_raw.splitlines() if line.strip()]
-                            va_title = f"Vision Analysis ({'empty' if len(_va_lines) == 0 else len(_va_lines)})"
-                            with ui.expansion(va_title):
-                                va_text = _va_raw
-                                has_inputs = bool(getattr(first_output.artifacts, 'input_screenshot_filenames', []) if first_output else [])
-                                if not has_inputs:
-                                    va_text = '(no input screenshot)'
-                                elif not va_text.strip():
-                                    va_text = '(pending)'
-                                else:
-                                    va_text = va_text.replace('\n', '\n\n')
-                                ui.markdown(va_text)
+                                ui.label('(no console logs)')
 
-                        with ui.column().classes('basis-1/2 min-w-0 gap-6'):
-                            for model_slug, out in node.outputs.items():
+                        _va_raw = extract_vision_summary(first_output.artifacts if first_output else None)
+                        _va_lines = [line for line in _va_raw.splitlines() if line.strip()]
+                        va_title = f"Vision Analysis ({'empty' if len(_va_lines) == 0 else len(_va_lines)})"
+                        with ui.expansion(va_title):
+                            va_text = _va_raw
+                            has_inputs = bool(getattr(first_output.artifacts, 'input_screenshot_filenames', []) if first_output else [])
+                            if not has_inputs:
+                                va_text = '(no input screenshot)'
+                            elif not va_text.strip():
+                                va_text = '(pending)'
+                            else:
+                                va_text = va_text.replace('\n', '\n\n')
+                            ui.markdown(va_text)
+
+                output_order = 'order-3' if show_input_column else 'order-2'
+                with ui.column().classes(f'{output_basis} min-w-0 gap-6 {output_order}'):
+                    if not show_input_column:
+                        _render_meta_controls()
+                    for model_slug, out in node.outputs.items():
                                 with ui.column().classes('w-full min-w-0 gap-2 border rounded p-2'):
                                     ui.label(f'{model_slug}').classes('text-sm font-semibold')
                                     # Always render a subtle metadata line under the model slug
@@ -681,9 +746,11 @@ class NiceGUIView(IterationEventListener):
                                             updated = TransitionSettings(
                                                 code_model=selected_model,
                                                 vision_model=inputs['vision_model'].value or '',
-                                                overall_goal=inputs['overall_goal'].value or '',
-                                                user_steering=inputs['user_steering'].value or '',
+                                                overall_goal=node.settings.overall_goal,
+                                                user_feedback=inputs['user_feedback'].value or '',
                                                 code_template=code_template,
+                                                code_system_prompt_template=settings_manager.get_code_system_prompt_template(mode),
+                                                code_non_cumulative_template=settings_manager.get_code_non_cumulative_template(mode),
                                                 vision_template=vision_template,
                                                 input_screenshot_count=iter_shots,
                                                 feedback_preset_id=feedback_preset_id,
@@ -702,6 +769,27 @@ class NiceGUIView(IterationEventListener):
 
                                     ui.button('Iterate', on_click=(lambda slug=model_slug: lambda: asyncio.create_task(_iterate_with_slug(slug)))(model_slug)).classes('w-full')
         return card
+
+    def _get_input_messages(self, node: IterationNode, preferred_slug: str | None) -> List[Dict[str, Any]]:
+        parent_id = node.parent_id
+        if parent_id:
+            parent = self.controller.get_node(parent_id)
+            if parent:
+                parent_output = parent.outputs.get(preferred_slug) if preferred_slug else None
+                if parent_output is None and parent.outputs:
+                    parent_output = next(iter(parent.outputs.values()))
+                if parent_output:
+                    history = list(parent_output.messages or [])
+                    if parent_output.assistant_response:
+                        history.append({"role": "assistant", "content": parent_output.assistant_response})
+                    return history
+
+        current_output = node.outputs.get(preferred_slug) if preferred_slug else None
+        if current_output is None and node.outputs:
+            current_output = next(iter(node.outputs.values()))
+        if current_output and current_output.messages:
+            return list(current_output.messages)
+        return []
 
     # --- Operation status helpers ---
     def _begin_operation(self, title: str) -> bool:

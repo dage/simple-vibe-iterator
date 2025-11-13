@@ -79,18 +79,18 @@ async def run_ping() -> Tuple[bool, str]:
         code_model=code_model,
         vision_model=vision_model,
         overall_goal="Ping E2E (OpenRouter)",
-        user_steering="",
+        user_feedback="",
         code_template=(
             "Improve the following HTML while adhering to the goal.\n"
             "Goal: {overall_goal}\n"
             "Vision analysis: {vision_output}\n"
-            "User steering: {user_steering}\n"
+            "User feedback: {user_feedback}\n"
             "HTML:\n{html_input}\n"
         ),
         vision_template=(
             "Analyze the HTML and its rendering to provide guidance.\n"
             "Goal: {overall_goal}\n"
-            "User steering: {user_steering}\n"
+            "User feedback: {user_feedback}\n"
             "HTML:\n{html_input}\n"
         ),
         mode=IterationMode.VISION_SUMMARY,

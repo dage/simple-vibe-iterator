@@ -87,13 +87,14 @@ async def test_template_context_rendering() -> Tuple[bool, str]:
             code_model="cm-x",
             vision_model="vm-y",
             overall_goal="OG-Z",
-            user_steering="US-W",
+            user_feedback="US-W",
             code_template=(
                 "CODE-TPL\n"
                 "code_model={code_model}\n"
                 "vision_model={vision_model}\n"
                 "overall_goal={overall_goal}\n"
-                "user_steering={user_steering}\n"
+                "user_feedback={user_feedback}\n"
+                "auto_feedback={auto_feedback}\n"
                 "have_html_input={html_input}\n"
                 "have_vision_output={vision_output}\n"
                 "have_console_logs={console_logs}\n"
@@ -106,7 +107,8 @@ async def test_template_context_rendering() -> Tuple[bool, str]:
                 "code_model={code_model}\n"
                 "vision_model={vision_model}\n"
                 "overall_goal={overall_goal}\n"
-                "user_steering={user_steering}\n"
+                "user_feedback={user_feedback}\n"
+                "auto_feedback={auto_feedback}\n"
                 "have_html_input={html_input}\n"
                 "have_console_logs={console_logs}\n"
                 "have_html_diff={html_diff}\n"
@@ -145,7 +147,7 @@ async def test_template_context_rendering() -> Tuple[bool, str]:
 
     # Common substitutions still validated
     for cp, vp in [(cp0, vp0), (cp1, vp1), (cpn, vpn)]:
-        for token in ["{code_model}", "{vision_model}", "{overall_goal}", "{user_steering}", "{html_diff}"]:
+        for token in ["{code_model}", "{vision_model}", "{overall_goal}", "{user_feedback}", "{auto_feedback}", "{html_diff}"]:
             if token in cp or token in vp:
                 return False, f"unsubstituted token present: {token}"
 

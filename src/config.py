@@ -18,7 +18,7 @@ except Exception:  # pragma: no cover
 """
 App configuration loaded from YAML (single source of truth).
 Location: project_root/config.yaml (required)
-Required keys: models.code, models.vision, templates.code, templates.vision
+Required keys: models.code, models.vision, templates.code, templates.code_system_prompt, templates.code_non_cumulative, templates.vision
 """
 
 
@@ -27,6 +27,8 @@ class AppConfig:
     code_model: str
     vision_model: str
     code_template: str
+    code_system_prompt_template: str
+    code_non_cumulative_template: str
     vision_template: str
     iteration_mode: IterationMode
     input_screenshot_default: int = 1
@@ -70,6 +72,10 @@ def get_config() -> AppConfig:
         missing.append('models.vision')
     if not isinstance(templates, dict) or not templates.get('code'):
         missing.append('templates.code')
+    if not isinstance(templates, dict) or not templates.get('code_system_prompt'):
+        missing.append('templates.code_system_prompt')
+    if not isinstance(templates, dict) or not templates.get('code_non_cumulative'):
+        missing.append('templates.code_non_cumulative')
     if not isinstance(templates, dict) or not templates.get('vision'):
         missing.append('templates.vision')
     if missing:
@@ -78,6 +84,8 @@ def get_config() -> AppConfig:
     code_model = str(models.get('code'))
     vision_model = str(models.get('vision'))
     code_template = str(templates.get('code'))
+    code_system_prompt_template = str(templates.get('code_system_prompt'))
+    code_non_cumulative_template = str(templates.get('code_non_cumulative'))
     vision_template = str(templates.get('vision'))
 
     iteration_cfg = data.get('iteration') if isinstance(data, dict) else {}
@@ -131,6 +139,8 @@ def get_config() -> AppConfig:
         code_model=code_model,
         vision_model=vision_model,
         code_template=code_template,
+        code_system_prompt_template=code_system_prompt_template,
+        code_non_cumulative_template=code_non_cumulative_template,
         vision_template=vision_template,
         iteration_mode=iteration_mode,
         input_screenshot_default=default_shots,

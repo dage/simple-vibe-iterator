@@ -20,8 +20,8 @@
 ## Configuration & Templates
 - Defaults load from `config.yaml` at startup; avoid hardcoding.
 - Coding and vision prompts are only editable via `config.yaml` (UI never overrides or persists them).
-- Templates support variables: `{overall_goal}`, `{user_steering}`, `{vision_output}`, `{console_logs}`, `{html_input}`.
-- Feedback presets supply `{screenshots_feedback}` (a readable summary like `#1: press-w, #2: press-s`) to both code and vision templates so models can align each screenshot with its action.
+- Templates support variables: `{overall_goal}`, `{user_feedback}`, `{vision_output}`, `{console_logs}`, `{html_input}`, `{auto_feedback}`.
+- Feedback presets supply `{auto_feedback}` (a readable summary like `#1: press-w, #2: press-s`) to both code and vision templates so models can align each screenshot with its action.
 - Capture automation lives in `feedback_presets.yaml`. The packaged presets are “Single screenshot”, “Short animation”, “WSAD sweep”, and “Space press”, and the manual screenshot count control has been removed so only presets drive captures. Presets trigger as soon as the DOM ready event fires.
 
 ## Coding Style & Naming Conventions

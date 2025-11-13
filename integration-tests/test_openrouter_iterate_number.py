@@ -81,7 +81,7 @@ async def run_iterate_number() -> Tuple[bool, str]:
         code_model=code_model,
         vision_model=vision_model,
         overall_goal="Show a large centered number '1'",
-        user_steering=(
+        user_feedback=(
             "Return standalone HTML for a white page showing a single extremely large, centered number '1'. "
             "Use very high contrast: pure black text on white background, font-weight 900, font-size at least 800px, "
             "no shadows, no outlines, and center both vertically and horizontally. Body must contain only the number."
@@ -90,13 +90,13 @@ async def run_iterate_number() -> Tuple[bool, str]:
             "Improve or create the HTML per the goal and instructions.\n"
             "Goal: {overall_goal}\n"
             "Vision analysis: {vision_output}\n"
-            "User steering: {user_steering}\n"
+            "User feedback: {user_feedback}\n"
             "HTML:\n{html_input}\n"
         ),
         vision_template=(
             "Analyze the rendered page. Identify the number visibly shown.\n"
             "Goal: {overall_goal}\n"
-            "User steering: {user_steering}\n"
+            "User feedback: {user_feedback}\n"
             "HTML:\n{html_input}\n"
         ),
         mode=IterationMode.VISION_SUMMARY,
@@ -112,7 +112,7 @@ async def run_iterate_number() -> Tuple[bool, str]:
         code_model=code_model,
         vision_model=vision_model,
         overall_goal="Change the number to '2'",
-        user_steering=(
+        user_feedback=(
             "Modify the HTML so the displayed number is now '2' (not '1'). Keep the page as only a single, extremely large, high-contrast numeral '2' "
             "(pure black on white, font-weight 900, font-size at least 800px), centered both vertically and horizontally."
         ),

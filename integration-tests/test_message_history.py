@@ -130,7 +130,7 @@ async def test_message_history_without_duplication() -> Tuple[bool, str]:
             code_model="stub/code",
             vision_model="stub/vision",
             overall_goal="Test history",
-            user_steering="",
+            user_feedback="",
             code_template=(
                 "Refine HTML given the goal.\n"
                 "Goal: {overall_goal}\n"
@@ -151,9 +151,9 @@ async def test_message_history_without_duplication() -> Tuple[bool, str]:
             return False, f"expected 3 model calls, found {len(ai.calls)}"
 
         expected_roles = [
-            ["user"],
-            ["user", "assistant", "user"],
-            ["user", "assistant", "user", "assistant", "user"],
+            ["system", "user"],
+            ["system", "user", "assistant", "user"],
+            ["system", "user", "assistant", "user", "assistant", "user"],
         ]
         for idx, call in enumerate(ai.calls):
             roles = [str(msg.get("role")) for msg in call]

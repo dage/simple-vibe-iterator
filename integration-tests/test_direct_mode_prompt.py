@@ -123,7 +123,7 @@ async def test_direct_mode_prompt_contains_image() -> Tuple[bool, str]:
         code_model="stub/code",
         vision_model="stub/vision",
         overall_goal="Create a box",
-        user_steering="",
+        user_feedback="",
         code_template=(
             "Direct mode prompt\n"
             "Goal: {overall_goal}\n"
