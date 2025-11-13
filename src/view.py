@@ -333,7 +333,7 @@ class NiceGUIView(IterationEventListener):
             code_model = code_selector.input
 
         with ui.column().classes('w-full gap-2 pt-2'):
-            ui.label('Vision models').classes('w-full text-base font-medium')
+            ui.label('Vision model').classes('w-full text-base font-medium')
             vision_selector = self._register_selector(ModelSelector(
                 initial_value=initial.vision_model,
                 vision_only=True,
