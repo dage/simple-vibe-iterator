@@ -127,32 +127,42 @@ async def δ(
 
     interpretation = await _interpret_input(settings, context, vision_service)
     auto_feedback = _format_auto_feedback(context)
+    attachment_policy = ImageAttachmentPolicy(
+        attachments=interpretation.attachments,
+        support_flags=model_image_support,
+    )
 
     async def _worker(model: str) -> Tuple[str, str, str, dict | None, TransitionArtifacts]:
         try:
-            payload = build_code_payload(
-                html_input=context.html_input,
-                settings=settings,
-                interpretation_summary=interpretation.summary,
-                console_logs=context.input_console_logs,
-                html_diff=context.html_diff,
-                auto_feedback=auto_feedback,
-                attachments=interpretation.attachments,
-                message_history=message_history,
-                allow_attachments=model_image_support.get(model, False),
-            )
-            html_output, reasoning, meta = await ai_service.generate_html(payload, model, worker=model)
-            out_screenshots, out_console_logs = await browser_service.render_and_capture(html_output, worker=model)
-            out_screenshot_path = out_screenshots[0] if out_screenshots else ""
-            artifacts = _create_artifacts(
-                model=model,
-                context=context,
-                interpretation=interpretation,
-                screenshot_path=out_screenshot_path,
-                console_logs=out_console_logs,
-                vision_output=interpretation.summary,
-            )
-            return model, html_output, (reasoning or ""), (meta or None), artifacts
+            while True:
+                selected_attachments = attachment_policy.attachments_for(model)
+                try:
+                    payload = build_code_payload(
+                        html_input=context.html_input,
+                        settings=settings,
+                        interpretation_summary=interpretation.summary,
+                        console_logs=context.input_console_logs,
+                        html_diff=context.html_diff,
+                        auto_feedback=auto_feedback,
+                        attachments=selected_attachments,
+                        message_history=message_history,
+                        allow_attachments=bool(selected_attachments),
+                    )
+                    html_output, reasoning, meta = await ai_service.generate_html(payload, model, worker=model)
+                    out_screenshots, out_console_logs = await browser_service.render_and_capture(html_output, worker=model)
+                    out_screenshot_path = out_screenshots[0] if out_screenshots else ""
+                    artifacts = _create_artifacts(
+                        model=model,
+                        context=context,
+                        interpretation=interpretation,
+                        screenshot_path=out_screenshot_path,
+                        console_logs=out_console_logs,
+                        vision_output=interpretation.summary,
+                    )
+                    return model, html_output, (reasoning or ""), (meta or None), artifacts
+                except Exception as exc:
+                    if not attachment_policy.handle_error(model, exc):
+                        raise
         finally:
             try:
                 op_status.clear_phase(model)
@@ -369,20 +379,88 @@ def _format_auto_feedback(context: TransitionContext) -> str:
     return "Auto feedback → " + ", ".join(parts)
 
 
+class ImageAttachmentPolicy:
+    def __init__(
+        self,
+        attachments: Sequence[IterationAsset],
+        support_flags: Dict[str, bool],
+    ) -> None:
+        self._base = [asset for asset in attachments if asset.kind == "image" and asset.path]
+        self._support: Dict[str, bool] = {
+            slug: bool(flag and self._base)
+            for slug, flag in support_flags.items()
+        }
+        self._caps: Dict[str, int] = {}
+
+    def attachments_for(self, model: str) -> List[IterationAsset]:
+        if not self._support.get(model):
+            return []
+        cap = self._caps.get(model)
+        if not cap or cap >= len(self._base):
+            return list(self._base)
+        return self._base[:cap]
+
+    def handle_error(self, model: str, exc: Exception) -> bool:
+        action = _classify_image_attachment_error(exc)
+        if action is None:
+            return False
+        if action == "disable":
+            self._support[model] = False
+            self._caps[model] = 0
+            _notify_image_policy_issue(
+                f"Model '{model}' rejected screenshot input; retrying without attachments.",
+            )
+            return True
+        if action == "reduce":
+            if len(self._base) <= 1:
+                self._support[model] = False
+                self._caps[model] = 0
+                _notify_image_policy_issue(
+                    f"Model '{model}' cannot handle screenshots; falling back to text-only retries.",
+                )
+                return True
+            current = self._caps.get(model) or len(self._base)
+            next_cap = max(1, current - 1)
+            if next_cap >= current:
+                next_cap = current - 1
+            if next_cap <= 0:
+                self._support[model] = False
+                self._caps[model] = 0
+                return True
+            self._caps[model] = next_cap
+            _notify_image_policy_issue(
+                f"Model '{model}' screenshot limit reduced to {next_cap} due to provider constraints.",
+            )
+            return True
+        return False
+
+
+def _notify_image_policy_issue(message: str) -> None:
+    try:
+        op_status.enqueue_notification(message, color="warning", timeout=4000, close_button=True)
+    except Exception:
+        pass
+
+
 async def _detect_code_model_image_support(models: Sequence[str]) -> Dict[str, bool]:
     normalized = [slug.strip() for slug in models if slug.strip()]
     if not normalized:
         return {}
     try:
-        available = await orc.list_models(force_refresh=False, limit=2000)
+        available = await orc.list_models(vision_only=True, limit=2000, force_refresh=False)
     except Exception:
-        return {slug: False for slug in normalized}
+        available = []
+    image_ids = {getattr(m, "id", "") for m in available}
+    return {slug: slug in image_ids for slug in normalized}
 
-    lookup = {m.id: bool(getattr(m, "has_image_input", False)) for m in available}
-    support: Dict[str, bool] = {}
-    for slug in normalized:
-        support[slug] = lookup.get(slug, False)
-    return support
+
+def _classify_image_attachment_error(exc: Exception) -> str | None:
+    text = str(getattr(exc, "message", None) or exc).lower()
+    if any(keyword in text for keyword in ("image input", "no endpoints")):
+        return "disable"
+    if any(keyword in text for keyword in ("length limit", "request body", "413")):
+        return "reduce"
+    return None
 
 
 class IterationController:

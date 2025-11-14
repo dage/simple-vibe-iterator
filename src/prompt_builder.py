@@ -52,6 +52,25 @@ def _build_template_context(
     return ctx
 
 
+def _strip_images_from_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    cleaned: List[Dict[str, Any]] = []
+    for msg in messages:
+        if not isinstance(msg, dict):
+            cleaned.append(dict(msg))
+            continue
+        content = msg.get("content")
+        if not isinstance(content, list):
+            cleaned.append(dict(msg))
+            continue
+        filtered = [part for part in content if not (isinstance(part, dict) and part.get("type") == "image_url")]
+        if not filtered:
+            continue
+        new_msg = dict(msg)
+        new_msg["content"] = filtered
+        cleaned.append(new_msg)
+    return cleaned
+
+
 def _format_template(template: str, ctx: Dict[str, Any]) -> str:
     if not template:
         return ""
@@ -126,6 +145,8 @@ def build_code_payload(
     system_prompt = _format_template(system_template, ctx)
 
     messages = list(message_history or [])
+    if messages and not allow_attachments:
+        messages = _strip_images_from_history(messages)
     if not messages or str(messages[0].get("role")) != "system":
         if system_prompt.strip():
             messages.insert(0, {"role": "system", "content": system_prompt})

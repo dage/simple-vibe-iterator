@@ -205,10 +205,10 @@ class OpenRouterAICodeService(AICodeService):
         )
         reasoning_result = (meta.get("reasoning") or None)
 
-        # Add messages and assistant response to meta so controller can extract them for ModelOutput
+        # Add prompt messages (with any image attachments) and assistant response
         if meta is None:
             meta = {}
-        meta.setdefault("messages", messages)
+        meta["messages"] = messages
         meta["assistant_response"] = content or ""
 
         op_status.clear_phase(worker)
