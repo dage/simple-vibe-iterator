@@ -1,6 +1,6 @@
 models:
-  code: x-ai/grok-4-fast
-  vision: qwen/qwen3-vl-235b-a22b-instruct
+  code: x-ai/grok-code-fast-1
+  vision: qwen/qwen3-vl-235b-a22b-thinking
 
 iteration:
   input_screenshots:
@@ -43,6 +43,8 @@ templates:
 
   # Per-iteration user prompt appended after the system message
   code: |
+    Please continue fixing and improving the HTML based on the feedback provided.
+
     PROJECT CONTEXT:
     Overall goal: {overall_goal}
     User feedback: {user_feedback}
