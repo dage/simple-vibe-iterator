@@ -63,7 +63,7 @@ async def run_iterate_number() -> Tuple[bool, str]:
         PlaywrightBrowserService,
     )
     from src.controller import IterationController
-    from src.interfaces import IterationMode, TransitionSettings
+    from src.interfaces import TransitionSettings
     from src import or_client
 
     ai = OpenRouterAICodeService()
@@ -99,7 +99,6 @@ async def run_iterate_number() -> Tuple[bool, str]:
             "User feedback: {user_feedback}\n"
             "HTML:\n{html_input}\n"
         ),
-        mode=IterationMode.VISION_SUMMARY,
     )
 
     root_id = await ctrl.apply_transition(None, root_settings)
@@ -118,7 +117,6 @@ async def run_iterate_number() -> Tuple[bool, str]:
         ),
         code_template=root_settings.code_template,
         vision_template=root_settings.vision_template,
-        mode=IterationMode.VISION_SUMMARY,
     )
 
     child_id = await ctrl.apply_transition(root_id, iter_settings)

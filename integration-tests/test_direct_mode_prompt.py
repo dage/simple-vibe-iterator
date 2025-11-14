@@ -45,14 +45,29 @@ def _prompt_to_text(prompt) -> Tuple[str, List[dict]]:
         return "", []
     first = messages[0] if isinstance(messages[0], dict) else {}
     content = first.get("content", "") if isinstance(first, dict) else ""
+    text = ""
     if isinstance(content, list):
         texts = [
             str(part.get("text", ""))
             for part in content
             if isinstance(part, dict) and part.get("type") == "text"
         ]
-        return "\n".join([t for t in texts if t]), content
-    return str(content or ""), []
+        text = "\n".join([t for t in texts if t])
+    else:
+        text = str(content or "")
+
+    user_content: List[dict] = []
+    for msg in reversed(messages):
+        if not isinstance(msg, dict):
+            continue
+        if msg.get("role") != "user":
+            continue
+        c = msg.get("content", "")
+        if isinstance(c, list):
+            user_content = c
+        break
+
+    return text, user_content
 
 
 class StubBrowserService:
@@ -109,7 +124,7 @@ class RecordingAICodeService:
 
 async def test_direct_mode_prompt_contains_image() -> Tuple[bool, str]:
     from src.controller import IterationController
-    from src.interfaces import IterationMode, TransitionSettings
+    from src.interfaces import TransitionSettings
 
     temp_dir = project_root() / "artifacts" / "test_direct_mode"
     temp_dir.mkdir(parents=True, exist_ok=True)
@@ -131,14 +146,12 @@ async def test_direct_mode_prompt_contains_image() -> Tuple[bool, str]:
             "HTML:\n{html_input}\n"
         ),
         vision_template="",
-        mode=IterationMode.DIRECT_TO_CODER,
     )
 
-    # Seed initial node (no screenshot yet)
-    async def _noop(*args, **kwargs):
-        return None
+    async def _fake_capabilities(models):
+        return {slug: True for slug in models}
 
-    with patch("src.controller._ensure_models_support_mode", new=_noop):
+    with patch("src.controller._detect_code_model_image_support", new=_fake_capabilities):
         root_id = await ctrl.apply_transition(None, settings)
         root = ctrl.get_node(root_id)
         if not root:

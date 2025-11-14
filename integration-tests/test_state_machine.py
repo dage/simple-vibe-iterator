@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from typing import List, Sequence, Tuple
+from unittest.mock import patch
 import os
 import sys
 
@@ -88,6 +89,9 @@ class _TestStubVisionService:
         ]
         return "\n".join(lines)
 
+async def _fake_capabilities(models: List[str]) -> dict:
+    return {slug: True for slug in models}
+
 
 async def build_controller():
     from src.services import PlaywrightBrowserService
@@ -100,7 +104,7 @@ async def build_controller():
 
 
 def default_settings(overall_goal: str = ""):
-    from src.interfaces import IterationMode, TransitionSettings
+    from src.interfaces import TransitionSettings
     from src import config as app_config
 
     cfg = app_config.get_config()
@@ -124,17 +128,17 @@ def default_settings(overall_goal: str = ""):
             "User feedback: {user_feedback}\n"
             "HTML:\n{html_input}\n"
         ),
-        mode=IterationMode.VISION_SUMMARY,
     )
 
 
 async def test_linear_chain() -> Tuple[bool, str]:
     from src.interfaces import IterationNode
 
-    ctrl = await build_controller()
-    root_id = await ctrl.apply_transition(None, default_settings("Goal A"))
-    child1_id = await ctrl.apply_transition(root_id, default_settings("Goal A"))
-    child2_id = await ctrl.apply_transition(child1_id, default_settings("Goal A"))
+    with patch("src.controller._detect_code_model_image_support", new=_fake_capabilities):
+        ctrl = await build_controller()
+        root_id = await ctrl.apply_transition(None, default_settings("Goal A"))
+        child1_id = await ctrl.apply_transition(root_id, default_settings("Goal A"))
+        child2_id = await ctrl.apply_transition(child1_id, default_settings("Goal A"))
 
     # Validate chain length and parent-child links
     root_node = ctrl.get_node(root_id)
@@ -150,15 +154,16 @@ async def test_linear_chain() -> Tuple[bool, str]:
 
 
 async def test_rerun_mid_chain() -> Tuple[bool, str]:
-    ctrl = await build_controller()
-    root_id = await ctrl.apply_transition(None, default_settings("Goal B"))
-    child1_id = await ctrl.apply_transition(root_id, default_settings("Goal B"))
-    child2_id = await ctrl.apply_transition(child1_id, default_settings("Goal B"))
+    with patch("src.controller._detect_code_model_image_support", new=_fake_capabilities):
+        ctrl = await build_controller()
+        root_id = await ctrl.apply_transition(None, default_settings("Goal B"))
+        child1_id = await ctrl.apply_transition(root_id, default_settings("Goal B"))
+        child2_id = await ctrl.apply_transition(child1_id, default_settings("Goal B"))
 
-    # Re-run from child1 with a modified code_model
-    s = default_settings("Goal B")
-    s.code_model = "modified-model"
-    new_child_id = await ctrl.apply_transition(child1_id, s)
+        # Re-run from child1 with a modified code_model
+        s = default_settings("Goal B")
+        s.code_model = "modified-model"
+        new_child_id = await ctrl.apply_transition(child1_id, s)
 
     # The old child2 should be deleted
     if ctrl.get_node(child2_id) is not None:
@@ -178,9 +183,10 @@ async def test_rerun_mid_chain() -> Tuple[bool, str]:
 async def test_artifacts_presence() -> Tuple[bool, str]:
     from src.interfaces import IterationNode
 
-    ctrl = await build_controller()
-    root_id = await ctrl.apply_transition(None, default_settings("Artifacts"))
-    c1_id = await ctrl.apply_transition(root_id, default_settings("Artifacts"))
+    with patch("src.controller._detect_code_model_image_support", new=_fake_capabilities):
+        ctrl = await build_controller()
+        root_id = await ctrl.apply_transition(None, default_settings("Artifacts"))
+        c1_id = await ctrl.apply_transition(root_id, default_settings("Artifacts"))
 
     for nid in [root_id, c1_id]:
         node = ctrl.get_node(nid)

@@ -2,23 +2,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
 import uuid
 from typing import Any, Dict, List, Optional, Protocol, Sequence, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .feedback_presets import FeedbackPreset
-
-
-# ---- Data model for state-machine iterations ----
-
-
-class IterationMode(str, Enum):
-    VISION_SUMMARY = "vision_summary"
-    DIRECT_TO_CODER = "direct_to_coder"
-
-    def __str__(self) -> str:  # pragma: no cover - trivial
-        return str(self.value)
 
 
 @dataclass
@@ -30,11 +18,8 @@ class TransitionSettings:
     code_template: str
     vision_template: str
     code_system_prompt_template: str = ""
-    code_non_cumulative_template: str = ""
     input_screenshot_count: int = 1
     feedback_preset_id: str | None = None
-    mode: IterationMode = IterationMode.VISION_SUMMARY
-    keep_history: bool = False
 
 
 @dataclass

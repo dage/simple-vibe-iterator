@@ -98,6 +98,9 @@ class RecordingHistoryAICodeService:
         }
         return html, "", meta
 
+async def _fake_capabilities(models: List[str]) -> Dict[str, bool]:
+    return {slug: True for slug in models}
+
 
 async def test_message_history_without_duplication() -> Tuple[bool, str]:
     ensure_root_cwd()
@@ -112,40 +115,38 @@ async def test_message_history_without_duplication() -> Tuple[bool, str]:
         prefs_store[key] = str(value)
 
     with patch("src.prefs.get", new=_fake_get), patch("src.prefs.set", new=_fake_set):
-        from src.controller import IterationController
-        from src.interfaces import IterationMode, TransitionSettings
-        from src.settings import get_settings, reset_settings
+        with patch("src.controller._detect_code_model_image_support", new=_fake_capabilities):
+            from src.controller import IterationController
+            from src.interfaces import TransitionSettings
+            from src.settings import get_settings, reset_settings
 
-        reset_settings()
-        settings_manager = get_settings()
-        settings_manager.keep_history = True
+            reset_settings()
+            settings_manager = get_settings()
 
-        artifacts_dir = project_root() / "artifacts" / "test_message_history"
-        ai = RecordingHistoryAICodeService()
-        browser = StubBrowserService(artifacts_dir)
-        vision = StubVisionService()
-        controller = IterationController(ai, browser, vision)
+            artifacts_dir = project_root() / "artifacts" / "test_message_history"
+            ai = RecordingHistoryAICodeService()
+            browser = StubBrowserService(artifacts_dir)
+            vision = StubVisionService()
+            controller = IterationController(ai, browser, vision)
 
-        base_settings = TransitionSettings(
-            code_model="stub/code",
-            vision_model="stub/vision",
-            overall_goal="Test history",
-            user_feedback="",
-            code_template=(
-                "Refine HTML given the goal.\n"
-                "Goal: {overall_goal}\n"
-                "Vision: {vision_output}\n"
-                "HTML:\n{html_input}\n"
-            ),
-            vision_template="Describe the page.\nHTML:\n{html_input}\n",
-            input_screenshot_count=1,
-            mode=IterationMode.VISION_SUMMARY,
-            keep_history=True,
-        )
+            base_settings = TransitionSettings(
+                code_model="stub/code",
+                vision_model="stub/vision",
+                overall_goal="Test history",
+                user_feedback="",
+                code_template=(
+                    "Refine HTML given the goal.\n"
+                    "Goal: {overall_goal}\n"
+                    "Vision: {vision_output}\n"
+                    "HTML:\n{html_input}\n"
+                ),
+                vision_template="Describe the page.\nHTML:\n{html_input}\n",
+                input_screenshot_count=1,
+            )
 
-        root_id = await controller.apply_transition(None, base_settings)
-        child1_id = await controller.apply_transition(root_id, base_settings)
-        child2_id = await controller.apply_transition(child1_id, base_settings)
+            root_id = await controller.apply_transition(None, base_settings)
+            child1_id = await controller.apply_transition(root_id, base_settings)
+            child2_id = await controller.apply_transition(child1_id, base_settings)
 
         if len(ai.calls) != 3:
             return False, f"expected 3 model calls, found {len(ai.calls)}"

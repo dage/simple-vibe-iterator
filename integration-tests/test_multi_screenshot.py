@@ -6,6 +6,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Sequence, Tuple
+from unittest.mock import patch
 
 os.environ.setdefault("OPENROUTER_DISABLE_RETRY", "1")
 
@@ -121,7 +122,7 @@ class _StubAICodeService:
 
 async def _run_case(case: _Case, tmp_dir: Path) -> Tuple[bool, str]:
     from src.controller import IterationController
-    from src.interfaces import IterationMode, TransitionSettings
+    from src.interfaces import TransitionSettings
 
     browser = _RecordingBrowserService(tmp_dir)
     vision_limits = {
@@ -143,14 +144,16 @@ async def _run_case(case: _Case, tmp_dir: Path) -> Tuple[bool, str]:
         user_feedback="",
         code_template="Return HTML",
         vision_template="Describe",
-        mode=IterationMode.DIRECT_TO_CODER,
-        keep_history=False,
         input_screenshot_count=case.requested,
     )
 
+    async def _fake_capabilities(models):
+        return {slug: True for slug in models}
+
     try:
-        root_id = await controller.apply_transition(None, settings)
-        node_id = await controller.apply_transition(root_id, settings)
+        with patch("src.controller._detect_code_model_image_support", new=_fake_capabilities):
+            root_id = await controller.apply_transition(None, settings)
+            node_id = await controller.apply_transition(root_id, settings)
     except Exception as exc:
         return False, f"{case.name}: transition failed: {exc}"
 

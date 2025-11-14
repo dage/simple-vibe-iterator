@@ -64,7 +64,7 @@ async def run_ping() -> Tuple[bool, str]:
         PlaywrightBrowserService,
     )
     from src.controller import IterationController
-    from src.interfaces import IterationMode, TransitionSettings
+    from src.interfaces import TransitionSettings
 
     ai = OpenRouterAICodeService()
     vision = OpenRouterVisionService()
@@ -93,7 +93,6 @@ async def run_ping() -> Tuple[bool, str]:
             "User feedback: {user_feedback}\n"
             "HTML:\n{html_input}\n"
         ),
-        mode=IterationMode.VISION_SUMMARY,
     )
 
     ctrl = IterationController(ai, browser, vision)

@@ -1,13 +1,11 @@
 # src/settings.py
 """
-Unified application settings management.
-Handles both app-wide preferences and mode-specific configurations.
+Unified application settings management for app-wide preferences.
 """
 
 from __future__ import annotations
-from dataclasses import replace
 from typing import Optional
-from .interfaces import IterationMode, TransitionSettings
+from .interfaces import TransitionSettings
 from . import prefs
 from . import config as app_config
 from . import feedback_presets
@@ -20,103 +18,40 @@ class Settings:
         """Initialize the settings manager."""
         pass
 
-    # App-wide settings
-    @property
-    def keep_history(self) -> bool:
-        """Whether to maintain cumulative message history across iterations."""
-        return prefs.get('keep_history', 'false').lower() == 'true'
-
-    @keep_history.setter
-    def keep_history(self, value: bool) -> None:
-        """Set the keep history preference."""
-        prefs.set('keep_history', str(value).lower())
-
-    @property
-    def current_mode(self) -> IterationMode:
-        """Get the current iteration mode."""
+    def get_code_model(self) -> str:
         cfg = app_config.get_config()
-        fallback = cfg.iteration_mode
-        stored = prefs.get('iteration.mode', fallback.value)
-        try:
-            return IterationMode(stored or fallback.value)
-        except Exception:
-            return fallback
+        stored = prefs.get('model.code', cfg.code_model)
+        value = (stored or '').strip() or cfg.code_model
+        return value
 
-    @current_mode.setter
-    def current_mode(self, mode: IterationMode) -> None:
-        """Set the current iteration mode."""
-        prefs.set('iteration.mode', mode.value)
+    def set_code_model(self, value: str) -> None:
+        prefs.set('model.code', value.strip())
 
-    # Mode-specific settings
-    def _pref_key(self, base: str, mode: IterationMode) -> str:
-        """Generate mode-specific preference key."""
-        return f"{base}.{mode.value}"
-
-    def _get_mode_value(self, base: str, mode: IterationMode, fallback: str) -> str:
-        """Get mode-specific setting value."""
-        value = prefs.get(self._pref_key(base, mode), '')
-        return value if value.strip() else fallback
-
-    def _set_mode_value(self, base: str, mode: IterationMode, value: str) -> None:
-        """Set mode-specific setting value."""
-        prefs.set(self._pref_key(base, mode), value)
-        prefs.set(base, value)  # Also set as global default
-
-    def get_code_model(self, mode: Optional[IterationMode] = None) -> str:
-        """Get the preferred code model for the given mode."""
-        if mode is None:
-            mode = self.current_mode
+    def get_vision_model(self) -> str:
         cfg = app_config.get_config()
-        return self._get_mode_value('model.code', mode, prefs.get('model.code', cfg.code_model))
+        stored = prefs.get('model.vision', cfg.vision_model)
+        value = (stored or '').strip() or cfg.vision_model
+        return value
 
-    def get_vision_model(self, mode: Optional[IterationMode] = None) -> str:
-        """Get the preferred vision model for the given mode."""
-        if mode is None:
-            mode = self.current_mode
-        cfg = app_config.get_config()
-        return self._get_mode_value('model.vision', mode, prefs.get('model.vision', cfg.vision_model))
+    def set_vision_model(self, value: str) -> None:
+        prefs.set('model.vision', value.strip())
 
-    def get_code_template(self, mode: Optional[IterationMode] = None) -> str:
-        """Get the code template for the given mode."""
+    def get_code_template(self) -> str:
         cfg = app_config.get_config()
         return cfg.code_template
 
-    def get_code_system_prompt_template(self, mode: Optional[IterationMode] = None) -> str:
-        """Get the system prompt template for cumulative mode."""
-        del mode  # mode-agnostic for now
+    def get_code_system_prompt_template(self) -> str:
         cfg = app_config.get_config()
         return cfg.code_system_prompt_template
 
-    def get_code_non_cumulative_template(self, mode: Optional[IterationMode] = None) -> str:
-        """Get the template used when keep_history is disabled."""
-        del mode  # mode-agnostic for now
-        cfg = app_config.get_config()
-        return cfg.code_non_cumulative_template
-
-    def get_vision_template(self, mode: Optional[IterationMode] = None) -> str:
-        """Get the vision template for the given mode."""
+    def get_vision_template(self) -> str:
         cfg = app_config.get_config()
         return cfg.vision_template
 
-    def set_code_model(self, value: str, mode: Optional[IterationMode] = None) -> None:
-        """Set the code model for the given mode."""
-        if mode is None:
-            mode = self.current_mode
-        self._set_mode_value('model.code', mode, value)
-
-    def set_vision_model(self, value: str, mode: Optional[IterationMode] = None) -> None:
-        """Set the vision model for the given mode."""
-        if mode is None:
-            mode = self.current_mode
-        self._set_mode_value('model.vision', mode, value)
-
-    def get_input_screenshot_count(self, mode: Optional[IterationMode] = None) -> int:
-        """Get the preferred number of input screenshots for the given mode."""
-        if mode is None:
-            mode = self.current_mode
+    def get_input_screenshot_count(self) -> int:
         cfg = app_config.get_config()
         fallback = str(cfg.input_screenshot_default)
-        raw = self._get_mode_value('input.screenshot.count', mode, prefs.get('input.screenshot.count', fallback))
+        raw = prefs.get('input.screenshot.count', fallback)
         try:
             value = int(raw)
         except Exception:
@@ -125,80 +60,43 @@ class Settings:
             value = 1
         return value
 
-    def set_input_screenshot_count(self, value: int, mode: Optional[IterationMode] = None) -> None:
-        """Set the preferred number of input screenshots for the given mode."""
-        if mode is None:
-            mode = self.current_mode
+    def set_input_screenshot_count(self, value: int) -> None:
         try:
             count = int(value)
         except Exception:
             count = 1
         if count < 1:
             count = 1
-        self._set_mode_value('input.screenshot.count', mode, str(count))
+        prefs.set('input.screenshot.count', str(count))
 
-    def get_feedback_preset_id(self, mode: Optional[IterationMode] = None) -> str:
-        if mode is None:
-            mode = self.current_mode
+    def get_feedback_preset_id(self) -> str:
         fallback = feedback_presets.get_initial_preset_id()
-        raw = self._get_mode_value(
-            'feedback.preset.id',
-            mode,
-            prefs.get('feedback.preset.id', fallback),
-        )
-        return raw.strip() or fallback
+        raw = prefs.get('feedback.preset.id', fallback)
+        return (raw or fallback or '').strip() or fallback
 
-    def set_feedback_preset_id(self, preset_id: str | None, mode: Optional[IterationMode] = None) -> None:
-        if mode is None:
-            mode = self.current_mode
-        value = (preset_id or '').strip()
-        self._set_mode_value('feedback.preset.id', mode, value)
+    def set_feedback_preset_id(self, preset_id: str | None) -> None:
+        prefs.set('feedback.preset.id', (preset_id or '').strip())
 
-    # TransitionSettings compatibility
     def load_settings(self, overall_goal: str = '', user_feedback: str = '') -> TransitionSettings:
-        """Load complete settings for current mode."""
-        return self.load_settings_for_mode(self.current_mode, overall_goal=overall_goal, user_feedback=user_feedback)
-
-    def load_settings_for_mode(
-        self,
-        mode: IterationMode,
-        *,
-        overall_goal: str = '',
-        user_feedback: str = '',
-    ) -> TransitionSettings:
-        """Load complete settings for the given mode."""
+        """Load complete settings."""
         return TransitionSettings(
-            code_model=self.get_code_model(mode),
-            vision_model=self.get_vision_model(mode),
+            code_model=self.get_code_model(),
+            vision_model=self.get_vision_model(),
             overall_goal=overall_goal,
             user_feedback=user_feedback,
-            code_template=self.get_code_template(mode),
-            code_system_prompt_template=self.get_code_system_prompt_template(mode),
-            code_non_cumulative_template=self.get_code_non_cumulative_template(mode),
-            vision_template=self.get_vision_template(mode),
-            input_screenshot_count=self.get_input_screenshot_count(mode),
-            feedback_preset_id=self.get_feedback_preset_id(mode),
-            mode=mode,
-            keep_history=self.keep_history,
+            code_template=self.get_code_template(),
+            code_system_prompt_template=self.get_code_system_prompt_template(),
+            vision_template=self.get_vision_template(),
+            input_screenshot_count=self.get_input_screenshot_count(),
+            feedback_preset_id=self.get_feedback_preset_id(),
         )
 
     def save_settings(self, settings: TransitionSettings) -> None:
-        """Save complete settings."""
-        self.current_mode = settings.mode
-        self.set_code_model(settings.code_model, settings.mode)
-        self.set_vision_model(settings.vision_model, settings.mode)
-        self.set_input_screenshot_count(settings.input_screenshot_count, settings.mode)
-        self.set_feedback_preset_id(settings.feedback_preset_id, settings.mode)
-        self.keep_history = settings.keep_history
-
-    def with_mode(self, settings: TransitionSettings, mode: IterationMode) -> TransitionSettings:
-        """Create settings with a different mode."""
-        replacement = self.load_settings_for_mode(
-            mode,
-            overall_goal=settings.overall_goal,
-            user_feedback=settings.user_feedback,
-        )
-        return replace(replacement, mode=mode)
+        """Persist settings."""
+        self.set_code_model(settings.code_model)
+        self.set_vision_model(settings.vision_model)
+        self.set_input_screenshot_count(settings.input_screenshot_count)
+        self.set_feedback_preset_id(settings.feedback_preset_id)
 
 
 # Global settings instance
@@ -219,43 +117,13 @@ def reset_settings() -> None:
     _settings_instance = None
 
 
-# Legacy compatibility functions (delegate to unified settings)
-def get_mode(default: IterationMode | None = None) -> IterationMode:
-    """Legacy compatibility: get current mode."""
-    settings = get_settings()
-    return settings.current_mode
-
-
-def set_mode(mode: IterationMode) -> None:
-    """Legacy compatibility: set current mode."""
-    settings = get_settings()
-    settings.current_mode = mode
-
-
 def load_settings(overall_goal: str = '', user_feedback: str = '') -> TransitionSettings:
     """Legacy compatibility: load settings."""
     settings = get_settings()
     return settings.load_settings(overall_goal, user_feedback)
 
 
-def load_settings_for_mode(
-    mode: IterationMode,
-    *,
-    overall_goal: str = '',
-    user_feedback: str = '',
-) -> TransitionSettings:
-    """Legacy compatibility: load settings for mode."""
-    settings = get_settings()
-    return settings.load_settings_for_mode(mode, overall_goal=overall_goal, user_feedback=user_feedback)
-
-
 def save_settings(settings: TransitionSettings) -> None:
     """Legacy compatibility: save settings."""
     unified_settings = get_settings()
     unified_settings.save_settings(settings)
-
-
-def with_mode(settings: TransitionSettings, mode: IterationMode) -> TransitionSettings:
-    """Legacy compatibility: create settings with different mode."""
-    unified_settings = get_settings()
-    return unified_settings.with_mode(settings, mode)

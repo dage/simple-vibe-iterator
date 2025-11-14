@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any, Dict, Iterable, List
 
-from .interfaces import IterationAsset, IterationMode, TransitionSettings
+from .interfaces import IterationAsset, TransitionSettings
 
 try:
     from . import or_client as orc
@@ -38,7 +38,6 @@ def _build_template_context(
     # Templates themselves should not appear in the context to avoid recursive formatting issues.
     raw.pop("code_template", None)
     raw.pop("code_system_prompt_template", None)
-    raw.pop("code_non_cumulative_template", None)
     raw.pop("vision_template", None)
     ctx = raw
     ctx.update(
@@ -63,11 +62,11 @@ def _format_template(template: str, ctx: Dict[str, Any]) -> str:
 
 
 def _build_user_message(
-    mode: IterationMode,
     prompt_text: str,
     attachments: List[IterationAsset],
+    include_images: bool,
 ) -> Dict[str, Any]:
-    if mode == IterationMode.DIRECT_TO_CODER:
+    if include_images:
         parts: List[Dict[str, Any]] = []
         if prompt_text.strip():
             parts.append({"type": "text", "text": prompt_text})
@@ -79,10 +78,8 @@ def _build_user_message(
             except Exception:
                 continue
             parts.append({"type": "image_url", "image_url": {"url": data_url}})
-        if not parts:
-            parts = [{"type": "text", "text": prompt_text}]
-        return {"role": "user", "content": parts}
-
+        if parts:
+            return {"role": "user", "content": parts}
     return {"role": "user", "content": prompt_text}
 
 
@@ -113,8 +110,9 @@ def build_code_payload(
     attachments: Iterable[IterationAsset],
     message_history: List[Dict[str, Any]] | None = None,
     auto_feedback: str = "",
+    allow_attachments: bool = False,
 ) -> PromptPayload:
-    attachments = list(attachments)
+    attachments = list(attachments if allow_attachments else [])
     ctx = _build_template_context(
         html_input=html_input,
         settings=settings,
@@ -126,20 +124,14 @@ def build_code_payload(
     base_iteration_prompt = _format_template(settings.code_template, ctx)
     system_template = getattr(settings, "code_system_prompt_template", "") or settings.code_template
     system_prompt = _format_template(system_template, ctx)
-    non_cumulative_template = getattr(settings, "code_non_cumulative_template", "") or settings.code_template
-    non_cumulative_prompt = _format_template(non_cumulative_template, ctx)
 
-    if settings.keep_history:
-        messages = list(message_history or [])
-        if not messages or str(messages[0].get("role")) != "system":
-            if system_prompt.strip():
-                messages.insert(0, {"role": "system", "content": system_prompt})
-        user_message = _build_user_message(settings.mode, base_iteration_prompt, attachments)
-        messages.append(user_message)
-        return PromptPayload(messages)
-
-    user_message = _build_user_message(settings.mode, non_cumulative_prompt, attachments)
-    return PromptPayload([user_message])
+    messages = list(message_history or [])
+    if not messages or str(messages[0].get("role")) != "system":
+        if system_prompt.strip():
+            messages.insert(0, {"role": "system", "content": system_prompt})
+    user_message = _build_user_message(base_iteration_prompt, attachments, bool(attachments))
+    messages.append(user_message)
+    return PromptPayload(messages)
 
 
 def _strip_vision_mentions(prompt: str) -> str:

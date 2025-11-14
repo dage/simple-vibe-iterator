@@ -5,7 +5,7 @@ import asyncio
 import difflib
 from dataclasses import dataclass, field
 import json
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .interfaces import (
     AICodeService,
@@ -13,7 +13,6 @@ from .interfaces import (
     IterationAsset,
     IterationEventListener,
     IterationNode,
-    IterationMode,
     TransitionArtifacts,
     TransitionSettings,
     VisionService,
@@ -84,6 +83,8 @@ async def δ(
 
     preset_id = (getattr(settings, "feedback_preset_id", "") or "").strip()
     preset = feedback_presets.get_feedback_preset(preset_id) if preset_id else None
+    model_image_support = await _detect_code_model_image_support(models)
+    image_enabled_models = [slug for slug, supported in model_image_support.items() if supported]
 
     if preset and (html_input or "").strip():
         screenshots, console_logs, labels = await browser_service.run_feedback_preset(
@@ -102,7 +103,11 @@ async def δ(
         except Exception:
             requested_shots = 1
         requested_shots = max(1, requested_shots)
-        effective_shots, limit_note = _resolve_input_screenshot_plan(settings, requested_shots)
+        effective_shots, limit_note = _resolve_input_screenshot_plan(
+            settings,
+            requested_shots,
+            code_models_with_images=image_enabled_models,
+        )
 
         if (html_input or "").strip() and effective_shots > 0:
             screenshots, console_logs = await browser_service.render_and_capture(
@@ -134,6 +139,7 @@ async def δ(
                 auto_feedback=auto_feedback,
                 attachments=interpretation.attachments,
                 message_history=message_history,
+                allow_attachments=model_image_support.get(model, False),
             )
             html_output, reasoning, meta = await ai_service.generate_html(payload, model, worker=model)
             out_screenshots, out_console_logs = await browser_service.render_and_capture(html_output, worker=model)
@@ -200,20 +206,16 @@ async def δ(
     return results
 
 
-def _resolve_input_screenshot_plan(settings: TransitionSettings, requested: int) -> tuple[int, str | None]:
+def _resolve_input_screenshot_plan(
+    settings: TransitionSettings,
+    requested: int,
+    *,
+    code_models_with_images: Sequence[str],
+) -> tuple[int, str | None]:
     effective = max(1, requested)
     notes: List[str] = []
 
-    try:
-        mode = settings.mode if isinstance(settings.mode, IterationMode) else IterationMode(str(settings.mode))
-    except Exception:
-        mode = IterationMode.VISION_SUMMARY
-
-    relevant_models: List[str] = []
-    if mode == IterationMode.DIRECT_TO_CODER:
-        code_models = [slug.strip() for slug in (settings.code_model or "").split(',') if slug.strip()]
-        relevant_models.extend(code_models)
-
+    relevant_models: List[str] = [slug.strip() for slug in code_models_with_images if slug.strip()]
     if settings.vision_model:
         relevant_models.append(settings.vision_model.strip())
 
@@ -277,8 +279,8 @@ async def _interpret_input(
             )
         )
 
-    # Run vision analysis for all modes when a screenshot is available so that
-    # direct-to-coder can also leverage a textual summary alongside raw pixels.
+    # Run vision analysis for every iteration so code models get textual feedback
+    # alongside any shared screenshots.
 
     auto_feedback = _format_auto_feedback(context)
 
@@ -367,27 +369,20 @@ def _format_auto_feedback(context: TransitionContext) -> str:
     return "Auto feedback → " + ", ".join(parts)
 
 
-async def _ensure_models_support_mode(models: List[str], mode: IterationMode) -> None:
-    if mode != IterationMode.DIRECT_TO_CODER:
-        return
-
+async def _detect_code_model_image_support(models: Sequence[str]) -> Dict[str, bool]:
+    normalized = [slug.strip() for slug in models if slug.strip()]
+    if not normalized:
+        return {}
     try:
         available = await orc.list_models(force_refresh=False, limit=2000)
-    except Exception as exc:  # pragma: no cover - surfaces to UI
-        raise RuntimeError(f"Failed to validate models for direct screenshot mode: {exc}")
+    except Exception:
+        return {slug: False for slug in normalized}
 
-    missing: List[str] = []
-    lookup = {m.id: m for m in available}
-    for slug in models:
-        info = lookup.get(slug)
-        if info is None or not getattr(info, "has_image_input", False):
-            missing.append(slug)
-
-    if missing:
-        raise ValueError(
-            "Direct screenshot mode requires code models with image input support: "
-            + ", ".join(missing)
-        )
+    lookup = {m.id: bool(getattr(m, "has_image_input", False)) for m in available}
+    support: Dict[str, bool] = {}
+    for slug in normalized:
+        support[slug] = lookup.get(slug, False)
+    return support
 
 
 class IterationController:
@@ -481,11 +476,6 @@ class IterationController:
         if not models:
             raise ValueError("No code model specified")
 
-        if not isinstance(settings.mode, IterationMode):
-            settings.mode = IterationMode(str(settings.mode))
-
-        await _ensure_models_support_mode(models, settings.mode)
-
         base_model = models[0]
         if from_node_id is None:
             parent_id = None
@@ -508,14 +498,8 @@ class IterationController:
         if parent_id is not None:
             self._delete_descendants(parent_id)
 
-        # Import settings here to avoid circular imports
-        from .settings import get_settings
-        settings_manager = get_settings()
-
-        # Collect message history if keep_history is enabled (single source of truth)
-        message_history = None
-        if settings_manager.keep_history and parent_id is not None:
-            message_history = self._collect_message_history(parent_id, base_model)
+        # Collect message history (single source of truth)
+        message_history = self._collect_message_history(parent_id, base_model) if parent_id is not None else None
 
         # Run transition
         results = await δ(

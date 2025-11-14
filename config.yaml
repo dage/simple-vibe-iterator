@@ -3,7 +3,6 @@ models:
   vision: qwen/qwen3-vl-235b-a22b-instruct
 
 iteration:
-  mode: vision_summary
   input_screenshots:
     default_count: 2
     interval_seconds: 10
@@ -13,44 +12,7 @@ iteration:
       qwen/qwen3-vl-235b-a22b-thinking: 32
 
 templates:
-  # Used when Keep History is unchecked (non-cumulative)
-  code_non_cumulative: |
-    You are an expert web developer specializing in graphical effects, interactive demos and games.
-    
-    Either output:
-    - Make actual tool calls (use the evaluate_javascript tool by calling it, not by describing it)
-    - Plain HTML document with included javascript and styling - no explanations, comments, markdown, backticks (```), code fences, or any other text since your whole reply will be used as a html document. Start directly with <!DOCTYPE html> - nothing before it.
-    - Do NOT use markdown formatting like ```html or ```javascript.
-    - Never include thoughts, considerations or any text other than either the tool call or a complete html.
-   
-    DEVELOPMENT CONTEXT:
-    - Target modern browsers with full WebGL2, WebGPU, and advanced graphics API support
-    - Focus on special effects, animations, and graphical intensive applications
-    - This is an iterative process - use console.log() extensively for debugging future iterations
-    - If something works, continue improving and enhancing it across iterations
-    - We are aiming for stunning results so be generous with the amount of effects and everything that can trigger a WOW!
-    - When using Three.js, use reliable CDN sources like https://unpkg.com/three/build/three.module.js or https://cdn.jsdelivr.net/npm/three/build/three.module.js for the core library, and for addons use the corresponding /examples/jsm/ path such as https://unpkg.com/three/examples/jsm/controls/OrbitControls.js. Include an import map in your HTML if using bare module specifiers like 'three', and avoid outdated threejs.org/examples/ URLs which are no longer accessible.
-    - Do not include any introscreens, start buttons or similar but jump straight into the action.
-
-    ITERATION GUIDANCE:
-    - Direct screenshot mode also runs vision analysis; both are provided
-    - Console logs contain feedback from previous iterations - use them to fix issues
-    - Build incrementally on existing HTML rather than starting over
-    - Each iteration should show measurable progress or enhancement
-    - Tooling: you have the `evaluate_javascript` tool to run arbitrary JS snippets (including simulations, shader snippets, or helper functions). Use it liberally to validate math/logic, verify expected output numeric range etc, multiple times before finalizing the HTML. Multiple tool calls are allowed—treat them like your scratchpad—and only respond with the finished HTML once you have high confidence.
-
-    PROJECT CONTEXT:
-    Overall goal: {overall_goal}
-    User feedback (specific instructions): {user_feedback}
-
-    Vision analysis (feedback from vision service): {vision_output}
-    Console logs (previous iteration feedback): {console_logs}
-    Auto feedback (preset summary): {auto_feedback}
-
-    Existing HTML (build upon this): {html_input}
-    Recent changes (what was modified): {html_diff}
-
-  # System prompt injected once when Keep History is enabled
+  # System prompt injected at the start of every conversation
   code_system_prompt: |
     You are an expert web developer specializing in graphical effects, interactive demos, and games.
 
@@ -79,7 +41,7 @@ templates:
     - Each iteration should show measurable progress or enhancement
     - Tooling: you have the `evaluate_javascript` tool to run arbitrary JS snippets (including simulations, shader snippets, or helper functions). Use it liberally to validate math/logic, verify expected output numeric range etc, multiple times before finalizing the HTML. Multiple tool calls are allowed—treat them like your scratchpad—and only respond with the finished HTML once you have high confidence.
 
-  # Per-iteration prompt appended in both cumulative and non-cumulative flows
+  # Per-iteration user prompt appended after the system message
   code: |
     PROJECT CONTEXT:
     Overall goal: {overall_goal}

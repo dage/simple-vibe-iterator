@@ -12,7 +12,7 @@ from diff_match_patch import diff_match_patch
 import html as _html
 
 from .controller import IterationController
-from .interfaces import IterationEventListener, IterationNode, IterationMode, TransitionSettings
+from .interfaces import IterationEventListener, IterationNode, TransitionSettings
 from . import op_status
 from . import prefs
 from . import task_registry
@@ -83,7 +83,7 @@ class NiceGUIView(IterationEventListener):
             with ui.column().classes('w-full gap-4 p-4'):
                 inputs = self._render_settings_editor(
                     init_settings,
-                    allow_mode_switch=True,
+                    persistent_selectors=True,
                     show_user_feedback=False,
                 )
 
@@ -95,21 +95,12 @@ class NiceGUIView(IterationEventListener):
                     if not self._begin_operation('Start'):
                         return
                     try:
-                        # Update app-wide keep_history setting from UI if changed
                         from .settings import get_settings
                         settings_manager = get_settings()
 
-                        if 'keep_history' in inputs and inputs['keep_history'] is not None:
-                            try:
-                                new_keep_history = bool(inputs['keep_history'].value)
-                                settings_manager.keep_history = new_keep_history
-                            except Exception:
-                                pass
-
-                        mode = self._extract_mode(inputs['mode'])
                         feedback_preset_id = self._extract_preset_id(inputs['feedback_preset'])
-                        code_template = settings_manager.get_code_template(mode)
-                        vision_template = settings_manager.get_vision_template(mode)
+                        code_template = settings_manager.get_code_template()
+                        vision_template = settings_manager.get_vision_template()
 
                         settings = TransitionSettings(
                             code_model=inputs['code_model'].value or '',
@@ -117,27 +108,12 @@ class NiceGUIView(IterationEventListener):
                             overall_goal=og,
                             user_feedback=inputs['user_feedback'].value or '',
                             code_template=code_template,
-                            code_system_prompt_template=settings_manager.get_code_system_prompt_template(mode),
-                            code_non_cumulative_template=settings_manager.get_code_non_cumulative_template(mode),
+                            code_system_prompt_template=settings_manager.get_code_system_prompt_template(),
                             vision_template=vision_template,
-                            input_screenshot_count=settings_manager.get_input_screenshot_count(mode),
+                            input_screenshot_count=settings_manager.get_input_screenshot_count(),
                             feedback_preset_id=feedback_preset_id,
-                            mode=mode,
-                            keep_history=settings_manager.keep_history
                         )
                         settings_manager.save_settings(settings)
-                        if self.controller.has_nodes():
-                            root = self.controller.get_root()
-                            if root and root.settings.mode != settings.mode:
-                                self.controller.reset()
-                                if self.chat_container is not None:
-                                    self.chat_container.clear()
-                                self.node_panels.clear()
-                                if self.start_panel is not None:
-                                    try:
-                                        self.start_panel.value = True
-                                    except Exception:
-                                        pass
                         await self.controller.apply_transition(None, settings)
                         self._set_overall_goal_heading(og)
                     except asyncio.CancelledError:
@@ -205,54 +181,11 @@ class NiceGUIView(IterationEventListener):
         self,
         initial: TransitionSettings,
         *,
-        allow_mode_switch: bool = False,
+        persistent_selectors: bool = False,
         show_user_feedback: bool = True,
         allow_overall_goal_edit: bool = True,
     ) -> Dict[str, ui.element]:
-        # Left-side settings editor used in both Start area and iteration cards
-
-        # Settings section (only visible for start node with allow_mode_switch=True)
-        keep_history_checkbox = None
-        mode_select = None
-        if allow_mode_switch:
-            ui.label('Settings').classes('text-sm font-semibold text-gray-600 dark:text-gray-400 mt-2 mb-2')
-
-            # Keep History toggle
-            keep_history_checkbox = ui.checkbox(
-                'Keep history (cumulative message thread)',
-                value=initial.keep_history
-            ).classes('w-full')
-
-            # Iteration Mode select
-            mode_value = initial.mode.value if isinstance(initial.mode, IterationMode) else str(initial.mode)
-            if not mode_value:
-                mode_value = IterationMode.VISION_SUMMARY.value
-
-            mode_options = {
-                'Vision analysis (separate model)': IterationMode.VISION_SUMMARY.value,
-                'Direct screenshot to coder': IterationMode.DIRECT_TO_CODER.value,
-            }
-            label_by_value = {v: k for k, v in mode_options.items()}
-            value_by_label = {k: v for k, v in mode_options.items()}
-            initial_label = label_by_value.get(mode_value, 'Vision analysis (separate model)')
-
-            mode_select = ui.select(
-                options=list(mode_options.keys()),
-                value=initial_label,
-                label='iteration mode',
-            ).props('dense outlined').classes('w-full')
-            mode_select._mode_value_map = value_by_label  # type: ignore[attr-defined]
-        else:
-            # For iteration cards, just create a stub mode_select
-            mode_value = initial.mode.value if isinstance(initial.mode, IterationMode) else str(initial.mode)
-            mode_options = {
-                'Vision analysis (separate model)': IterationMode.VISION_SUMMARY.value,
-                'Direct screenshot to coder': IterationMode.DIRECT_TO_CODER.value,
-            }
-            label_by_value = {v: k for k, v in mode_options.items()}
-            value_by_label = {k: v for k, v in mode_options.items()}
-            initial_label = label_by_value.get(mode_value, 'Vision analysis (separate model)')
-            mode_select = SimpleNamespace(value=initial_label, _mode_value_map=value_by_label)
+        """Left-side settings editor used in both Start area and iteration cards."""
 
         settings_manager = get_settings()
 
@@ -262,7 +195,7 @@ class NiceGUIView(IterationEventListener):
         preset_id_to_label = {preset.id: preset.label for preset in preset_entries}
         first_preset_label = next(iter(preset_label_to_id.keys()), '')
         initial_preset_id = (
-            (getattr(initial, 'feedback_preset_id', None) or settings_manager.get_feedback_preset_id(initial.mode)).strip()
+            (getattr(initial, 'feedback_preset_id', None) or settings_manager.get_feedback_preset_id()).strip()
         )
         initial_preset_label = preset_id_to_label.get(initial_preset_id, first_preset_label)
         feedback_preset_select = ui.select(
@@ -285,7 +218,7 @@ class NiceGUIView(IterationEventListener):
                 elif action.kind == 'keypress':
                     fragments.append(f"key {action.key} ({action.duration_ms}ms)")
                 elif action.kind == 'screenshot':
-                    fragments.append(f"shot \"{action.label}\"")
+                    fragments.append(f'shot "{action.label}"')
             summary = ', '.join(fragments[:6])
             if len(fragments) > 6:
                 summary += f", +{len(fragments) - 6} more"
@@ -310,8 +243,13 @@ class NiceGUIView(IterationEventListener):
                 except Exception:
                     pass
 
-
         _update_preset_summary()
+
+        def _refresh_summary() -> None:
+            _update_preset_summary()
+
+        feedback_preset_select.on_value_change(lambda _: _refresh_summary())
+        feedback_preset_select.on('update:model-value', lambda _: _refresh_summary())
 
         if allow_overall_goal_edit:
             overall_goal = ui.textarea(label='Overall goal', value=initial.overall_goal).classes('w-full')
@@ -329,7 +267,7 @@ class NiceGUIView(IterationEventListener):
                 vision_only=False,
                 label='model',
                 on_change=lambda v: None,
-            ), persistent=allow_mode_switch)
+            ), persistent=persistent_selectors)
             code_model = code_selector.input
 
         with ui.column().classes('w-full gap-2 pt-2'):
@@ -340,147 +278,16 @@ class NiceGUIView(IterationEventListener):
                 label='model',
                 on_change=lambda v: None,
                 single_selection=True,
-            ), persistent=allow_mode_switch)
+            ), persistent=persistent_selectors)
             vision_model = vision_selector.input
 
-        def _apply_mode_state(label: str, *, reset_on_mode_change: bool = False) -> None:
-            mapped_value = value_by_label.get(label, IterationMode.VISION_SUMMARY.value)
-            require_image = mapped_value == IterationMode.DIRECT_TO_CODER.value
-            try:
-                code_selector.set_require_image_input(require_image)
-            except Exception:
-                pass
-            if require_image and reset_on_mode_change:
-                if allow_mode_switch:
-                    try:
-                        code_selector.set_value('')
-                    except Exception:
-                        pass
-
-        _apply_mode_state(initial_label)
-
-        def _persist_current() -> None:
-            try:
-                mode = self._extract_mode(mode_select)
-            except Exception:
-                mode = initial.mode if isinstance(initial.mode, IterationMode) else IterationMode.VISION_SUMMARY
-
-            keep_history_value = initial.keep_history
-            if keep_history_checkbox is not None:
-                try:
-                    keep_history_value = bool(keep_history_checkbox.value)
-                except Exception:
-                    keep_history_value = initial.keep_history
-
-            preset_id = self._extract_preset_id(feedback_preset_select)
-
-            current = TransitionSettings(
-                code_model=code_selector.get_value(),
-                vision_model=vision_selector.get_value(),
-                overall_goal=overall_goal.value or '',
-                user_feedback=user_feedback.value or '',
-                code_template=settings_manager.get_code_template(mode),
-                code_system_prompt_template=settings_manager.get_code_system_prompt_template(mode),
-                code_non_cumulative_template=settings_manager.get_code_non_cumulative_template(mode),
-                vision_template=settings_manager.get_vision_template(mode),
-                input_screenshot_count=settings_manager.get_input_screenshot_count(mode),
-                feedback_preset_id=preset_id,
-                mode=mode,
-                keep_history=keep_history_value,
-            )
-            settings_manager.save_settings(current)
-
-        if allow_mode_switch:
-            def _handle_mode_change(_=None) -> None:
-                try:
-                    current = str(getattr(mode_select, 'value', initial_label) or '')
-                except Exception:
-                    current = initial_label
-                _apply_mode_state(current, reset_on_mode_change=True)
-
-                try:
-                    new_mode = self._extract_mode(mode_select)
-                except Exception:
-                    new_mode = initial.mode if isinstance(initial.mode, IterationMode) else IterationMode.VISION_SUMMARY
-
-                settings_manager.current_mode = new_mode
-                stored = settings_manager.load_settings_for_mode(new_mode)
-
-                code_selector.set_value(stored.code_model)
-                try:
-                    code_model.set_value(stored.code_model)
-                except Exception:
-                    code_model.value = stored.code_model
-
-                vision_selector.set_value(stored.vision_model)
-                try:
-                    vision_model.set_value(stored.vision_model)
-                except Exception:
-                    vision_model.value = stored.vision_model
-                try:
-                    preset_label_value = preset_id_to_label.get(
-                        stored.feedback_preset_id or '',
-                        next(iter(preset_label_to_id.keys()), '')
-                    )
-                    if preset_label_value:
-                        feedback_preset_select.set_value(preset_label_value)
-                except Exception:
-                    pass
-                _update_preset_summary()
-                if keep_history_checkbox is not None:
-                    try:
-                        keep_history_checkbox.set_value(stored.keep_history)
-                    except Exception:
-                        keep_history_checkbox.value = stored.keep_history
-
-                _persist_current()
-
-            mode_select.on_value_change(lambda _: _handle_mode_change())
-            mode_select.on('update:model-value', lambda _: _handle_mode_change())
-
-            def _wrap_change(orig):
-                def handler(value: str) -> None:
-                    _persist_current()
-                    if callable(orig):
-                        try:
-                            orig(value)
-                        except Exception:
-                            pass
-                return handler
-
-            code_selector.on_change = _wrap_change(code_selector.on_change)
-            vision_selector.on_change = _wrap_change(vision_selector.on_change)
-
-            if keep_history_checkbox is not None:
-                keep_history_checkbox.on_value_change(lambda _: _persist_current())
-
-            def _handle_preset_change() -> None:
-                _update_preset_summary()
-                _persist_current()
-
-            feedback_preset_select.on_value_change(lambda _: _handle_preset_change())
-            feedback_preset_select.on('update:model-value', lambda _: _handle_preset_change())
-        else:
-            prefs.set('iteration.mode', self._extract_mode(mode_select).value)
-
-        if not allow_mode_switch:
-            def _refresh_summary_only() -> None:
-                _update_preset_summary()
-
-            feedback_preset_select.on_value_change(lambda _: _refresh_summary_only())
-            feedback_preset_select.on('update:model-value', lambda _: _refresh_summary_only())
-
-        result = {
+        return {
             'user_feedback': user_feedback,
             'overall_goal': overall_goal,
             'code_model': code_model,
             'vision_model': vision_model,
-            'mode': mode_select,
             'feedback_preset': feedback_preset_select,
         }
-        if keep_history_checkbox is not None:
-            result['keep_history'] = keep_history_checkbox
-        return result
 
     def _create_node_panel(self, index: int, node: IterationNode, *, expanded: bool) -> ui.element:
         with ui.expansion(f'Iteration {index}', value=expanded).classes(
@@ -726,22 +533,12 @@ class NiceGUIView(IterationEventListener):
                                             return
                                         try:
                                             selected_model = inputs['code_model'].value or slug
-                                            # Update app-wide keep_history setting from UI if changed
                                             settings_manager = get_settings()
 
-                                            if 'keep_history' in inputs and inputs['keep_history'] is not None:
-                                                try:
-                                                    new_keep_history = bool(inputs['keep_history'].value)
-                                                    settings_manager.keep_history = new_keep_history
-                                                except Exception:
-                                                    pass
-
-                                            mode = self._extract_mode(inputs['mode'])
-                                            iter_shots = settings_manager.get_input_screenshot_count(mode)
-
                                             feedback_preset_id = self._extract_preset_id(inputs['feedback_preset'])
-                                            code_template = settings_manager.get_code_template(mode)
-                                            vision_template = settings_manager.get_vision_template(mode)
+                                            code_template = settings_manager.get_code_template()
+                                            vision_template = settings_manager.get_vision_template()
+                                            iter_shots = settings_manager.get_input_screenshot_count()
 
                                             updated = TransitionSettings(
                                                 code_model=selected_model,
@@ -749,13 +546,10 @@ class NiceGUIView(IterationEventListener):
                                                 overall_goal=node.settings.overall_goal,
                                                 user_feedback=inputs['user_feedback'].value or '',
                                                 code_template=code_template,
-                                                code_system_prompt_template=settings_manager.get_code_system_prompt_template(mode),
-                                                code_non_cumulative_template=settings_manager.get_code_non_cumulative_template(mode),
+                                                code_system_prompt_template=settings_manager.get_code_system_prompt_template(),
                                                 vision_template=vision_template,
                                                 input_screenshot_count=iter_shots,
                                                 feedback_preset_id=feedback_preset_id,
-                                                mode=mode,
-                                                keep_history=settings_manager.keep_history
                                             )
                                             settings_manager.save_settings(updated)
                                             await self.controller.apply_transition(node.id, updated, slug)
@@ -854,18 +648,6 @@ class NiceGUIView(IterationEventListener):
 
 
     # --- Utilities ---
-    def _extract_mode(self, element: ui.element) -> IterationMode:
-        try:
-            raw = getattr(element, 'value', '')
-            value_map = getattr(element, '_mode_value_map', {}) or {}
-            mapped = value_map.get(raw, raw)
-        except Exception:
-            mapped = ''
-        try:
-            return IterationMode(str(mapped or IterationMode.VISION_SUMMARY.value))
-        except Exception:
-            return IterationMode.VISION_SUMMARY
-
     def _extract_preset_id(self, element: ui.element) -> str:
         try:
             raw = getattr(element, 'value', '')

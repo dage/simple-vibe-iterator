@@ -9,16 +9,10 @@ from typing import Dict
 
 import yaml
 
-try:  # pragma: no cover - supports both package and sys.path setups
-    from .interfaces import IterationMode
-except Exception:  # pragma: no cover
-    from interfaces import IterationMode  # type: ignore
-
-
 """
 App configuration loaded from YAML (single source of truth).
 Location: project_root/config.yaml (required)
-Required keys: models.code, models.vision, templates.code, templates.code_system_prompt, templates.code_non_cumulative, templates.vision
+Required keys: models.code, models.vision, templates.code, templates.code_system_prompt, templates.vision
 """
 
 
@@ -28,9 +22,7 @@ class AppConfig:
     vision_model: str
     code_template: str
     code_system_prompt_template: str
-    code_non_cumulative_template: str
     vision_template: str
-    iteration_mode: IterationMode
     input_screenshot_default: int = 1
     input_screenshot_interval: float = 1.0
     model_image_limits: Dict[str, int] = field(default_factory=dict)
@@ -74,8 +66,6 @@ def get_config() -> AppConfig:
         missing.append('templates.code')
     if not isinstance(templates, dict) or not templates.get('code_system_prompt'):
         missing.append('templates.code_system_prompt')
-    if not isinstance(templates, dict) or not templates.get('code_non_cumulative'):
-        missing.append('templates.code_non_cumulative')
     if not isinstance(templates, dict) or not templates.get('vision'):
         missing.append('templates.vision')
     if missing:
@@ -85,15 +75,9 @@ def get_config() -> AppConfig:
     vision_model = str(models.get('vision'))
     code_template = str(templates.get('code'))
     code_system_prompt_template = str(templates.get('code_system_prompt'))
-    code_non_cumulative_template = str(templates.get('code_non_cumulative'))
     vision_template = str(templates.get('vision'))
 
     iteration_cfg = data.get('iteration') if isinstance(data, dict) else {}
-    mode_value = (iteration_cfg or {}).get('mode', IterationMode.VISION_SUMMARY.value)
-    try:
-        iteration_mode = IterationMode(str(mode_value))
-    except Exception:
-        iteration_mode = IterationMode.VISION_SUMMARY
 
     screenshot_cfg = iteration_cfg.get('input_screenshots') if isinstance(iteration_cfg, dict) else {}
     if not isinstance(screenshot_cfg, dict):
@@ -140,9 +124,7 @@ def get_config() -> AppConfig:
         vision_model=vision_model,
         code_template=code_template,
         code_system_prompt_template=code_system_prompt_template,
-        code_non_cumulative_template=code_non_cumulative_template,
         vision_template=vision_template,
-        iteration_mode=iteration_mode,
         input_screenshot_default=default_shots,
         input_screenshot_interval=interval_seconds,
         model_image_limits=limits,

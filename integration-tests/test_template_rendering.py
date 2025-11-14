@@ -4,7 +4,8 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
-from typing import List, Sequence, Tuple
+from typing import Dict, List, Sequence, Tuple
+from unittest.mock import patch
 
 
 os.environ.setdefault("OPENROUTER_DISABLE_RETRY", "1")
@@ -77,10 +78,14 @@ class RecordingVisionService:
         return "vision: ok"
 
 
+async def _fake_capabilities(models: List[str]) -> Dict[str, bool]:
+    return {slug: True for slug in models}
+
+
 async def test_template_context_rendering() -> Tuple[bool, str]:
     from src.services import PlaywrightBrowserService
     from src.controller import IterationController
-    from src.interfaces import IterationMode, TransitionSettings
+    from src.interfaces import TransitionSettings
 
     def make_settings() -> TransitionSettings:
         return TransitionSettings(
@@ -115,7 +120,6 @@ async def test_template_context_rendering() -> Tuple[bool, str]:
                 "self_name=VISION-TPL\n"
                 "peer_name=CODE-TPL\n"
             ),
-            mode=IterationMode.VISION_SUMMARY,
         )
 
     async def run_case(script_lines: list[str]) -> tuple[str, str]:
@@ -125,8 +129,9 @@ async def test_template_context_rendering() -> Tuple[bool, str]:
         ctrl = IterationController(ai, browser, vision)
         settings = make_settings()
 
-        root_id = await ctrl.apply_transition(None, settings)
-        child_id = await ctrl.apply_transition(root_id, settings)
+        with patch("src.controller._detect_code_model_image_support", new=_fake_capabilities):
+            root_id = await ctrl.apply_transition(None, settings)
+            child_id = await ctrl.apply_transition(root_id, settings)
         _ = ctrl.get_node(child_id)
         return ai.last_prompt, vision.last_prompt
 
