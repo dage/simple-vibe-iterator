@@ -45,6 +45,7 @@
 - If tests require network or browsers, run only the smallest set needed until ready for a full run.
 
 ### NiceGUI & Quasar Patterns
+- NiceGUI UI components represent state synchronized between Python and the browser via WebSockets. To update component values programmatically and ensure the UI reflects changes without page refresh, always use provided async setter methods (e.g., await component.set_value(...)) inside async event handlers or tasks. Avoid direct attribute assignments followed by .update(), which often do not trigger UI refresh. For reactive two-way binding, use bind_value to link Python variables with component state and keep them in sync automatically. This pattern enables reliable, real-time UI updates following user interactions or internal logic changes.
 - Use native `ui.table` with a scoped body slot (`add_slot('body', scope='props')`) for custom cell content; avoid passing `props` to `ui.element(...)` directly.
 - Avoid closure capture bugs in per‑row actions: pass the dialog/table instance into callbacks explicitly.
 - Keep dialogs full‑width for complex forms and prefer outlined, dense inputs for readability.
