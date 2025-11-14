@@ -6,45 +6,11 @@ import asyncio
 import os
 import sys
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Tuple
 from PIL import Image, ImageDraw
 
 os.environ.setdefault("OPENROUTER_DISABLE_RETRY", "1")
-
-
-def get_project_root() -> Path:
-    return Path(__file__).resolve().parents[1]
-
-
-def ensure_cwd_project_root() -> Path:
-    root = get_project_root()
-    os.chdir(root)
-    return root
-
-
-def parse_dotenv(env_path: Path) -> Dict[str, str]:
-    env: Dict[str, str] = {}
-    if not env_path.exists():
-        return env
-    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        env[key.strip()] = value.strip()
-    return env
-
-
-def get_env_value(name: str, dotenv: Dict[str, str]) -> Optional[str]:
-    return os.getenv(name) or dotenv.get(name)
-
-
-def inject_src_into_syspath(project_root: Path) -> None:
-    src_path = project_root / "src"
-    if str(src_path) not in sys.path:
-        sys.path.insert(0, str(src_path))
+from support import bootstrap_test_env, env_ready, get_env_value
 
 
 # (No external image assets needed; we programmatically generate test images)
@@ -120,27 +86,16 @@ async def test_vision_model() -> Tuple[bool, str]:
 
 
 async def main() -> int:
-    project_root = ensure_cwd_project_root()
-    inject_src_into_syspath(project_root)
-
-    dotenv_path = project_root / ".env"
-    dotenv = parse_dotenv(dotenv_path)
+    _, dotenv = bootstrap_test_env(add_src_to_syspath=True)
 
     # Gather required environment values
     api_key = get_env_value("OPENROUTER_API_KEY", dotenv)
     base_url = get_env_value("OPENROUTER_BASE_URL", dotenv)
 
-    # Check presence of required variables first (YAML provides models)
-    presence_ok = bool(api_key and base_url)
-    missing = [
-        name
-        for name, present in [
-            ("OPENROUTER_API_KEY", api_key),
-            ("OPENROUTER_BASE_URL", base_url),
-        ]
-        if not present
-    ]
-    presence_details = "all present" if presence_ok else f"missing: {', '.join(missing)}"
+    presence_ok, presence_details = env_ready(
+        dotenv,
+        required=("OPENROUTER_API_KEY", "OPENROUTER_BASE_URL"),
+    )
     print(f"[ {'OK' if presence_ok else 'FAIL'} ] API env set: {presence_details}")
     if not presence_ok:
         return 1
@@ -163,4 +118,3 @@ async def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(asyncio.run(main()))
-

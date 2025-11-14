@@ -6,54 +6,10 @@ import asyncio
 import os
 import sys
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Tuple
 
 os.environ.setdefault("OPENROUTER_DISABLE_RETRY", "1")
-
-
-def get_project_root() -> Path:
-    return Path(__file__).resolve().parents[1]
-
-
-def ensure_cwd_project_root() -> Path:
-    root = get_project_root()
-    os.chdir(root)
-    return root
-
-
-def inject_project_into_syspath(project_root: Path) -> None:
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
-
-
-def parse_dotenv(env_path: Path) -> Dict[str, str]:
-    env: Dict[str, str] = {}
-    if not env_path.exists():
-        return env
-    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        env[key.strip()] = value.strip()
-    return env
-
-
-def get_env_value(name: str, dotenv: Dict[str, str]) -> Optional[str]:
-    return os.getenv(name) or dotenv.get(name)
-
-
-def env_ready(dotenv: Dict[str, str]) -> Tuple[bool, str]:
-    need = [
-        "OPENROUTER_BASE_URL",
-        "OPENROUTER_API_KEY",
-    ]
-    missing = [k for k in need if not get_env_value(k, dotenv)]
-    if missing:
-        return False, f"missing: {', '.join(missing)}"
-    return True, "all present"
+from support import bootstrap_test_env, env_ready
 
 
 async def run_iterate_number() -> Tuple[bool, str]:
@@ -164,12 +120,8 @@ async def run_iterate_number() -> Tuple[bool, str]:
 
 
 async def main() -> int:
-    project_root = ensure_cwd_project_root()
-    inject_project_into_syspath(project_root)
-
-    dotenv_path = project_root / ".env"
-    dotenv = parse_dotenv(dotenv_path)
-    ok_env, info_env = env_ready(dotenv)
+    _, dotenv = bootstrap_test_env()
+    ok_env, info_env = env_ready(dotenv, required=("OPENROUTER_BASE_URL", "OPENROUTER_API_KEY"))
     if not ok_env:
         print(f"[ SKIP ] Iterate Number: {info_env}")
         return 0

@@ -328,6 +328,53 @@ async def test_shared_input_capture() -> Tuple[bool, str]:
     return True, "shared input capture ok"
 
 
+async def test_render_failure_cleanup() -> Tuple[bool, str]:
+    from src.services import PlaywrightBrowserService
+
+    with patch("src.controller._detect_code_model_image_support", new=_fake_capabilities):
+        ctrl = await build_controller()
+        root_id = await ctrl.apply_transition(None, default_settings("Failure path"))
+        child_id = await ctrl.apply_transition(root_id, default_settings("Failure path"))
+
+        if ctrl.get_node(child_id) is None:
+            return False, "initial child missing"
+
+        original_render = PlaywrightBrowserService.render_and_capture
+
+        async def fail_once(self, html_code: str, worker: str = "main", *, capture_count: int = 1, interval_seconds: float = 1.0):
+            if worker != "input" and fail_once.calls == 0:
+                fail_once.calls += 1
+                raise RuntimeError("simulated capture failure")
+            return await original_render(self, html_code, worker=worker, capture_count=capture_count, interval_seconds=interval_seconds)
+
+        fail_once.calls = 0  # type: ignore[attr-defined]
+
+        with patch.object(PlaywrightBrowserService, "render_and_capture", new=fail_once):
+            try:
+                await ctrl.apply_transition(root_id, default_settings("Failure path"))
+            except RuntimeError as exc:
+                text = str(exc)
+                if "All models failed" not in text:
+                    return False, f"unexpected exception text: {text}"
+            else:
+                return False, "render failure did not bubble up"
+
+        if fail_once.calls != 1:  # type: ignore[attr-defined]
+            return False, f"expected single failure, got {fail_once.calls}"
+
+        if ctrl.get_node(child_id) is not None:
+            return False, "failed transition left stale child node in tree"
+        if ctrl.get_children(root_id):
+            return False, "descendants not cleaned up after failure"
+
+        # Retry succeeds once render_and_capture is restored
+        new_child_id = await ctrl.apply_transition(root_id, default_settings("Failure path"))
+        if ctrl.get_node(new_child_id) is None:
+            return False, "retry after failure did not create new child"
+
+    return True, "render failure bubbles up and cleanup allows retry"
+
+
 async def main() -> int:
     project_root = ensure_cwd_project_root()
     inject_src_into_syspath(project_root)
@@ -339,6 +386,7 @@ async def main() -> int:
         ("Prompt Placeholders", test_prompt_placeholders),
         ("Multi Model Outputs", test_multi_model_outputs),
         ("Shared Input Capture", test_shared_input_capture),
+        ("Render Failure Cleanup", test_render_failure_cleanup),
     ]
 
     ok_all = True
