@@ -535,8 +535,27 @@ class NiceGUIView(IterationEventListener):
                                                 value = args.get('value')
                                             elif args:
                                                 value = args
-                                        if value:
-                                            _render_for(str(value))
+                                        if value is not None:
+                                            # Handle case where NiceGUI emits index instead of value
+                                            try:
+                                                # Check if value is an integer (index) or string representation of integer
+                                                if isinstance(value, int):
+                                                    idx = value
+                                                elif isinstance(value, str) and value.isdigit():
+                                                    idx = int(value)
+                                                else:
+                                                    idx = None
+
+                                                if idx is not None and 0 <= idx < len(message_slugs):
+                                                    # Use index to get the actual slug
+                                                    slug = message_slugs[idx]
+                                                else:
+                                                    # Use value directly as slug
+                                                    slug = str(value)
+                                            except (ValueError, IndexError):
+                                                slug = str(value)
+
+                                            _render_for(slug)
 
                                     selector.on('update:model-value', _on_change)
 
