@@ -376,7 +376,7 @@ class NiceGUIView(IterationEventListener):
                             asset_label_map = {}
 
                         if node.source_model_slug:
-                            ui.label(f'Input from {node.source_model_slug}').classes('text-xs uppercase tracking-wide text-gray-500')
+                            ui.label(f'{node.source_model_slug}').classes('text-xs uppercase tracking-wide text-gray-500')
 
                         ui.label('AUTO FEEDBACK').classes('text-sm font-semibold')
                         input_entries: List[tuple[int, str, str, str]] = []
