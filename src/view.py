@@ -79,10 +79,37 @@ class NiceGUIView(IterationEventListener):
             with ui.column().classes('w-full gap-3'):
                 ui.label('What should we build?').classes('text-xl font-semibold')
                 ui.label('Describe the overall vibe or experience you want.').classes('text-sm text-slate-200')
+
                 self.initial_goal_input = ui.textarea(
                     value=self._current_overall_goal,
                 ).props('filled type=textarea autogrow input-style="min-height: 200px; max-height: 400px;"') \
                  .classes('w-full text-base placeholder-transparent').style('white-space: pre-wrap;')
+
+                # Add example prompt selector
+                import os
+                from pathlib import Path
+                prompt_options = []
+                prompt_dir = Path('prompt-examples')
+                if prompt_dir.exists():
+                    for file_path in sorted(prompt_dir.glob('*.txt')):
+                        name = file_path.stem
+                        prompt_options.append(name)
+
+                def _on_prompt_select(event):
+                    if event.value:
+                        prompt_file = prompt_dir / f"{event.value}.txt"
+                        try:
+                            content = prompt_file.read_text(encoding='utf-8').strip()
+                            asyncio.create_task(_set_goal_text(content))
+                        except Exception as e:
+                            print(f"Error reading prompt file {prompt_file}: {e}")
+
+                if prompt_options:
+                    ui.select(
+                        options=prompt_options,
+                        label='Presets',
+                        on_change=_on_prompt_select
+                    ).props('outlined dense clearable').classes('w-full')
 
                 async def _set_goal_text(value: str) -> None:
                     target = self.initial_goal_input
