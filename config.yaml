@@ -2,6 +2,10 @@ models:
   code: x-ai/grok-code-fast-1
   vision: qwen/qwen3-vl-235b-a22b-thinking
 
+# Fraction of each screenshot resolution sent to the LLM contexts (vision + code).
+# Use values between 0 and 1 to downscale while keeping the saved artifacts untouched.
+screenshot_scale: 0.5
+
 iteration:
   input_screenshots:
     default_count: 2

@@ -4,6 +4,7 @@ from dataclasses import asdict
 from typing import Any, Dict, Iterable, List
 
 from .interfaces import IterationAsset, TransitionSettings
+from .image_downscale import load_scaled_image_bytes
 
 try:
     from . import or_client as orc
@@ -92,8 +93,10 @@ def _build_user_message(
         for asset in attachments:
             if asset.kind != "image" or not asset.path:
                 continue
+            scaled_bytes = load_scaled_image_bytes(asset.path)
+            data_source = scaled_bytes if scaled_bytes is not None else asset.path
             try:
-                data_url = orc.encode_image_to_data_url(asset.path)
+                data_url = orc.encode_image_to_data_url(data_source)
             except Exception:
                 continue
             parts.append({"type": "image_url", "image_url": {"url": data_url}})

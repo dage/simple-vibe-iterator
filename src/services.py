@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Dict, List, Sequence
 
 from .interfaces import AICodeService, BrowserService, VisionService
+from .image_downscale import load_scaled_image_bytes
 from . import op_status
 from .playwright_browser import capture_html, parse_viewport, run_feedback_sequence
 from .prompt_builder import PromptPayload
@@ -232,8 +233,10 @@ class OpenRouterVisionService(VisionService):
         for path in screenshot_paths:
             if not (path or "").strip():
                 continue
+            scaled_bytes = load_scaled_image_bytes(path)
+            data_source = scaled_bytes if scaled_bytes is not None else path
             try:
-                data_url = or_client.encode_image_to_data_url(path)
+                data_url = or_client.encode_image_to_data_url(data_source)
             except Exception:
                 continue
             parts.append({"type": "image_url", "image_url": {"url": data_url}})

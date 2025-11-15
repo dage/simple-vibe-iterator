@@ -26,6 +26,7 @@ class AppConfig:
     input_screenshot_default: int = 1
     input_screenshot_interval: float = 1.0
     model_image_limits: Dict[str, int] = field(default_factory=dict)
+    screenshot_scale: float = 1.0
 
 
 def _project_root() -> Path:
@@ -119,6 +120,8 @@ def get_config() -> AppConfig:
             else:
                 _register_limit(key, entry)
 
+    raw_scale = data.get('screenshot_scale', 1.0)
+    screenshot_scale = float(raw_scale)
     return AppConfig(
         code_model=code_model,
         vision_model=vision_model,
@@ -128,4 +131,5 @@ def get_config() -> AppConfig:
         input_screenshot_default=default_shots,
         input_screenshot_interval=interval_seconds,
         model_image_limits=limits,
+        screenshot_scale=screenshot_scale,
     )
