@@ -63,6 +63,11 @@ class IterationNode:
     outputs: Dict[str, ModelOutput]
     settings: TransitionSettings
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    input_artifacts: TransitionArtifacts | None = None
+    source_model_slug: Optional[str] = None
+    context: Any | None = None
+    interpretation: Any | None = None
+    auto_feedback: str | None = None
 
 
 # ---- Service protocols (unchanged public surface) ----

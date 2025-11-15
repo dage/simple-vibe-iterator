@@ -69,24 +69,28 @@ class TransitionContext:
 class InterpretationResult:
     summary: str = ""
     attachments: List[IterationAsset] = field(default_factory=list)
-async def δ(
+async def _capture_input_context(
     html_input: str,
     settings: TransitionSettings,
     models: List[str],
-    ai_service: AICodeService,
     browser_service: BrowserService,
     vision_service: VisionService,
+    *,
     html_diff: str = "",
-    message_history: List[Dict[str, Any]] | None = None,
-) -> Dict[str, Tuple[str, str, dict | None, TransitionArtifacts]]:
+) -> tuple[TransitionContext, InterpretationResult, str, Dict[str, bool]]:
     context = TransitionContext(html_input=html_input or "", html_diff=html_diff or "")
+
+    normalized_models = [slug for slug in models if slug]
+    model_image_support = await _detect_code_model_image_support(normalized_models) if normalized_models else {}
+    if not (html_input or "").strip():
+        interpretation = InterpretationResult()
+        return context, interpretation, "", model_image_support
 
     preset_id = (getattr(settings, "feedback_preset_id", "") or "").strip()
     preset = feedback_presets.get_feedback_preset(preset_id) if preset_id else None
-    model_image_support = await _detect_code_model_image_support(models)
     image_enabled_models = [slug for slug, supported in model_image_support.items() if supported]
 
-    if preset and (html_input or "").strip():
+    if preset:
         screenshots, console_logs, labels = await browser_service.run_feedback_preset(
             html_input,
             preset,
@@ -109,7 +113,7 @@ async def δ(
             code_models_with_images=image_enabled_models,
         )
 
-        if (html_input or "").strip() and effective_shots > 0:
+        if effective_shots > 0:
             screenshots, console_logs = await browser_service.render_and_capture(
                 html_input,
                 worker="input",
@@ -127,6 +131,74 @@ async def δ(
 
     interpretation = await _interpret_input(settings, context, vision_service)
     auto_feedback = _format_auto_feedback(context)
+    return context, interpretation, auto_feedback, model_image_support
+
+
+def _build_input_artifacts(
+    context: TransitionContext,
+    interpretation: InterpretationResult,
+) -> TransitionArtifacts:
+    assets: List[IterationAsset] = [
+        IterationAsset(
+            kind=asset.kind,
+            path=asset.path,
+            role=asset.role,
+            metadata=dict(asset.metadata),
+        )
+        for asset in interpretation.attachments
+        if asset.path
+    ]
+
+    analysis: Dict[str, str] = {}
+    if interpretation.summary.strip():
+        analysis["vision_summary"] = interpretation.summary
+    if context.input_screenshot_paths:
+        analysis["input_screenshot_count"] = str(len(context.input_screenshot_paths))
+    if context.input_limit_note:
+        analysis["input_screenshot_limit"] = context.input_limit_note
+    if context.feedback_preset_id:
+        analysis["feedback_preset_id"] = context.feedback_preset_id
+    if context.input_screenshot_labels:
+        try:
+            analysis["input_screenshot_labels"] = json.dumps(context.input_screenshot_labels)
+        except Exception:
+            analysis["input_screenshot_labels"] = ",".join(context.input_screenshot_labels)
+
+    return TransitionArtifacts(
+        screenshot_filename="",
+        console_logs=[],
+        vision_output=interpretation.summary,
+        input_screenshot_filenames=list(context.input_screenshot_paths),
+        input_console_logs=list(context.input_console_logs),
+        assets=assets,
+        analysis=analysis,
+    )
+
+
+async def δ(
+    html_input: str,
+    settings: TransitionSettings,
+    models: List[str],
+    ai_service: AICodeService,
+    browser_service: BrowserService,
+    vision_service: VisionService,
+    html_diff: str = "",
+    message_history: List[Dict[str, Any]] | None = None,
+    context: TransitionContext | None = None,
+    interpretation: InterpretationResult | None = None,
+    auto_feedback: str | None = None,
+) -> tuple[Dict[str, Tuple[str, str, dict | None, TransitionArtifacts]], TransitionArtifacts | None, TransitionContext, InterpretationResult]:
+    if context is None or interpretation is None or auto_feedback is None:
+        context, interpretation, auto_feedback, model_image_support = await _capture_input_context(
+            html_input,
+            settings,
+            models,
+            browser_service,
+            vision_service,
+            html_diff=html_diff,
+        )
+    else:
+        model_image_support = await _detect_code_model_image_support(models)
     attachment_policy = ImageAttachmentPolicy(
         attachments=interpretation.attachments,
         support_flags=model_image_support,
@@ -213,7 +285,11 @@ async def δ(
             model_names.extend(cancelled_models)
         raise RuntimeError(f"All models failed: {', '.join(model_names)}")
 
-    return results
+    input_artifacts = None
+    if (html_input or "").strip():
+        input_artifacts = _build_input_artifacts(context, interpretation)
+
+    return results, input_artifacts, context, interpretation
 
 
 def _resolve_input_screenshot_plan(
@@ -545,6 +621,41 @@ class IterationController:
 
         return history
 
+    def _results_to_model_outputs(
+        self,
+        results: Dict[str, Tuple[str, str, dict | None, TransitionArtifacts]],
+    ) -> Dict[str, ModelOutput]:
+        outputs_dict: Dict[str, ModelOutput] = {}
+        for m, triple in results.items():
+            html, reasoning_text, meta, art = triple
+            total_cost = None
+            generation_time = None
+            messages = None
+            assistant_response = ""
+            try:
+                if isinstance(meta, dict):
+                    tc = meta.get('total_cost')
+                    gt = meta.get('generation_time')
+                    total_cost = float(tc) if tc is not None else None
+                    generation_time = float(gt) if gt is not None else None
+                    messages = meta.get('messages')
+                    assistant_response = str(meta.get('assistant_response', ''))
+            except Exception:
+                total_cost = None
+                generation_time = None
+                messages = None
+                assistant_response = ""
+            outputs_dict[m] = ModelOutput(
+                html_output=html,
+                artifacts=art,
+                reasoning_text=reasoning_text or "",
+                total_cost=total_cost,
+                generation_time=generation_time,
+                messages=messages,
+                assistant_response=assistant_response,
+            )
+        return outputs_dict
+
     # Unified apply: if from_node_id is None, create a root; otherwise iterate from given node
     async def apply_transition(self, from_node_id: str | None, settings: TransitionSettings, from_model_slug: str | None = None) -> str:
         # Compute parent id and html_input
@@ -580,7 +691,7 @@ class IterationController:
         message_history = self._collect_message_history(parent_id, base_model) if parent_id is not None else None
 
         # Run transition
-        results = await δ(
+        results, input_artifacts, ctx, interpretation = await δ(
             html_input=html_input,
             settings=settings,
             models=models,
@@ -591,45 +702,123 @@ class IterationController:
             message_history=message_history,
         )
 
-        # Create and store node
-        outputs_dict: Dict[str, ModelOutput] = {}
-        for m, triple in results.items():
-            html, reasoning_text, meta, art = triple
-            total_cost = None
-            generation_time = None
-            messages = None
-            assistant_response = ""
-            try:
-                if isinstance(meta, dict):
-                    tc = meta.get('total_cost')
-                    gt = meta.get('generation_time')
-                    total_cost = float(tc) if tc is not None else None
-                    generation_time = float(gt) if gt is not None else None
-                    messages = meta.get('messages')
-                    assistant_response = str(meta.get('assistant_response', ''))
-            except Exception:
-                total_cost = None
-                generation_time = None
-                messages = None
-                assistant_response = ""
-            outputs_dict[m] = ModelOutput(
-                html_output=html,
-                artifacts=art,
-                reasoning_text=reasoning_text or "",
-                total_cost=total_cost,
-                generation_time=generation_time,
-                messages=messages,
-                assistant_response=assistant_response,
-            )
+        auto_feedback_text = _format_auto_feedback(ctx)
+        outputs_dict = self._results_to_model_outputs(results)
         node = IterationNode(
             parent_id=parent_id,
             html_input=html_input,
             outputs=outputs_dict,
             settings=settings,
+            input_artifacts=input_artifacts,
+            context=ctx,
+            interpretation=interpretation,
+            auto_feedback=auto_feedback_text,
         )
         self._nodes[node.id] = node
         await self._notify_node_created(node)
         return node.id
+
+    async def rerun_node(self, node_id: str, settings: TransitionSettings) -> str:
+        node = self._nodes.get(node_id)
+        if node is None:
+            raise ValueError(f"Node {node_id} not found")
+
+        models = [m.strip() for m in settings.code_model.split(',') if m.strip()]
+        if not models:
+            raise ValueError("No code model specified")
+
+        base_model = models[0]
+        parent_id = node.parent_id
+        html_input = node.html_input or ""
+
+        html_diff = ""
+        if parent_id:
+            parent = self._nodes.get(parent_id)
+            if not parent:
+                raise ValueError(f"Parent node {parent_id} not found")
+            html_diff = _compute_html_diff(parent.html_input or "", html_input)
+
+        self._delete_descendants(node_id)
+        message_history = self._collect_message_history(parent_id, base_model) if parent_id is not None else None
+
+        results, input_artifacts, ctx, interpretation = await δ(
+            html_input=html_input,
+            settings=settings,
+            models=models,
+            ai_service=self._ai_service,
+            browser_service=self._browser_service,
+            vision_service=self._vision_service,
+            html_diff=html_diff,
+            message_history=message_history,
+            context=node.context,
+            interpretation=node.interpretation,
+            auto_feedback=node.auto_feedback,
+        )
+
+        node.outputs = self._results_to_model_outputs(results)
+        node.input_artifacts = input_artifacts
+        node.context = ctx or node.context
+        node.interpretation = interpretation or node.interpretation
+        node.settings = settings
+        await self._notify_node_created(node)
+        return node.id
+
+    async def start_new_tree(self, settings: TransitionSettings) -> str:
+        self.reset()
+        node = IterationNode(
+            parent_id=None,
+            html_input="",
+            outputs={},
+            settings=settings,
+            input_artifacts=None,
+        )
+        self._nodes[node.id] = node
+        await self._notify_node_created(node)
+        return node.id
+
+    async def select_model(self, node_id: str, settings: TransitionSettings, source_model_slug: str) -> str:
+        parent = self._nodes.get(node_id)
+        if parent is None:
+            raise ValueError(f"Node {node_id} not found")
+        if not source_model_slug:
+            raise ValueError("Source model slug required")
+
+        prev = parent.outputs.get(source_model_slug)
+        if prev is None and parent.outputs:
+            prev = next(iter(parent.outputs.values()))
+        if prev is None:
+            raise ValueError(f"Model '{source_model_slug}' output unavailable")
+
+        html_input = prev.html_output or parent.html_input or ""
+        self._delete_descendants(node_id)
+
+        models = [m.strip() for m in settings.code_model.split(',') if m.strip()]
+        html_diff = _compute_html_diff(parent.html_input or "", html_input)
+
+        context, interpretation, auto_feedback, _ = await _capture_input_context(
+            html_input,
+            settings,
+            models,
+            self._browser_service,
+            self._vision_service,
+            html_diff=html_diff,
+        )
+        input_artifacts = _build_input_artifacts(context, interpretation) if context and interpretation else None
+
+        child = IterationNode(
+            parent_id=node_id,
+            html_input=html_input,
+            outputs={},
+            settings=settings,
+            input_artifacts=input_artifacts,
+            source_model_slug=source_model_slug,
+            context=context,
+            interpretation=interpretation,
+            auto_feedback=auto_feedback,
+        )
+        self._nodes[child.id] = child
+        await self._notify_node_created(child)
+        return child.id
 
     # Listener notifications
     async def _notify_node_created(self, node: IterationNode) -> None:

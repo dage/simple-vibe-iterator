@@ -180,6 +180,65 @@ async def test_rerun_mid_chain() -> Tuple[bool, str]:
     return True, "re-run mid-chain ok"
 
 
+async def test_rerun_node_in_place() -> Tuple[bool, str]:
+    with patch("src.controller._detect_code_model_image_support", new=_fake_capabilities):
+        ctrl = await build_controller()
+        root_id = await ctrl.apply_transition(None, default_settings("In-place"))
+        child_id = await ctrl.apply_transition(root_id, default_settings("In-place"))
+        grandchild_id = await ctrl.apply_transition(child_id, default_settings("In-place"))
+
+        updated_settings = default_settings("In-place")
+        updated_settings.code_model = "rerun-model"
+        await ctrl.rerun_node(child_id, updated_settings)
+
+    if ctrl.get_node(grandchild_id) is not None:
+        return False, "rerun did not delete descendants"
+    child_node = ctrl.get_node(child_id)
+    if not child_node:
+        return False, "child missing after rerun"
+    if child_node.settings.code_model != "rerun-model":
+        return False, "updated settings not stored on rerun"
+    return True, "rerun node updates in place"
+
+
+async def test_start_new_tree_placeholder() -> Tuple[bool, str]:
+    ctrl = await build_controller()
+    settings = default_settings("Fresh start")
+    await ctrl.start_new_tree(settings)
+    root = ctrl.get_root()
+    if not root:
+        return False, "root missing after start"
+    if root.outputs:
+        return False, "start_new_tree should not run models"
+    if root.parent_id is not None:
+        return False, "root should have no parent"
+    return True, "start new tree creates placeholder"
+
+
+async def test_select_model_prepares_input() -> Tuple[bool, str]:
+    with patch("src.controller._detect_code_model_image_support", new=_fake_capabilities):
+        ctrl = await build_controller()
+        root_id = await ctrl.apply_transition(None, default_settings("Select"))
+        root = ctrl.get_node(root_id)
+        if not root:
+            return False, "root missing"
+        slug = next(iter(root.outputs.keys()))
+        next_settings = default_settings("Select")
+        next_settings.user_feedback = ""
+        child_id = await ctrl.select_model(root_id, next_settings, slug)
+
+    child = ctrl.get_node(child_id)
+    if not child:
+        return False, "child missing"
+    if child.outputs:
+        return False, "select_model should not run code models"
+    if child.input_artifacts is None:
+        return False, "input artifacts missing"
+    if child.source_model_slug != slug:
+        return False, "source model slug not tracked"
+    return True, "select model prepares input context"
+
+
 async def test_artifacts_presence() -> Tuple[bool, str]:
     from src.interfaces import IterationNode
 
@@ -382,6 +441,9 @@ async def main() -> int:
     checks = [
         ("Linear Chain", test_linear_chain),
         ("Re-run Mid-Chain", test_rerun_mid_chain),
+        ("Transform Re-run", test_rerun_node_in_place),
+        ("Start Placeholder", test_start_new_tree_placeholder),
+        ("Select Prepares Input", test_select_model_prepares_input),
         ("Artifact Presence", test_artifacts_presence),
         ("Prompt Placeholders", test_prompt_placeholders),
         ("Multi Model Outputs", test_multi_model_outputs),

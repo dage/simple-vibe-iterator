@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Callable
 from types import SimpleNamespace
 import time
 
@@ -31,7 +31,7 @@ class NiceGUIView(IterationEventListener):
         self.controller.add_listener(self)
         self.node_panels: Dict[str, ui.element] = {}
         self.chat_container: ui.element | None = None
-        self.start_panel: ui.element | None = None
+        self.goal_panel: ui.element | None = None
         self.scroll_area: ui.scroll_area | None = None
         self.initial_goal_input: ui.textarea | None = None
         # --- Operation status & lock ---
@@ -66,66 +66,78 @@ class NiceGUIView(IterationEventListener):
             self._notif_timer = ui.timer(0.25, self._flush_notifications)
             self._refresh_phase(force=True)
 
+            self.goal_panel = self._create_goal_panel()
+
             with ui.scroll_area().classes('flex-grow w-full') as scroll:
                 self.scroll_area = scroll
                 with ui.column().classes('w-full gap-4'):
-                    # Start area rendered as collapsible panel like iterations
-                    self.start_panel = self._create_start_panel()
-
                     # Iteration chain container
                     self.chat_container = ui.column().classes('w-full gap-4')
 
-    def _create_start_panel(self) -> ui.element:
-        init_settings = self._default_settings(overall_goal='')
-        with ui.expansion('Start', value=True).classes(
-            'w-full shadow-sm rounded-lg border border-gray-200/70 dark:border-gray-700/50'
-        ) as panel:
-            with ui.column().classes('w-full gap-4 p-4'):
-                inputs = self._render_settings_editor(
-                    init_settings,
-                    persistent_selectors=True,
-                    show_user_feedback=False,
-                )
+    def _create_goal_panel(self) -> ui.element:
+        with ui.card().classes('w-full bg-gradient-to-br from-slate-900 to-slate-800 text-white shadow-md p-4') as panel:
+            with ui.column().classes('w-full gap-3'):
+                ui.label('What should we build?').classes('text-xl font-semibold')
+                ui.label('Describe the overall vibe or experience you want.').classes('text-sm text-slate-200')
+                self.initial_goal_input = ui.textarea(
+                    value=self._current_overall_goal,
+                ).props('filled type=textarea autogrow input-style="min-height: 200px; max-height: 400px;"') \
+                 .classes('w-full text-base placeholder-transparent').style('white-space: pre-wrap;')
 
-                async def _start() -> None:
-                    og = (inputs['overall_goal'].value or '').strip()
+                async def _set_goal_text(value: str) -> None:
+                    target = self.initial_goal_input
+                    if target is None:
+                        return
+                    setter = getattr(target, 'set_value', None)
+                    if asyncio.iscoroutinefunction(setter):
+                        await setter(value)  # type: ignore[arg-type]
+                        return
+                    if setter is not None:
+                        setter(value)  # type: ignore[misc]
+                        return
+                    setattr(target, 'value', value)
+                    try:
+                        target.update()
+                    except Exception:
+                        pass
+
+                async def _submit_goal(*_, goal_override: str | None = None) -> None:
+                    og_source = goal_override if goal_override is not None else getattr(self.initial_goal_input, 'value', '')
+                    og = (og_source or '').strip()
+                    await _set_goal_text(og)
                     if not og:
                         ui.notify('Please enter an overall goal', color='negative', timeout=0, close_button=True)
                         return
                     if not self._begin_operation('Start'):
                         return
                     try:
-                        from .settings import get_settings
                         settings_manager = get_settings()
-
-                        feedback_preset_id = self._extract_preset_id(inputs['feedback_preset'])
-                        code_template = settings_manager.get_code_template()
-                        vision_template = settings_manager.get_vision_template()
-
-                        settings = TransitionSettings(
-                            code_model=inputs['code_model'].value or '',
-                            vision_model=inputs['vision_model'].value or '',
-                            overall_goal=og,
-                            user_feedback=inputs['user_feedback'].value or '',
-                            code_template=code_template,
-                            code_system_prompt_template=settings_manager.get_code_system_prompt_template(),
-                            vision_template=vision_template,
-                            input_screenshot_count=settings_manager.get_input_screenshot_count(),
-                            feedback_preset_id=feedback_preset_id,
-                        )
+                        settings = self._default_settings(overall_goal=og)
                         settings_manager.save_settings(settings)
-                        await self.controller.apply_transition(None, settings)
+                        await self.controller.start_new_tree(settings)
                         self._set_overall_goal_heading(og)
+                        print(f"[view] start_new_tree succeeded for goal={og!r}")
+                        self._initial_goal_complete()
                     except asyncio.CancelledError:
                         ui.notify('Operation cancelled', color='warning', timeout=2000)
                     except Exception as exc:
                         ui.notify(f'Start failed: {exc}', color='negative', timeout=0, close_button=True)
+                        print(f"[view] start_new_tree failed: {exc}")
                     finally:
                         self._end_operation()
 
-                ui.button('Start', on_click=_start).classes('w-full')
+                ui.button('Start Building', on_click=_submit_goal).props('unelevated size=lg').classes('bg-amber-300 text-slate-900 font-semibold w-full hover:bg-amber-200 shadow-md rounded-lg')
 
         return panel
+
+    def _initial_goal_complete(self) -> None:
+        if self.goal_panel is not None:
+            try:
+                self.goal_panel.clear()
+            except Exception:
+                pass
+            self.goal_panel = None
+        self.initial_goal_input = None
 
     def _default_settings(self, overall_goal: str) -> TransitionSettings:
         return get_settings().load_settings(overall_goal=overall_goal)
@@ -170,12 +182,6 @@ class NiceGUIView(IterationEventListener):
             for idx, node in enumerate(chain, start=1):
                 panel = self._create_node_panel(idx, node, expanded=(idx == total))
                 self.node_panels[node.id] = panel
-
-        if self.start_panel is not None:
-            try:
-                self.start_panel.value = (total == 0)
-            except Exception:
-                pass
 
     def _render_settings_editor(
         self,
@@ -310,10 +316,11 @@ class NiceGUIView(IterationEventListener):
 
             first_output = next(iter(node.outputs.values())) if node.outputs else None
             first_output_slug = next(iter(node.outputs.keys())) if node.outputs else None
+            preferred_artifacts = node.input_artifacts or (first_output.artifacts if first_output else None)
             analysis_map: Dict[str, Any] = {}
-            if first_output:
+            if preferred_artifacts:
                 try:
-                    analysis_map = dict(getattr(first_output.artifacts, 'analysis', {}) or {})
+                    analysis_map = dict(getattr(preferred_artifacts, 'analysis', {}) or {})
                 except Exception:
                     analysis_map = {}
 
@@ -344,37 +351,32 @@ class NiceGUIView(IterationEventListener):
                 with ui.row().classes('w-full items-center gap-2 mb-2'):
                     if open_messages_handler:
                         ui.button('📋 Messages', on_click=open_messages_handler).props('flat dense').classes('text-sm p-0 min-h-0 self-start')
-                    summary_handler = summary_dialog.open if not summary_disabled else (lambda: None)
-                    summary_btn = ui.button(summary_button_label, on_click=summary_handler).props('flat dense').classes('text-sm p-0 min-h-0 self-start')
-                    if summary_disabled:
-                        summary_btn.props('disable')
                 meta_rendered = True
 
             show_input_column = index > 1
-            swap_columns = show_input_column and index >= 2
-            settings_basis = 'basis-1/3' if show_input_column else 'basis-1/2'
+            allow_meta = index > 1
+            operation_basis = 'basis-1/3' if show_input_column else 'basis-1/2'
             output_basis = 'basis-1/3' if show_input_column else 'basis-1/2'
+            column_header_class = 'text-[11px] uppercase tracking-[0.4em] text-gray-400 dark:text-gray-500'
 
-            with ui.row().classes('w-full items-start gap-6 flex-nowrap'):
-                settings_order = 'order-2' if swap_columns else 'order-1'
-                with ui.column().classes(f'{settings_basis} min-w-0 gap-3 {settings_order}'):
-                    inputs = self._render_settings_editor(
-                        node.settings,
-                        allow_overall_goal_edit=False,
-                    )
-
+            with ui.row().classes('w-full items-start gap-4 flex-nowrap'):
                 if show_input_column:
-                    input_order = 'order-1' if swap_columns else 'order-2'
-                    with ui.column().classes(f'basis-1/3 min-w-0 gap-4 {input_order}'):
-                        _render_meta_controls()
+                    with ui.column().classes('basis-1/3 min-w-0 gap-4 input-column'):
+                        ui.label('INPUT').classes(column_header_class)
+                        if allow_meta:
+                            _render_meta_controls()
                         asset_label_map = {}
+                        artifacts = preferred_artifacts
                         try:
-                            assets = list(first_output.artifacts.assets or []) if first_output else []
+                            assets = list(getattr(artifacts, 'assets', []) or [])
                             for asset in assets:
                                 if asset.role == 'input':
                                     asset_label_map[asset.path] = str(asset.metadata.get('label', '') or '').strip()
                         except Exception:
                             asset_label_map = {}
+
+                        if node.source_model_slug:
+                            ui.label(f'Input from {node.source_model_slug}').classes('text-xs uppercase tracking-wide text-gray-500')
 
                         ui.label('AUTO FEEDBACK').classes('text-sm font-semibold')
                         input_entries: List[tuple[int, str, str, str]] = []
@@ -382,7 +384,7 @@ class NiceGUIView(IterationEventListener):
                         limit_note = ''
                         try:
                             from pathlib import Path as _P
-                            raw_paths = list(getattr(first_output.artifacts, 'input_screenshot_filenames', []) if first_output else [])
+                            raw_paths = list(getattr(artifacts, 'input_screenshot_filenames', []) or [])
                             for idx, raw_path in enumerate(raw_paths):
                                 if not (raw_path or '').strip():
                                     continue
@@ -399,7 +401,9 @@ class NiceGUIView(IterationEventListener):
                             limit_note = ''
                             primary_html_url = ''
 
-                        if input_entries:
+                        if artifacts is None:
+                            ui.label('Input analysis pending. Select an output to continue.').classes('text-sm text-gray-500')
+                        elif input_entries:
                             if limit_note:
                                 ui.label(limit_note).classes('text-xs text-amber-300')
                             with ui.row().classes('w-full gap-2 flex-wrap'):
@@ -419,9 +423,9 @@ class NiceGUIView(IterationEventListener):
                                 if primary_html_url:
                                     ui.link('Open', primary_html_url, new_tab=True).classes('text-sm')
                         else:
-                            ui.label('(no input screenshots)').classes('text-sm text-gray-500')
+                            ui.label('(no input screenshots yet)').classes('text-sm text-gray-500')
 
-                        in_logs = list(getattr(first_output.artifacts, 'input_console_logs', []) if first_output else [])
+                        in_logs = list(getattr(artifacts, 'input_console_logs', []) or []) if artifacts else []
                         in_title = f"Console logs ({'empty' if len(in_logs) == 0 else len(in_logs)})"
                         with ui.expansion(in_title):
                             if in_logs:
@@ -430,12 +434,12 @@ class NiceGUIView(IterationEventListener):
                             else:
                                 ui.label('(no console logs)')
 
-                        _va_raw = extract_vision_summary(first_output.artifacts if first_output else None)
+                        _va_raw = extract_vision_summary(artifacts)
                         _va_lines = [line for line in _va_raw.splitlines() if line.strip()]
                         va_title = f"Vision Analysis ({'empty' if len(_va_lines) == 0 else len(_va_lines)})"
                         with ui.expansion(va_title):
                             va_text = _va_raw
-                            has_inputs = bool(getattr(first_output.artifacts, 'input_screenshot_filenames', []) if first_output else [])
+                            has_inputs = bool(getattr(artifacts, 'input_screenshot_filenames', []) if artifacts else [])
                             if not has_inputs:
                                 va_text = '(no input screenshot)'
                             elif not va_text.strip():
@@ -444,124 +448,186 @@ class NiceGUIView(IterationEventListener):
                                 va_text = va_text.replace('\n', '\n\n')
                             ui.markdown(va_text)
 
-                output_order = 'order-3' if show_input_column else 'order-2'
-                with ui.column().classes(f'{output_basis} min-w-0 gap-6 {output_order}'):
-                    if not show_input_column:
+                with ui.column().classes(f'{operation_basis} min-w-0 gap-3 operation-column'):
+                    if allow_meta and not show_input_column:
                         _render_meta_controls()
+                    ui.label('OPERATION').classes(column_header_class)
+                    inputs = self._render_settings_editor(
+                        node.settings,
+                        allow_overall_goal_edit=False,
+                        show_user_feedback=(index > 1),
+                    )
+                    ui.label('Adjust prompt, model, and auto feedback before transforming.').classes('text-xs text-gray-500')
+
+                def _collect_transition_settings(fallback_code_slug: str = '', *, user_feedback_override: str | None = None) -> TransitionSettings:
+                    settings_manager = get_settings()
+                    feedback_preset_id = self._extract_preset_id(inputs['feedback_preset'])
+                    code_template = settings_manager.get_code_template()
+                    vision_template = settings_manager.get_vision_template()
+                    iter_shots = settings_manager.get_input_screenshot_count()
+                    selected_model = inputs['code_model'].value or fallback_code_slug
+                    feedback_value = user_feedback_override if user_feedback_override is not None else (inputs['user_feedback'].value or '')
+                    updated = TransitionSettings(
+                        code_model=selected_model,
+                        vision_model=inputs['vision_model'].value or '',
+                        overall_goal=node.settings.overall_goal,
+                        user_feedback=feedback_value,
+                        code_template=code_template,
+                        code_system_prompt_template=settings_manager.get_code_system_prompt_template(),
+                        vision_template=vision_template,
+                        input_screenshot_count=iter_shots,
+                        feedback_preset_id=feedback_preset_id,
+                    )
+                    settings_manager.save_settings(updated)
+                    return updated
+
+                async def _transform_current_node() -> None:
+                    if not self._begin_operation('Transform'):
+                        return
+                    try:
+                        updated = _collect_transition_settings()
+                        await self.controller.rerun_node(node.id, updated)
+                    except asyncio.CancelledError:
+                        ui.notify('Transform cancelled', color='warning', timeout=2000)
+                    except Exception as exc:
+                        op_status.enqueue_notification(f'Transform failed: {exc}', color='negative', timeout=0, close_button=True)
+                    finally:
+                        self._end_operation()
+
+                with ui.column().classes('w-[64px] shrink-0 items-center justify-center h-full transform-column'):
+                    ui.button('', icon='arrow_forward', on_click=lambda: asyncio.create_task(_transform_current_node())).props('unelevated size=lg').classes('w-16 h-36 bg-primary-500 text-white shadow-lg rounded-xl mt-4')
+
+                with ui.column().classes(f'{output_basis} min-w-0 gap-6 output-column'):
+                    if allow_meta and not show_input_column:
+                        _render_meta_controls()
+                    output_messages_dialog = ui.dialog()
+                    output_messages_dialog.props('persistent')
+
+                    def _open_output_messages_dialog() -> None:
+                        if not node.outputs:
+                            ui.notify('No messages available for this iteration yet.', color='info', timeout=2000)
+                            return
+                        message_slugs = list(node.outputs.keys())
+
+                        def _render_for(slug: str) -> None:
+                            output = node.outputs.get(slug)
+                            if not output:
+                                ui.notify(f'Messages missing for {slug}', color='warning', timeout=2000)
+                                return
+                            history = list(output.messages or [])
+                            if output.assistant_response:
+                                history.append({"role": "assistant", "content": output.assistant_response})
+                            if not history:
+                                history = [{"role": "system", "content": "(no message history captured)"}]
+
+                            def _header_controls(row: ui.row, current_slug: str = slug) -> None:
+                                with row:
+                                    selector = ui.select(
+                                        options=message_slugs,
+                                        value=current_slug,
+                                    ).props('dense outlined hide-dropdown-icon').classes('w-40 text-xs text-gray-500')
+
+                                    def _on_change(e: Any) -> None:
+                                        value = getattr(e, 'value', None)
+                                        if not value:
+                                            args = getattr(e, 'args', None)
+                                            if isinstance(args, dict):
+                                                value = args.get('value')
+                                            elif args:
+                                                value = args
+                                        if value:
+                                            _render_for(str(value))
+
+                                    selector.on('update:model-value', _on_change)
+
+                            self._render_messages_dialog(output_messages_dialog, history, header_controls=_header_controls)
+
+                        _render_for(message_slugs[0])
+                        output_messages_dialog.open()
+
+                    with ui.row().classes('w-full items-center justify-between'):
+                        ui.label('OUTPUT').classes(column_header_class)
+                        if node.outputs:
+                            with ui.row().classes('items-center gap-2'):
+                                ui.button('📋 Messages', on_click=_open_output_messages_dialog).props('flat dense').classes('text-xs font-semibold tracking-wide uppercase text-gray-500')
+                                summary_handler = summary_dialog.open if not summary_disabled else (lambda: None)
+                                summary_btn = ui.button('Summary', on_click=summary_handler).props('flat dense').classes('text-xs font-semibold tracking-wide uppercase text-gray-500')
+                                if summary_disabled:
+                                    summary_btn.props('disable')
                     for model_slug, out in node.outputs.items():
-                                with ui.column().classes('w-full min-w-0 gap-2 border rounded p-2'):
-                                    ui.label(f'{model_slug}').classes('text-sm font-semibold')
-                                    # Always render a subtle metadata line under the model slug
-                                    try:
-                                        cost = getattr(out, 'total_cost', None)
-                                        time_s = getattr(out, 'generation_time', None)
-                                        cost_str = (f"${cost:.6f}" if isinstance(cost, (int, float)) else "$—")
-                                        time_str = (f"{float(time_s):.1f}s" if isinstance(time_s, (int, float)) else "—")
-                                        ui.label(f"{cost_str} · {time_str}").classes('text-xs text-gray-500 dark:text-gray-400 leading-tight')
-                                    except Exception:
-                                        ui.label("$— · —").classes('text-xs text-gray-500 dark:text-gray-400 leading-tight')
-                                    out_png = out.artifacts.screenshot_filename
-                                    if out_png:
-                                        ui.image(out_png).classes('w-full h-auto max-w-full border rounded')
-                                    else:
-                                        ui.label('(no output screenshot)')
-                                    out_html_url = ''
-                                    try:
-                                        from pathlib import Path as _P
-                                        if out_png:
-                                            p = _P(out_png)
-                                            html_candidate = p.with_suffix('.html')
-                                            if html_candidate.exists():
-                                                out_html_url = '/artifacts/' + html_candidate.name
-                                    except Exception:
-                                        pass
-                                    diff_html = self._create_visual_diff(node.html_input or '', out.html_output or '')
-                                    with ui.dialog() as diff_dialog:
-                                        diff_dialog.props('persistent')
-                                        with ui.card().classes('w-[90vw] max-w-[1200px]'):
+                        with ui.column().classes('w-full min-w-0 gap-2 border rounded p-2'):
+                            ui.label(f'{model_slug}').classes('text-sm font-semibold')
+                            try:
+                                cost = getattr(out, 'total_cost', None)
+                                time_s = getattr(out, 'generation_time', None)
+                                cost_str = (f"${cost:.6f}" if isinstance(cost, (int, float)) else "$—")
+                                time_str = (f"{float(time_s):.1f}s" if isinstance(time_s, (int, float)) else "—")
+                                ui.label(f"{cost_str} · {time_str}").classes('text-xs text-gray-500 dark:text-gray-400 leading-tight')
+                            except Exception:
+                                ui.label("$— · —").classes('text-xs text-gray-500 dark:text-gray-400 leading-tight')
+                            out_png = out.artifacts.screenshot_filename
+                            if out_png:
+                                ui.image(out_png).classes('w-full h-auto max-w-full rounded border border-gray-600')
+                            out_html = out.html_output
+                            from pathlib import Path as _OutputPath
+                            out_html_url = ''
+                            try:
+                                snap_path = _OutputPath(out_png)
+                                if snap_path.exists():
+                                    html_path = snap_path.with_suffix('.html')
+                                    if html_path.exists():
+                                        out_html_url = f"/artifacts/{html_path.name}"
+                            except Exception:
+                                out_html_url = ''
+                            diff_dialog = ui.dialog()
+                            with diff_dialog, ui.card().classes('w-[90vw] max-w-[900px]'):
+                                with ui.row().classes('items-center justify-between w-full'):
+                                    ui.label('Diff vs input').classes('text-lg font-semibold')
+                                    ui.button(icon='close', on_click=diff_dialog.close).props('flat round dense')
+                                diff_html = self._create_visual_diff(node.html_input, out.html_output)
+                                ui.html(f'<div class="border rounded p-4 diff-body">{diff_html}</div>')
+                            size = format_html_size(out.html_output)
+                            with ui.row().classes('items-center gap-2'):
+                                ui.icon('content_copy').classes('text-sm cursor-pointer').on('click', lambda html=out.html_output: self._copy_to_clipboard(html))
+                                ui.label('HTML').classes('text-sm')
+                                ui.label(f'({size})').classes('text-sm text-gray-600 dark:text-gray-400')
+                                ui.label(':').classes('text-sm')
+                                ui.link('Open', out_html_url, new_tab=True).classes('text-sm')
+                                ui.button('Diff', on_click=diff_dialog.open).props('flat dense').classes('text-sm p-0 min-h-0')
+                                if (out.reasoning_text or '').strip():
+                                    with ui.dialog() as reasoning_dialog:
+                                        reasoning_dialog.props('persistent')
+                                        with ui.card().classes('w-[90vw] max-w-[900px]'):
                                             with ui.row().classes('items-center justify-between w-full'):
-                                                ui.label('HTML Diff').classes('text-lg font-semibold')
-                                                ui.button(icon='close', on_click=diff_dialog.close).props('flat round dense')
-                                            ui.html('''<style>
-                                            .diff-container { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; background: #0b0f17; color: #e5e7eb; border: 1px solid #334155; border-radius: 6px; padding: 16px; max-height: 70vh; overflow: auto; }
-        .diff-content { white-space: pre-wrap; word-break: break-word; }
-        .diff-insert { background-color: rgba(34,197,94,0.25); border-radius: 2px; }
-        .diff-delete { background-color: rgba(239,68,68,0.25); text-decoration: line-through; border-radius: 2px; }
-        .diff-legend { gap: 8px; align-items: center; }
-        .legend-chip { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
-        .legend-insert { background-color: rgba(34,197,94,0.25); color: #86efac; }
-        .legend-delete { background-color: rgba(239,68,68,0.25); color: #fca5a5; }
-        </style>''')
-                                            with ui.row().classes('diff-legend'):
-                                                ui.html('<span class="legend-chip legend-insert">Insert</span>')
-                                                ui.html('<span class="legend-chip legend-delete">Delete</span>')
-                                            ui.html(f"<div class='diff-container'><pre class='diff-content'>{diff_html or _html.escape('(no differences)')}</pre></div>")
-                                    if out_html_url:
-                                        size = format_html_size(out.html_output)
-                                        with ui.row().classes('items-center gap-2'):
-                                            ui.icon('content_copy').classes('text-sm cursor-pointer').on('click', lambda html=out.html_output: self._copy_to_clipboard(html))
-                                            ui.label('HTML').classes('text-sm')
-                                            ui.label(f'({size})').classes('text-sm text-gray-600 dark:text-gray-400')
-                                            ui.label(':').classes('text-sm')
-                                            ui.link('Open', out_html_url, new_tab=True).classes('text-sm')
-                                            ui.button('Diff', on_click=diff_dialog.open).props('flat dense').classes('text-sm p-0 min-h-0')
-                                            # Reasoning indicator (grey brain icon) if reasoning is present
-                                            if (out.reasoning_text or '').strip():
-                                                with ui.dialog() as reasoning_dialog:
-                                                    reasoning_dialog.props('persistent')
-                                                    with ui.card().classes('w-[90vw] max-w-[900px]'):
-                                                        with ui.row().classes('items-center justify-between w-full'):
-                                                            ui.label('Model Reasoning').classes('text-lg font-semibold')
-                                                            ui.button(icon='close', on_click=reasoning_dialog.close).props('flat round dense')
-                                                        # Render reasoning as markdown but prevent raw HTML from rendering
-                                                        # by escaping angle brackets. This preserves markdown formatting
-                                                        # (e.g., **bold**, lists, code fences) while neutralizing tags.
-                                                        raw_reasoning = (out.reasoning_text or '')
-                                                        safe_reasoning = _html.escape(raw_reasoning, quote=False)
-                                                        ui.markdown(safe_reasoning)
-                                                ui.icon('psychology').classes('text-gray-500 cursor-pointer').on('click', reasoning_dialog.open)
-                                    out_logs = list(out.artifacts.console_logs or [])
-                                    out_title = f"Console logs ({'empty' if len(out_logs) == 0 else len(out_logs)})"
-                                    with ui.expansion(out_title):
-                                        if out_logs:
-                                            out_logs_text = '\n\n'.join(out_logs)
-                                            ui.markdown(out_logs_text)
-                                        else:
-                                            ui.label('(no console logs)')
-                                    async def _iterate_with_slug(slug: str = model_slug) -> None:
-                                        if not self._begin_operation('Iterate'):
-                                            return
-                                        try:
-                                            selected_model = inputs['code_model'].value or slug
-                                            settings_manager = get_settings()
+                                                ui.label('Model Reasoning').classes('text-lg font-semibold')
+                                                ui.button(icon='close', on_click=reasoning_dialog.close).props('flat round dense')
+                                            raw_reasoning = (out.reasoning_text or '')
+                                            safe_reasoning = _html.escape(raw_reasoning, quote=False)
+                                            ui.markdown(safe_reasoning)
+                                    ui.icon('psychology').classes('text-gray-500 cursor-pointer').on('click', reasoning_dialog.open)
+                            out_logs = list(out.artifacts.console_logs or [])
+                            out_title = f"Console logs ({'empty' if len(out_logs) == 0 else len(out_logs)})"
+                            with ui.expansion(out_title):
+                                if out_logs:
+                                    out_logs_text = '\n\n'.join(out_logs)
+                                    ui.markdown(out_logs_text)
+                                else:
+                                    ui.label('(no console logs)')
 
-                                            feedback_preset_id = self._extract_preset_id(inputs['feedback_preset'])
-                                            code_template = settings_manager.get_code_template()
-                                            vision_template = settings_manager.get_vision_template()
-                                            iter_shots = settings_manager.get_input_screenshot_count()
+                            async def _select_model(slug: str = model_slug) -> None:
+                                if not self._begin_operation('Select'):
+                                    return
+                                try:
+                                    updated = _collect_transition_settings(slug, user_feedback_override='')
+                                    await self.controller.select_model(node.id, updated, slug)
+                                except asyncio.CancelledError:
+                                    ui.notify(f'Select cancelled for {slug}', color='warning', timeout=2000)
+                                except Exception as exc:
+                                    op_status.enqueue_notification(f'Select failed: {exc}', color='negative', timeout=0, close_button=True)
+                                finally:
+                                    self._end_operation()
 
-                                            updated = TransitionSettings(
-                                                code_model=selected_model,
-                                                vision_model=inputs['vision_model'].value or '',
-                                                overall_goal=node.settings.overall_goal,
-                                                user_feedback=inputs['user_feedback'].value or '',
-                                                code_template=code_template,
-                                                code_system_prompt_template=settings_manager.get_code_system_prompt_template(),
-                                                vision_template=vision_template,
-                                                input_screenshot_count=iter_shots,
-                                                feedback_preset_id=feedback_preset_id,
-                                            )
-                                            settings_manager.save_settings(updated)
-                                            await self.controller.apply_transition(node.id, updated, slug)
-                                        except asyncio.CancelledError:
-                                            ui.notify(f'Cancelled {slug}', color='warning', timeout=2000)
-                                        except Exception as exc:
-                                            # Route error to UI via notification queue (safe from background tasks)
-                                            op_status.enqueue_notification(f'Iterate failed: {exc}', color='negative', timeout=0, close_button=True)
-                                        finally:
-                                            self._end_operation()
-
-                                    ui.button('Iterate', on_click=(lambda slug=model_slug: lambda: asyncio.create_task(_iterate_with_slug(slug)))(model_slug)).classes('w-full')
+                            ui.button('Select', on_click=(lambda slug=model_slug: lambda: asyncio.create_task(_select_model(slug)))(model_slug)).classes('w-full')
         return card
 
     def _get_input_messages(self, node: IterationNode, preferred_slug: str | None) -> List[Dict[str, Any]]:
@@ -682,7 +748,7 @@ class NiceGUIView(IterationEventListener):
                 # Best-effort; drop malformed items
                 pass
 
-    def _render_messages_dialog(self, dialog: ui.dialog, messages: List[Dict[str, Any]]) -> None:
+    def _render_messages_dialog(self, dialog: ui.dialog, messages: List[Dict[str, Any]], header_controls: Callable[[ui.row], None] | None = None) -> None:
         """Lazy-render the heavy message history dialog only when the user opens it."""
         def _format_structured_value(value: Any) -> str:
             if isinstance(value, str):
@@ -788,6 +854,9 @@ class NiceGUIView(IterationEventListener):
             with ui.card().classes('w-[90vw] max-w-[1200px]'):
                 with ui.row().classes('items-center justify-between w-full'):
                     ui.label('Message History').classes('text-lg font-semibold')
+                    controls_row = ui.row().classes('items-center gap-2')
+                    if header_controls:
+                        header_controls(controls_row)
                     ui.button(icon='close', on_click=dialog.close).props('flat round dense')
                 ui.html('''<style>
                 .messages-container { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; background: #0b0f17; color: #e5e7eb; border: 1px solid #334155; border-radius: 6px; padding: 16px; max-height: 70vh; overflow: auto; }
@@ -961,7 +1030,7 @@ class NiceGUIView(IterationEventListener):
                 pass
             self._status_panel = None
         self.node_panels.clear()
-        for attr in ('chat_container', 'start_panel', 'scroll_area'):
+        for attr in ('chat_container', 'goal_panel', 'scroll_area'):
             elem = getattr(self, attr, None)
             if elem is None:
                 continue
