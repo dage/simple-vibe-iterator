@@ -24,6 +24,17 @@ from .view_utils import extract_vision_summary, format_html_size
 from .node_summary_dialog import create_node_summary_dialog
 from .status_panel import StatusPanel
 
+try:  # pragma: no cover - import differs during tests
+    from . import or_client as orc
+except Exception:  # pragma: no cover
+    import or_client as orc  # type: ignore
+
+GOAL_SUMMARY_MODEL = "x-ai/grok-4-fast"
+GOAL_SUMMARY_CHAR_LIMIT = 280
+GOAL_SUMMARY_WORD_LIMIT = 55
+GOAL_SUMMARY_LINE_LIMIT = 4
+GOAL_SUMMARY_MAX_OUTPUT_WORDS = 16
+
 
 class NiceGUIView(IterationEventListener):
     def __init__(self, controller: IterationController):
@@ -34,6 +45,9 @@ class NiceGUIView(IterationEventListener):
         self.goal_panel: ui.element | None = None
         self.scroll_area: ui.scroll_area | None = None
         self.initial_goal_input: ui.textarea | None = None
+        self._goal_status_label: ui.element | None = None
+        self._original_goal_button: ui.element | None = None
+        self._original_goal_text: str = ""
         # --- Operation status & lock ---
         self._op_busy: bool = False
         self._status_timer: ui.timer | None = None
@@ -55,8 +69,16 @@ class NiceGUIView(IterationEventListener):
         # Scoped CSS: Make the default CLOSE button text black on error notifications
         with ui.column().classes('w-full h-screen p-4 gap-3'):
             ui.label('Simple Vibe Iterator').classes('text-2xl font-bold')
-            self._goal_heading_label = ui.label('').classes('text-lg font-semibold text-primary-600')
+            async def _open_original_goal(*_: Any) -> None:
+                await self._show_original_goal()
+
+            with ui.row().classes('w-full items-center gap-3'):
+                self._goal_heading_label = ui.label('').classes('text-lg font-semibold text-primary-600')
+                button = ui.button('View original goal', on_click=_open_original_goal).props('flat text-sm').classes('ml-auto text-primary-500 hover:text-primary-400').style('visibility:hidden')
+                self._original_goal_button = button
+            self._goal_status_label = ui.label('').classes('text-sm font-medium text-amber-200/90 mt-1')
             self._set_overall_goal_heading(self._current_overall_goal)
+            self._set_goal_status('')
 
             # Container for worker status boxes
             self._status_panel = StatusPanel(on_cancel=self._cancel_worker)
@@ -135,6 +157,24 @@ class NiceGUIView(IterationEventListener):
                     if not og:
                         ui.notify('Please enter an overall goal', color='negative', timeout=0, close_button=True)
                         return
+                    self._original_goal_text = ''
+                    self._set_original_goal_button_visible(False)
+                    display_goal = og
+                    if self._should_summarize_goal(og):
+                        self._set_goal_status(f"Please wait while {GOAL_SUMMARY_MODEL} is summarizing the goal...")
+                        self._original_goal_text = og
+                        self._set_original_goal_button_visible(True)
+                        await asyncio.sleep(0)  # yield so status text renders before summarization starts
+                        try:
+                            summary = await self._summarize_goal_text(og)
+                            if summary:
+                                display_goal = summary
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception as exc:
+                            print(f"[view] goal summarization failed: {exc}")
+                        finally:
+                            self._set_goal_status('')
                     if not self._begin_operation('Start'):
                         return
                     try:
@@ -142,8 +182,8 @@ class NiceGUIView(IterationEventListener):
                         settings = self._default_settings(overall_goal=og)
                         settings_manager.save_settings(settings)
                         await self.controller.start_new_tree(settings)
-                        self._set_overall_goal_heading(og)
-                        print(f"[view] start_new_tree succeeded for goal={og!r}")
+                        self._set_overall_goal_heading(display_goal)
+                        print(f"[view] start_new_tree succeeded")
                         self._initial_goal_complete()
                     except asyncio.CancelledError:
                         ui.notify('Operation cancelled', color='warning', timeout=2000)
@@ -174,7 +214,7 @@ class NiceGUIView(IterationEventListener):
         label = self._goal_heading_label
         if label is None:
             return
-        text = f"Goal: {self._current_overall_goal}" if self._current_overall_goal else ''
+        text = self._current_overall_goal
         try:
             label.text = text
         except Exception:
@@ -182,6 +222,104 @@ class NiceGUIView(IterationEventListener):
                 label.set_text(text)  # type: ignore[attr-defined]
             except Exception:
                 pass
+
+    def _set_goal_status(self, text: str) -> None:
+        label = self._goal_status_label
+        if label is None:
+            return
+        try:
+            label.text = text
+        except Exception:
+            try:
+                label.set_text(text)  # type: ignore[attr-defined]
+            except Exception:
+                pass
+
+    def _set_original_goal_button_visible(self, visible: bool) -> None:
+        button = self._original_goal_button
+        if button is None:
+            return
+        try:
+            button.style('visibility:visible' if visible else 'visibility:hidden')
+        except Exception:
+            pass
+
+    async def _show_original_goal(self) -> None:
+        goal = (self._original_goal_text or '').strip()
+        if not goal:
+            ui.notify('No overall goal captured yet.', color='info', timeout=2000)
+            return
+        with ui.dialog() as dialog:
+            with ui.card().classes('max-w-xl w-[min(95vw,600px)] p-4 gap-3'):
+                ui.label('Original goal').classes('text-base font-semibold')
+                ui.textarea(
+                    value=goal,
+                ).props('filled autogrow readonly').classes('w-full text-sm').style('white-space: pre-wrap;')
+                ui.button('Close', on_click=dialog.close).props('outlined')
+        await dialog.open()
+
+    def _should_summarize_goal(self, goal: str) -> bool:
+        stripped = goal.strip()
+        if not stripped:
+            return False
+        # Long or multi-line goals can overwhelm the heading, so summarize them.
+        if len(stripped) > GOAL_SUMMARY_CHAR_LIMIT:
+            return True
+        if len(stripped.split()) > GOAL_SUMMARY_WORD_LIMIT:
+            return True
+        lines = [line for line in stripped.splitlines() if line.strip()]
+        if len(lines) > GOAL_SUMMARY_LINE_LIMIT:
+            return True
+        if any(len(line) > (GOAL_SUMMARY_CHAR_LIMIT // 2) for line in lines):
+            return True
+        return False
+
+    async def _summarize_goal_text(self, goal: str) -> str:
+        stripped = goal.strip()
+        if not stripped:
+            return stripped
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a concise summarizer. Return a single sentence that captures the "
+                    "user's main goal experience. Keep it very brief—at most "
+                    f"{GOAL_SUMMARY_MAX_OUTPUT_WORDS} words—and aim to make it roughly 50% shorter "
+                    "than the source text while staying descriptive."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    "Summarize the following overall goal quickly:\n"
+                    f"{stripped}"
+                ),
+            },
+        ]
+        summary = await orc.chat(
+            messages,
+            model=GOAL_SUMMARY_MODEL,
+            temperature=0.3,
+            max_tokens=120,
+        )
+        normalized = self._normalize_summary_text(summary)
+        if not normalized:
+            return stripped
+        return self._enforce_summary_word_limit(normalized) or stripped
+
+    def _enforce_summary_word_limit(self, summary: str) -> str:
+        words = summary.split()
+        if not words:
+            return ''
+        if len(words) <= GOAL_SUMMARY_MAX_OUTPUT_WORDS:
+            return summary
+        return ' '.join(words[:GOAL_SUMMARY_MAX_OUTPUT_WORDS])
+
+    @staticmethod
+    def _normalize_summary_text(text: str) -> str:
+        if not text:
+            return ''
+        return ' '.join(text.split())
 
     # IterationEventListener
     async def on_node_created(self, node: IterationNode) -> None:
