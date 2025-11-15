@@ -14,9 +14,9 @@
 - Install browsers: `python -m playwright install`
 - Copy env: `cp .env_template .env` and set `OPENROUTER_API_KEY`
 - Run GUI: `python -m src.main` (serves on port 8055; artifacts at `/artifacts`)
-- Run all tests: `python integration-tests/run_all.py -j 2`
+- Run all tests: `python integration-tests/run_all.py`
 - Run one test: `python integration-tests/test_state_machine.py`
-- Filter tests: `python integration-tests/run_all.py -k openrouter -j 4`
+- Filter tests: `python integration-tests/run_all.py -k openrouter`
 
 ## Configuration & Templates
 - Defaults load from `config.yaml` at startup; avoid hardcoding.
@@ -36,6 +36,7 @@
 - Location: `integration-tests/` with filenames `test_*.py`
 - Expectations: cover state machine transitions, OpenRouter services, artifact creation
 - CI‑like run locally with `run_all.py`; add new tests following the async pattern used in existing files
+- When running all integrations tests with `python integration-tests/run_all.py`, use default number of workers since defaults are already fine tuned for maximum performance.
 
 ### Agent Development Workflow (Quality Bar)
 - Prefer targeted test runs while iterating: `-k <substr>` and `-j 1` to reduce flakiness and noise.

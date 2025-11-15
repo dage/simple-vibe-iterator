@@ -109,7 +109,7 @@ async def run_all(tests: Iterable[Path], jobs: int, timeout_s: float | None, ver
 def parse_args(argv: List[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run all integration tests in integration-tests directory.")
     parser.add_argument("-k", metavar="SUBSTR", help="Only run tests with SUBSTR in filename", default=None)
-    parser.add_argument("-j", "--jobs", type=int, default=10, help="Number of parallel jobs (default: 10)")
+    parser.add_argument("-j", "--jobs", type=int, default=30, help="Number of parallel jobs (default: 30)")
     parser.add_argument(
         "--timeout",
         type=float,
