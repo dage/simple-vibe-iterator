@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import subprocess
+import os
 from nicegui import ui
 from nicegui import app
 from pathlib import Path
@@ -15,6 +16,13 @@ from .services import (
 )
 from .view import NiceGUIView
 from .logging import start_auto_logger
+
+
+def _auto_logger_enabled() -> bool:
+    flag = os.getenv("AUTO_LOGGER_ENABLED")
+    if flag is None:
+        return False
+    return flag.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def kill_port_process(port: int) -> None:
@@ -60,7 +68,8 @@ def create_app() -> NiceGUIView:
     controller = IterationController(ai_service, browser_service, vision_service)
     view = NiceGUIView(controller)
     view.render()
-    start_auto_logger()
+    if _auto_logger_enabled():
+        start_auto_logger()
     return view
 
 

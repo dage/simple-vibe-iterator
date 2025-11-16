@@ -31,6 +31,7 @@ __all__ = [
 
 _SRC_DIR = Path(__file__).resolve().parent
 _MODULE_PATH = Path(__file__).resolve()
+_TRACE_EXCLUDE = {(_SRC_DIR / "view.py").resolve()}
 
 _LOG_DIR = Path(os.getenv("APP_LOG_DIR", "logs"))
 _TOOL_LOG_PATH = Path(os.getenv("TOOL_CALL_LOG", _LOG_DIR / "tool_calls.jsonl"))
@@ -391,6 +392,8 @@ def _should_trace(frame: FrameType) -> bool:
         return False
 
     if resolved == _MODULE_PATH:
+        return False
+    if resolved in _TRACE_EXCLUDE:
         return False
 
     try:
