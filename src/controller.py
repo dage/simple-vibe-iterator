@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import difflib
 from dataclasses import dataclass, field
 import json
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -30,34 +29,9 @@ except Exception:  # pragma: no cover
     import or_client as orc  # type: ignore
 
 
-
-def _compute_html_diff(html_input: str, html_output: str) -> str:
-    """Compute a unified diff between html_input and html_output."""
-    if not html_input.strip() and not html_output.strip():
-        return ""
-    if not html_input.strip():
-        return f"+ Added {len(html_output.splitlines())} lines"
-    if not html_output.strip():
-        return f"- Removed {len(html_input.splitlines())} lines"
-    
-    input_lines = html_input.splitlines(keepends=True)
-    output_lines = html_output.splitlines(keepends=True)
-    
-    diff = list(difflib.unified_diff(
-        input_lines, 
-        output_lines, 
-        fromfile="previous", 
-        tofile="current",
-        n=3
-    ))
-    
-    return "".join(diff)
-
-
 @dataclass
 class TransitionContext:
     html_input: str
-    html_diff: str
     input_screenshot_paths: List[str] = field(default_factory=list)
     input_console_logs: List[str] = field(default_factory=list)
     input_limit_note: str = ""
@@ -75,10 +49,8 @@ async def _capture_input_context(
     models: List[str],
     browser_service: BrowserService,
     vision_service: VisionService,
-    *,
-    html_diff: str = "",
 ) -> tuple[TransitionContext, InterpretationResult, str, Dict[str, bool]]:
-    context = TransitionContext(html_input=html_input or "", html_diff=html_diff or "")
+    context = TransitionContext(html_input=html_input or "")
 
     normalized_models = [slug for slug in models if slug]
     model_image_support = await _detect_code_model_image_support(normalized_models) if normalized_models else {}
@@ -182,7 +154,6 @@ async def δ(
     ai_service: AICodeService,
     browser_service: BrowserService,
     vision_service: VisionService,
-    html_diff: str = "",
     message_history: List[Dict[str, Any]] | None = None,
     context: TransitionContext | None = None,
     interpretation: InterpretationResult | None = None,
@@ -195,7 +166,6 @@ async def δ(
             models,
             browser_service,
             vision_service,
-            html_diff=html_diff,
         )
     else:
         model_image_support = await _detect_code_model_image_support(models)
@@ -214,7 +184,6 @@ async def δ(
                         settings=settings,
                         interpretation_summary=interpretation.summary,
                         console_logs=context.input_console_logs,
-                        html_diff=context.html_diff,
                         auto_feedback=auto_feedback,
                         attachments=selected_attachments,
                         message_history=message_history,
@@ -374,7 +343,6 @@ async def _interpret_input(
         html_input=context.html_input,
         settings=settings,
         console_logs=context.input_console_logs,
-        html_diff=context.html_diff,
         auto_feedback=auto_feedback,
     )
     analysis = await vision_service.analyze_screenshot(
@@ -669,7 +637,6 @@ class IterationController:
         if from_node_id is None:
             parent_id = None
             html_input = ""
-            html_diff = ""
         elif from_node_id not in self._nodes:
             raise ValueError(f"Node {from_node_id} not found")
         else:
@@ -681,7 +648,6 @@ class IterationController:
             if prev is None:
                 prev = next(iter(from_node.outputs.values()))
             html_input = prev.html_output or from_node.html_input
-            html_diff = _compute_html_diff(from_node.html_input, prev.html_output)
 
         # Delete descendants only when iterating from an existing node
         if parent_id is not None:
@@ -698,7 +664,6 @@ class IterationController:
             ai_service=self._ai_service,
             browser_service=self._browser_service,
             vision_service=self._vision_service,
-            html_diff=html_diff,
             message_history=message_history,
         )
 
@@ -731,13 +696,6 @@ class IterationController:
         parent_id = node.parent_id
         html_input = node.html_input or ""
 
-        html_diff = ""
-        if parent_id:
-            parent = self._nodes.get(parent_id)
-            if not parent:
-                raise ValueError(f"Parent node {parent_id} not found")
-            html_diff = _compute_html_diff(parent.html_input or "", html_input)
-
         self._delete_descendants(node_id)
         message_history = self._collect_message_history(parent_id, base_model) if parent_id is not None else None
 
@@ -748,7 +706,6 @@ class IterationController:
             ai_service=self._ai_service,
             browser_service=self._browser_service,
             vision_service=self._vision_service,
-            html_diff=html_diff,
             message_history=message_history,
             context=node.context,
             interpretation=node.interpretation,
@@ -793,7 +750,6 @@ class IterationController:
         self._delete_descendants(node_id)
 
         models = [m.strip() for m in settings.code_model.split(',') if m.strip()]
-        html_diff = _compute_html_diff(parent.html_input or "", html_input)
 
         context, interpretation, auto_feedback, _ = await _capture_input_context(
             html_input,
@@ -801,7 +757,6 @@ class IterationController:
             models,
             self._browser_service,
             self._vision_service,
-            html_diff=html_diff,
         )
         input_artifacts = _build_input_artifacts(context, interpretation) if context and interpretation else None
 

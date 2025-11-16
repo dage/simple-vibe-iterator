@@ -125,7 +125,6 @@ async def test_template_context_rendering() -> Tuple[bool, str]:
                 "have_html_input={html_input}\n"
                 "have_vision_output={vision_output}\n"
                 "have_console_logs={console_logs}\n"
-                "have_html_diff={html_diff}\n"
                 "self_name=CODE-TPL\n"
                 "peer_name=VISION-TPL\n"
             ),
@@ -138,7 +137,6 @@ async def test_template_context_rendering() -> Tuple[bool, str]:
                 "auto_feedback={auto_feedback}\n"
                 "have_html_input={html_input}\n"
                 "have_console_logs={console_logs}\n"
-                "have_html_diff={html_diff}\n"
                 "self_name=VISION-TPL\n"
                 "peer_name=CODE-TPL\n"
             ),
@@ -174,7 +172,7 @@ async def test_template_context_rendering() -> Tuple[bool, str]:
 
     # Common substitutions still validated
     for cp, vp in [(cp0, vp0), (cp1, vp1), (cpn, vpn)]:
-        for token in ["{code_model}", "{vision_model}", "{overall_goal}", "{user_feedback}", "{auto_feedback}", "{html_diff}"]:
+        for token in ["{code_model}", "{vision_model}", "{overall_goal}", "{user_feedback}", "{auto_feedback}"]:
             if token in cp or token in vp:
                 return False, f"unsubstituted token present: {token}"
 

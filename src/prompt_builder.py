@@ -31,7 +31,6 @@ def _build_template_context(
     settings: TransitionSettings,
     interpretation_summary: str = "",
     console_logs: List[str] | None = None,
-    html_diff: str = "",
     auto_feedback: str = "",
 ) -> Dict[str, Any]:
     """Shared context used for both code and vision templates."""
@@ -47,7 +46,6 @@ def _build_template_context(
             "html_input": html_input or "",
             "vision_output": interpretation_summary or "",
             "console_logs": "\n".join(console_logs or []),
-            "html_diff": html_diff or "",
             "auto_feedback": auto_feedback or "",
         }
     )
@@ -110,7 +108,6 @@ def build_vision_prompt(
     html_input: str,
     settings: TransitionSettings,
     console_logs: List[str] | None,
-    html_diff: str,
     auto_feedback: str = "",
 ) -> str:
     ctx = _build_template_context(
@@ -118,7 +115,6 @@ def build_vision_prompt(
         settings=settings,
         interpretation_summary="",
         console_logs=console_logs,
-        html_diff=html_diff,
         auto_feedback=auto_feedback,
     )
     return settings.vision_template.format(**ctx)
@@ -129,7 +125,6 @@ def build_code_payload(
     settings: TransitionSettings,
     interpretation_summary: str,
     console_logs: List[str] | None,
-    html_diff: str,
     attachments: Iterable[IterationAsset],
     message_history: List[Dict[str, Any]] | None = None,
     auto_feedback: str = "",
@@ -141,7 +136,6 @@ def build_code_payload(
         settings=settings,
         interpretation_summary=interpretation_summary,
         console_logs=console_logs,
-        html_diff=html_diff,
         auto_feedback=auto_feedback,
     )
     starting_from_blank = not (html_input or "").strip()

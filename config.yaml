@@ -60,7 +60,6 @@ templates:
 
     CURRENT HTML STATE:
     Existing HTML (build upon this): {html_input}
-    Recent changes (what was modified): {html_diff}
 
   vision: |
     You are a vision analysis expert providing technical feedback to a coding model that might have direct access to the same screenshot. The new feedback preset system drives exactly what actions and screenshots the agent sees, so highlight what each labeled frame reveals and what the coder might miss. Your analysis will help improve graphical effects and interactive web applications.

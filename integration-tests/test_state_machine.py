@@ -265,7 +265,7 @@ async def test_artifacts_presence() -> Tuple[bool, str]:
 
 async def test_prompt_placeholders() -> Tuple[bool, str]:
     # Recording AI service to capture the prompt sent by δ
-    from src.controller import IterationController, _compute_html_diff
+    from src.controller import IterationController
     from src.interfaces import AICodeService, TransitionSettings
     from src.prompt_builder import _build_template_context
     from src.services import PlaywrightBrowserService
@@ -307,13 +307,14 @@ async def test_prompt_placeholders() -> Tuple[bool, str]:
 
     root_out = root.outputs[settings.code_model]
     child_out = child.outputs[settings.code_model]
-    expected_prompt = settings.code_template.format(**_build_template_context(
-        html_input=root_out.html_output,
-        settings=settings,
-        interpretation_summary=child_out.artifacts.vision_output,
-        console_logs=child_out.artifacts.console_logs,
-        html_diff=_compute_html_diff(root.html_input, root_out.html_output),
-    ))
+    expected_prompt = settings.code_template.format(
+        **_build_template_context(
+            html_input=root_out.html_output,
+            settings=settings,
+            interpretation_summary=child_out.artifacts.vision_output,
+            console_logs=child_out.artifacts.console_logs,
+        )
+    )
 
     if ai.last_prompt != expected_prompt:
         return False, "code prompt did not include expected placeholder substitutions"
