@@ -44,6 +44,10 @@ class Settings:
         cfg = app_config.get_config()
         return cfg.code_system_prompt_template
 
+    def get_code_first_prompt_template(self) -> str:
+        cfg = app_config.get_config()
+        return cfg.code_first_prompt_template
+
     def get_vision_template(self) -> str:
         cfg = app_config.get_config()
         return cfg.vision_template
@@ -86,6 +90,7 @@ class Settings:
             user_feedback=user_feedback,
             code_template=self.get_code_template(),
             code_system_prompt_template=self.get_code_system_prompt_template(),
+            code_first_prompt_template=self.get_code_first_prompt_template(),
             vision_template=self.get_vision_template(),
             input_screenshot_count=self.get_input_screenshot_count(),
             feedback_preset_id=self.get_feedback_preset_id(),

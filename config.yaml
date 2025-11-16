@@ -100,3 +100,6 @@ templates:
     - Observation 1
     - Observation 2
     - Observation 3
+
+  code_first_prompt: |
+    {overall_goal}

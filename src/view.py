@@ -628,6 +628,7 @@ class NiceGUIView(IterationEventListener):
                     settings_manager = get_settings()
                     feedback_preset_id = self._extract_preset_id(inputs['feedback_preset'])
                     code_template = settings_manager.get_code_template()
+                    code_first_prompt_template = settings_manager.get_code_first_prompt_template()
                     vision_template = settings_manager.get_vision_template()
                     iter_shots = settings_manager.get_input_screenshot_count()
                     selected_model = inputs['code_model'].value or fallback_code_slug
@@ -639,6 +640,7 @@ class NiceGUIView(IterationEventListener):
                         user_feedback=feedback_value,
                         code_template=code_template,
                         code_system_prompt_template=settings_manager.get_code_system_prompt_template(),
+                        code_first_prompt_template=code_first_prompt_template,
                         vision_template=vision_template,
                         input_screenshot_count=iter_shots,
                         feedback_preset_id=feedback_preset_id,

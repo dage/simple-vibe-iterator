@@ -39,6 +39,7 @@ def _build_template_context(
     # Templates themselves should not appear in the context to avoid recursive formatting issues.
     raw.pop("code_template", None)
     raw.pop("code_system_prompt_template", None)
+    raw.pop("code_first_prompt_template", None)
     raw.pop("vision_template", None)
     ctx = raw
     ctx.update(
@@ -143,7 +144,15 @@ def build_code_payload(
         html_diff=html_diff,
         auto_feedback=auto_feedback,
     )
-    base_iteration_prompt = _format_template(settings.code_template, ctx)
+    starting_from_blank = not (html_input or "").strip()
+    is_first_message = (not message_history) and starting_from_blank
+    base_iteration_prompt: str
+    if is_first_message:
+        first_prompt_template = getattr(settings, "code_first_prompt_template", "") or ""
+        first_prompt = _format_template(first_prompt_template, ctx)
+        base_iteration_prompt = first_prompt if first_prompt.strip() else _format_template(settings.code_template, ctx)
+    else:
+        base_iteration_prompt = _format_template(settings.code_template, ctx)
     system_template = getattr(settings, "code_system_prompt_template", "") or settings.code_template
     system_prompt = _format_template(system_template, ctx)
 

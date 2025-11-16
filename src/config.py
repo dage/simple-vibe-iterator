@@ -12,7 +12,7 @@ import yaml
 """
 App configuration loaded from YAML (single source of truth).
 Location: project_root/config.yaml (required)
-Required keys: models.code, models.vision, templates.code, templates.code_system_prompt, templates.vision
+Required keys: models.code, models.vision, templates.code, templates.code_system_prompt, templates.code_first_prompt, templates.vision
 """
 
 
@@ -22,6 +22,7 @@ class AppConfig:
     vision_model: str
     code_template: str
     code_system_prompt_template: str
+    code_first_prompt_template: str
     vision_template: str
     input_screenshot_default: int = 1
     input_screenshot_interval: float = 1.0
@@ -69,6 +70,8 @@ def get_config() -> AppConfig:
         missing.append('templates.code_system_prompt')
     if not isinstance(templates, dict) or not templates.get('vision'):
         missing.append('templates.vision')
+    if not isinstance(templates, dict) or not templates.get('code_first_prompt'):
+        missing.append('templates.code_first_prompt')
     if missing:
         raise RuntimeError('Missing required config keys: ' + ', '.join(missing))
 
@@ -76,6 +79,7 @@ def get_config() -> AppConfig:
     vision_model = str(models.get('vision'))
     code_template = str(templates.get('code'))
     code_system_prompt_template = str(templates.get('code_system_prompt'))
+    code_first_prompt_template = str(templates.get('code_first_prompt'))
     vision_template = str(templates.get('vision'))
 
     iteration_cfg = data.get('iteration') if isinstance(data, dict) else {}
@@ -127,6 +131,7 @@ def get_config() -> AppConfig:
         vision_model=vision_model,
         code_template=code_template,
         code_system_prompt_template=code_system_prompt_template,
+        code_first_prompt_template=code_first_prompt_template,
         vision_template=vision_template,
         input_screenshot_default=default_shots,
         input_screenshot_interval=interval_seconds,

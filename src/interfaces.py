@@ -18,6 +18,7 @@ class TransitionSettings:
     code_template: str
     vision_template: str
     code_system_prompt_template: str = ""
+    code_first_prompt_template: str = ""
     input_screenshot_count: int = 1
     feedback_preset_id: str | None = None
 

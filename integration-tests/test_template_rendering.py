@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
-from typing import Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Sequence, Tuple
 from unittest.mock import patch
 
 
@@ -58,14 +58,35 @@ def _prompt_to_text(prompt) -> str:
     except Exception:
         return str(prompt or "")
 
+def _message_text(message: Dict[str, Any]) -> str:
+    try:
+        content = message.get('content', '')
+        if isinstance(content, list):
+            texts = [
+                str(part.get('text', ''))
+                for part in content
+                if isinstance(part, dict) and part.get('type') == 'text'
+            ]
+            return "\n".join([t for t in texts if t])
+        return str(content or "")
+    except Exception:
+        return ""
+
 
 class RecordingAICodeService:
     def __init__(self, script_lines: list[str] | None = None) -> None:
         self.last_prompt: str = ""
+        self.prompt_history: list[str] = []
+        self.last_payload = None
+        self.payload_history: list[Any] = []
         self._script_lines: list[str] = list(script_lines or [])
 
     async def generate_html(self, prompt, model: str, worker: str = "main") -> tuple[str, str | None, dict | None]:
-        self.last_prompt = _prompt_to_text(prompt)
+        text = _prompt_to_text(prompt)
+        self.last_prompt = text
+        self.prompt_history.append(text)
+        self.last_payload = prompt
+        self.payload_history.append(prompt)
         return _html_with_scripts(self._script_lines), "", {}
 
 
@@ -93,6 +114,7 @@ async def test_template_context_rendering() -> Tuple[bool, str]:
             vision_model="vm-y",
             overall_goal="OG-Z",
             user_feedback="US-W",
+            code_first_prompt_template="{overall_goal}",
             code_template=(
                 "CODE-TPL\n"
                 "code_model={code_model}\n"
@@ -155,6 +177,34 @@ async def test_template_context_rendering() -> Tuple[bool, str]:
         for token in ["{code_model}", "{vision_model}", "{overall_goal}", "{user_feedback}", "{auto_feedback}", "{html_diff}"]:
             if token in cp or token in vp:
                 return False, f"unsubstituted token present: {token}"
+
+    # Verify first iteration uses code_first_prompt_template
+    ai_check = RecordingAICodeService()
+    vision_check = RecordingVisionService()
+    browser_check = PlaywrightBrowserService()
+    ctrl_check = IterationController(ai_check, browser_check, vision_check)
+    settings_check = make_settings()
+    with patch("src.controller._detect_code_model_image_support", new=_fake_capabilities):
+        root_id_check = await ctrl_check.apply_transition(None, settings_check)
+        if not ai_check.payload_history:
+            return False, "code_first_prompt_template check missing payload history"
+        first_payload = ai_check.payload_history[0]
+        first_messages = list(getattr(first_payload, 'messages', []) or [])
+        if len(first_messages) < 2:
+            return False, "code prompt missing user message"
+        first_user_text = _message_text(first_messages[-1]).strip()
+        if first_user_text != settings_check.overall_goal:
+            return False, "code_first_prompt_template not used for initial iteration"
+        await ctrl_check.apply_transition(root_id_check, settings_check)
+        if len(ai_check.payload_history) < 2:
+            return False, "code_template follow-up prompt missing"
+        second_payload = ai_check.payload_history[1]
+        second_messages = list(getattr(second_payload, 'messages', []) or [])
+        if len(second_messages) < 2:
+            return False, "second iteration prompt missing user message"
+        second_user_text = _message_text(second_messages[-1])
+        if "CODE-TPL" not in second_user_text:
+            return False, "code_template not used for follow-up iteration"
 
     return True, "console_logs render for 0/1/many and common fields substituted"
 
