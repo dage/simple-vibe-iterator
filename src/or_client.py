@@ -621,8 +621,8 @@ async def chat_with_meta(
             try:
                 gtf = float(gt) if gt is not None else None
                 if gtf is not None:
-                    # Some providers return ms; normalize to seconds if value looks like ms
-                    generation_time = gtf / 1000.0 if gtf >= 1000.0 else gtf
+                    # OpenRouter returns generation_time in milliseconds; always convert to seconds
+                    generation_time = gtf / 1000.0
             except Exception:
                 generation_time = None
     except Exception:
