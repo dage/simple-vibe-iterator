@@ -12,9 +12,13 @@ import atexit
 from datetime import datetime, timezone
 from pathlib import Path
 from types import FrameType
-from typing import Any, Dict, Iterable, Mapping, MutableMapping
+from typing import Any, Dict, Iterable, List, Mapping, MutableMapping
 from uuid import uuid4
 import queue
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 __all__ = [
     "log_tool_call",
@@ -31,7 +35,13 @@ _MODULE_PATH = Path(__file__).resolve()
 _LOG_DIR = Path(os.getenv("APP_LOG_DIR", "logs"))
 _TOOL_LOG_PATH = Path(os.getenv("TOOL_CALL_LOG", _LOG_DIR / "tool_calls.jsonl"))
 _AUTO_LOG_PATH = Path(os.getenv("AUTO_LOG_FILE", _LOG_DIR / "auto_logger.jsonl"))
-_LOGGING_ENABLED = os.getenv("APP_ENABLE_JSONL_LOGS", "").strip().lower() in {"1", "true", "yes", "on"}
+_LOGGING_ENABLED: bool
+_logging_flag = os.getenv("APP_ENABLE_JSONL_LOGS")
+_disable_values = {"0", "false", "off", "no"}
+if _logging_flag is None:
+    _LOGGING_ENABLED = True
+else:
+    _LOGGING_ENABLED = _logging_flag.strip().lower() not in _disable_values
 
 _TOOL_LOG_MAX_BYTES = 10 * 1024 * 1024
 _AUTO_LOG_MAX_BYTES = 100 * 1024 * 1024

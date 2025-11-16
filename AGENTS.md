@@ -57,6 +57,7 @@
 - Call‑site kwargs take precedence over stored params unless product direction states otherwise.
 
 ### Logging & Diagnostics
+- JSONL logging is enabled by default once the app starts; set env var `APP_ENABLE_JSONL_LOGS` to `0`, `false`, `off`, or `no` to disable tracing for a particular run.
 - `src/logging.py` owns JSONL logging. Auto-importing `src` boots the profiler so every function call inside `src/` is traced to `logs/auto_logger.jsonl`.
 - Tool invocations append to `logs/tool_calls.jsonl`; both logs self-trim by deleting the oldest 25 % of lines once they reach 10 MB (tools) or 100 MB (auto logger).
 - Override paths with `APP_LOG_DIR`, `TOOL_CALL_LOG`, and `AUTO_LOG_FILE`. Disable tracing with `AUTO_LOGGER_DISABLED=1` if you are profiling performance locally.
