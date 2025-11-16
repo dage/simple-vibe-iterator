@@ -53,6 +53,20 @@ try:
 except ValueError:
     _AUTO_LOG_MIN_DURATION_MS = 1.0
 
+_auto_log_batch_raw = (os.getenv("AUTO_LOGGER_BATCH_SIZE") or "").strip()
+try:
+    _AUTO_LOG_BATCH_SIZE = max(1, int(_auto_log_batch_raw)) if _auto_log_batch_raw else 200
+except ValueError:
+    _AUTO_LOG_BATCH_SIZE = 200
+
+_auto_log_flush_raw = (os.getenv("AUTO_LOGGER_FLUSH_INTERVAL_SEC") or "").strip()
+try:
+    _AUTO_LOG_FLUSH_INTERVAL_SEC = (
+        float(_auto_log_flush_raw) if _auto_log_flush_raw else 10.0
+    )
+except ValueError:
+    _AUTO_LOG_FLUSH_INTERVAL_SEC = 10.0
+
 
 # ---- JSON helpers ---------------------------------------------------------
 
@@ -129,6 +143,8 @@ class JsonlLogger:
         sync_writes: bool,
         queue_capacity: int | None = None,
         truncate_interval: int | None = None,
+        batch_size: int | None = None,
+        flush_interval_sec: float | None = None,
     ) -> None:
         self.path = path
         self.max_bytes = max_bytes
@@ -141,6 +157,8 @@ class JsonlLogger:
         self._closed = False
         self._flush_interval = 1 if sync_writes else 20
         self._pending_since_flush = 0
+        self._batch_size = max(1, batch_size or 1)
+        self._flush_interval_sec = max(0.0, flush_interval_sec or 0.0)
         self._fh = None
         self._writer = threading.Thread(
             target=self._writer_loop,
@@ -189,23 +207,45 @@ class JsonlLogger:
             )
 
     def _writer_loop(self) -> None:
-        while not self._stop_event.is_set() or not self._queue.empty():
+        buffer: List[str] = []
+        last_flush = time.perf_counter()
+        while True:
+            should_exit = self._stop_event.is_set() and self._queue.empty()
             try:
-                line = self._queue.get(timeout=1.0)
+                line = self._queue.get(timeout=0.5 if not should_exit else 0.1)
             except queue.Empty:
-                continue
-            try:
-                self._append_line(line)
-            finally:
+                line = None
+            if line is not None:
+                buffer.append(line)
                 self._queue.task_done()
 
-    def _append_line(self, line: str) -> None:
+            now = time.perf_counter()
+            flush_due = False
+            if buffer:
+                if len(buffer) >= self._batch_size:
+                    flush_due = True
+                elif self._flush_interval_sec and (now - last_flush) >= self._flush_interval_sec:
+                    flush_due = True
+                elif should_exit:
+                    flush_due = True
+
+            if flush_due:
+                self._append_lines(buffer)
+                buffer.clear()
+                last_flush = now
+
+            if should_exit and not buffer:
+                break
+
+    def _append_lines(self, lines: List[str]) -> None:
+        if not lines:
+            return
         try:
             if self._fh is None:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
                 self._fh = self.path.open("a", encoding="utf-8")
-            self._fh.write(line + "\n")
-            self._pending_since_flush += 1
+            self._fh.write("\n".join(lines) + "\n")
+            self._pending_since_flush += len(lines)
             if self._pending_since_flush >= self._flush_interval:
                 self._fh.flush()
                 if self._sync_writes:
@@ -215,7 +255,7 @@ class JsonlLogger:
             self._reset_handle()
             return
 
-        self._writes_since_check += 1
+        self._writes_since_check += len(lines)
         if self._writes_since_check >= self._truncate_interval:
             self._writes_since_check = 0
             self._truncate_if_needed()
@@ -290,7 +330,9 @@ if _LOGGING_ENABLED:
         trim_ratio=_TRIM_RATIO,
         sync_writes=_env_flag("AUTO_LOGGER_SYNC", False),
         queue_capacity=5000,
-        truncate_interval=500,
+        truncate_interval=2000,
+        batch_size=_AUTO_LOG_BATCH_SIZE,
+        flush_interval_sec=_AUTO_LOG_FLUSH_INTERVAL_SEC,
     )
 else:
     _TOOL_LOGGER = _NullLogger()
