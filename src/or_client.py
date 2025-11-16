@@ -492,11 +492,15 @@ async def chat_with_meta(
     last_tool_calls: Sequence[Any] = []
     completed = False
 
+    # The app has no streaming UI, so always request full responses.
+    use_streaming = False
+
     for _ in range(max_tool_hops):
         async def call():
             payload = {
                 "model": slug,
                 "messages": conversation,
+                "stream": use_streaming,
                 "extra_body": merged_kwargs or None,
             }
             if tool_specs:
@@ -531,6 +535,7 @@ async def chat_with_meta(
             payload = {
                 "model": slug,
                 "messages": conversation,
+                "stream": use_streaming,
                 "extra_body": merged_kwargs or None,
             }
             return await _client().chat.completions.create(**payload)

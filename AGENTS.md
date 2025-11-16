@@ -87,8 +87,9 @@ Note on sharing commit messages in chat:
 ## Development Rules & Invariants
 - No hardcoded fallback/mocked data; on API failure, surface the error.
 - Avoid scope creep; implement only requested changes.
-- Re‑running mid-chain deletes descendants; do not bypass operation locking.
-- Preserve state‑machine flow: render → screenshot/console → vision → code → output.
+- Re-running mid-chain deletes descendants; do not bypass operation locking.
+- Preserve state-machine flow: render → screenshot/console → vision → code → output.
+- Streaming responses are unsupported; always call language/vision APIs with `stream=False` and avoid streaming-specific plumbing.
 - Default preset-driven capture uses `code: x-ai/grok-4-fast` and `vision: qwen/qwen3-vl-235b-a22b-instruct`; keep those hardcoded inside preset artifacts unless product direction changes.
 
 ### Simplicity & Modularity
