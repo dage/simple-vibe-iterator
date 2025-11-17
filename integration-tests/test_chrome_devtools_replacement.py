@@ -78,3 +78,26 @@ async def test_devtools_methods_without_server() -> None:
     assert await service.performance_trace_start_mcp() is True
     trace = await service.performance_trace_stop_mcp()
     assert isinstance(trace, dict) and trace.get("fps") == 60
+
+
+@pytest.mark.asyncio
+async def test_press_key_hold_path() -> None:
+    service = ChromeDevToolsService(enabled=False)
+    service.enabled = True
+
+    called: dict = {}
+
+    async def fake_eval(self, script: str, *, is_function: bool = False):
+        called["script"] = script
+        called["is_function"] = is_function
+        return True
+
+    async def fake_call_tool(self, name: str, arguments: dict | None = None):
+        raise AssertionError("press_key tool should not be used for long holds")
+
+    service.evaluate_script_mcp = fake_eval.__get__(service, ChromeDevToolsService)  # type: ignore[attr-defined]
+    service._call_tool = fake_call_tool.__get__(service, ChromeDevToolsService)  # type: ignore[attr-defined]
+
+    assert await service.press_key_mcp("w", duration_ms=800) is True
+    assert "setTimeout" in called["script"]
+    assert called["is_function"] is True

@@ -171,9 +171,50 @@ class ChromeDevToolsService:
         return entries
 
     async def press_key_mcp(self, key: str, duration_ms: int = 100) -> bool:
-        # duration not supported by DevTools MCP; best-effort single press
-        result = await self._call_tool("press_key", {"key": key})
-        return self._extract_bool(result)
+        normalized = (key or "").strip()
+        if not normalized:
+            return False
+        hold_ms = max(0, int(duration_ms or 0))
+        if hold_ms <= 200:
+            result = await self._call_tool("press_key", {"key": normalized})
+            return self._extract_bool(result)
+        return await self._press_key_with_hold(normalized, hold_ms)
+
+    async def _press_key_with_hold(self, key: str, duration_ms: int) -> bool:
+        hold = max(50, duration_ms)
+        key_literal = json.dumps(key)
+        script = (
+            "() => {"
+            " const raw = (" + key_literal + ").trim();"
+            " if (!raw) { return false; }"
+            " const lower = raw.toLowerCase();"
+            " const isSpace = lower === 'space' || lower === 'spacebar';"
+            " const keyValue = isSpace ? ' ' : raw;"
+            " const code = isSpace ? 'Space' : (keyValue.length === 1 ? ((/[0-9]/.test(keyValue)) ? `Digit${keyValue}` : ((/[a-z]/i.test(keyValue)) ? `Key${keyValue.toUpperCase()}` : keyValue)) : raw);"
+            " const keyCode = keyValue === ' ' ? 32 : (keyValue.length === 1 ? keyValue.toUpperCase().charCodeAt(0) : 0);"
+            " const init = { key: keyValue, code, keyCode, which: keyCode, bubbles: true, cancelable: true, composed: true };"
+            " const target = document.activeElement || document.body || document;"
+            " if (!target) { return false; }"
+            " const dispatch = (type) => {"
+            "   const event = new KeyboardEvent(type, init);"
+            "   target.dispatchEvent(event);"
+            " };"
+            " if (!Array.isArray(window.__sviActiveKeys)) { window.__sviActiveKeys = []; }"
+            " window.__sviActiveKeys.push({ key: raw, releaseAt: performance.now() + " + str(hold) + " });"
+            " const release = () => {"
+            "   dispatch('keyup');"
+            "   window.__sviActiveKeys = window.__sviActiveKeys.filter((entry) => entry.key !== raw);"
+            " };"
+            " dispatch('keydown');"
+            " dispatch('keypress');"
+            " setTimeout(release, " + str(hold) + ");"
+            " if (console && console.info) { console.info(`[devtools] key ${raw} held for " + str(hold) + "ms`); }"
+            " return true;"
+            "}"
+        )
+        result = await self.evaluate_script_mcp(script, is_function=True)
+        await asyncio.sleep(min(hold, 250) / 1000.0)
+        return bool(result)
 
     async def wait_for_selector_mcp(self, selector: str, timeout_ms: int = 5000) -> bool:
         result = await self._call_tool(

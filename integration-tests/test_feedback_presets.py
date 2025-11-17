@@ -132,11 +132,11 @@ async def run_feedback_preset_test() -> None:
             raise AssertionError(f"Screenshot missing at {image_path}")
 
         dominant = _center_pixel(image_path)
-        expected = (34, 197, 94)  # observed key-up color near #22c55e in DevTools headless runs
+        expected = (244, 63, 94)  # key-down color near #f43f5e as hold now overlaps screenshot
         if not _color_close(dominant, expected, tolerance=35):
             raise AssertionError(f"Unexpected pixel color {dominant} vs {expected}")
 
-        if not any("key up detected" in entry.lower() for entry in logs):
+        if not any("key down detected" in entry.lower() for entry in logs):
             raise AssertionError(f"Console logs missing expected entry: {logs}")
     finally:
         tmpdir.cleanup()
