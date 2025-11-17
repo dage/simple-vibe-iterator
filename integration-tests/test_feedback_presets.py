@@ -109,10 +109,10 @@ PRESET_YAML = dedent(
 
 
 async def run_feedback_preset_test() -> None:
-    from src.services import PlaywrightBrowserService
+    from src.services import DevToolsBrowserService
     from src import feedback_presets
 
-    browser = PlaywrightBrowserService()
+    browser = DevToolsBrowserService()
     tmpdir = tempfile.TemporaryDirectory()
     try:
         preset_path = Path(tmpdir.name) / "feedback_presets.yaml"
@@ -132,7 +132,7 @@ async def run_feedback_preset_test() -> None:
             raise AssertionError(f"Screenshot missing at {image_path}")
 
         dominant = _center_pixel(image_path)
-        expected = (240, 90, 118)  # observed key-down color near #f43f5e
+        expected = (34, 197, 94)  # observed key-up color near #22c55e in DevTools headless runs
         if not _color_close(dominant, expected, tolerance=35):
             raise AssertionError(f"Unexpected pixel color {dominant} vs {expected}")
 

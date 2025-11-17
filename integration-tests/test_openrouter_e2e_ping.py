@@ -16,14 +16,14 @@ async def run_ping() -> Tuple[bool, str]:
     from src.services import (
         OpenRouterAICodeService,
         OpenRouterVisionService,
-        PlaywrightBrowserService,
+        DevToolsBrowserService,
     )
     from src.controller import IterationController
     from src.interfaces import TransitionSettings
 
     ai = OpenRouterAICodeService()
     vision = OpenRouterVisionService()
-    browser = PlaywrightBrowserService()
+    browser = DevToolsBrowserService()
 
     from src import config as app_config
     cfg = app_config.get_config()

@@ -104,7 +104,7 @@ async def _fake_capabilities(models: List[str]) -> Dict[str, bool]:
 
 
 async def test_template_context_rendering() -> Tuple[bool, str]:
-    from src.services import PlaywrightBrowserService
+    from src.services import DevToolsBrowserService
     from src.controller import IterationController
     from src.interfaces import TransitionSettings
 
@@ -145,7 +145,7 @@ async def test_template_context_rendering() -> Tuple[bool, str]:
     async def run_case(script_lines: list[str]) -> tuple[str, str]:
         ai = RecordingAICodeService(script_lines=script_lines)
         vision = RecordingVisionService()
-        browser = PlaywrightBrowserService()
+        browser = DevToolsBrowserService()
         ctrl = IterationController(ai, browser, vision)
         settings = make_settings()
 
@@ -179,7 +179,7 @@ async def test_template_context_rendering() -> Tuple[bool, str]:
     # Verify first iteration uses code_first_prompt_template
     ai_check = RecordingAICodeService()
     vision_check = RecordingVisionService()
-    browser_check = PlaywrightBrowserService()
+    browser_check = DevToolsBrowserService()
     ctrl_check = IterationController(ai_check, browser_check, vision_check)
     settings_check = make_settings()
     with patch("src.controller._detect_code_model_image_support", new=_fake_capabilities):

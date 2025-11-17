@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 from .controller import IterationController
 from .services import (
-    PlaywrightBrowserService,
+    DevToolsBrowserService,
     OpenRouterAICodeService,
     OpenRouterVisionService,
 )
@@ -63,7 +63,7 @@ def create_app() -> NiceGUIView:
     # Use OpenRouter-backed services (requires .env configuration)
     ai_service = OpenRouterAICodeService()
     vision_service = OpenRouterVisionService()
-    browser_service = PlaywrightBrowserService()
+    browser_service = DevToolsBrowserService()
 
     controller = IterationController(ai_service, browser_service, vision_service)
     view = NiceGUIView(controller)

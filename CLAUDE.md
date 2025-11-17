@@ -13,8 +13,8 @@ Simple Vibe Iterator is an AI-driven development system for graphical web applic
 # Install Python dependencies
 pip install -r requirements.txt
 
-# Install Playwright browsers (required)
-python -m playwright install
+# Install Chrome DevTools MCP helper (required)
+npm install -g chrome-devtools-mcp@latest
 
 # Setup environment variables
 cp .env_template .env  # Fill in OPENROUTER_BASE_URL and OPENROUTER_API_KEY
@@ -46,7 +46,7 @@ python integration-tests/run_all.py -j 4  # 4 parallel jobs
 ### Core Components
 - **`src/interfaces.py`**: Data structures (`IterationNode`, `TransitionSettings`, `TransitionArtifacts`) and service protocols (`AICodeService`, `BrowserService`, `VisionService`)
 - **`src/controller.py`**: Framework-agnostic iteration controller with pure transition function δ
-- **`src/services.py`**: OpenRouter AI services and Playwright browser service implementations
+- **`src/services.py`**: OpenRouter AI services and Chrome DevTools browser service implementation
 - **`src/view.py`**: NiceGUI-based UI layer (only UI code)
 - **`src/main.py`**: Dependency injection and application entry point
 
@@ -65,7 +65,7 @@ Each iteration follows: `render → screenshot/console → vision analysis → c
 
 ### Service Architecture
 - Clean protocol separation allows service swapping (currently OpenRouter-only)
-- Browser service handles HTML rendering and screenshot capture via Playwright
+- Browser service handles HTML rendering and screenshot capture via Chrome DevTools MCP
 - AI services handle code generation and vision analysis
 - Operation status tracking with phase indicators
 

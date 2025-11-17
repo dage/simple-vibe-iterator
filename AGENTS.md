@@ -11,7 +11,7 @@
 
 ## Setup, Run, and Tests
 - Install deps: `pip install -r requirements.txt`
-- Install browsers: `python -m playwright install`
+- Install Chrome DevTools MCP helper: `npm install -g chrome-devtools-mcp@latest`
 - Copy env: `cp .env_template .env` and set `OPENROUTER_API_KEY`
 - Run GUI: `python -m src.main` (serves on port 8055; artifacts at `/artifacts`)
 - Run all tests: `python integration-tests/run_all.py`
@@ -48,8 +48,13 @@
 ### NiceGUI & Quasar Patterns
 - NiceGUI UI components represent state synchronized between Python and the browser via WebSockets. To update component values programmatically and ensure the UI reflects changes without page refresh, always use provided async setter methods (e.g., await component.set_value(...)) inside async event handlers or tasks. Avoid direct attribute assignments followed by .update(), which often do not trigger UI refresh. For reactive two-way binding, use bind_value to link Python variables with component state and keep them in sync automatically. This pattern enables reliable, real-time UI updates following user interactions or internal logic changes.
 - Use native `ui.table` with a scoped body slot (`add_slot('body', scope='props')`) for custom cell content; avoid passing `props` to `ui.element(...)` directly.
-- Avoid closure capture bugs in per‑row actions: pass the dialog/table instance into callbacks explicitly.
-- Keep dialogs full‑width for complex forms and prefer outlined, dense inputs for readability.
+- Avoid closure capture bugs in per-row actions: pass the dialog/table instance into callbacks explicitly.
+- Keep dialogs full-width for complex forms and prefer outlined, dense inputs for readability.
+
+### Chrome DevTools Browser Tools
+- Chrome DevTools MCP provides eight core tools for every iteration: take_screenshot, list_console_messages, list_network_requests, press_key, evaluate_script, wait_for, performance_start_trace, and performance_stop_trace.
+- Treat these tools as required instrumentation: capture screenshots frequently, inspect console/network failures before guessing, and verify controls with press_key plus screenshots.
+- Use the performance trace tools only when diagnosing FPS or timing issues; remember to call `performance_stop_trace` to retrieve metrics.
 
 ### OpenRouter / Model Parameters Invariants
 - Only send parameters explicitly stored by the user per model. Do not invent defaults.

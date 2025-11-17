@@ -16,7 +16,7 @@ async def run_iterate_number() -> Tuple[bool, str]:
     from src.services import (
         OpenRouterAICodeService,
         OpenRouterVisionService,
-        PlaywrightBrowserService,
+        DevToolsBrowserService,
     )
     from src.controller import IterationController
     from src.interfaces import TransitionSettings
@@ -24,7 +24,7 @@ async def run_iterate_number() -> Tuple[bool, str]:
 
     ai = OpenRouterAICodeService()
     vision = OpenRouterVisionService()
-    browser = PlaywrightBrowserService()
+    browser = DevToolsBrowserService()
     ctrl = IterationController(ai, browser, vision)
 
     from src import config as app_config

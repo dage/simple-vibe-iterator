@@ -213,7 +213,7 @@ class StatusPanel:
             elif lower.startswith('vision:'):
                 headline = 'Vision'
                 detail = raw.split(':', 1)[1].strip() if ':' in raw else ''
-            elif 'playwright' in lower:
+            elif 'devtools' in lower:
                 headline = 'Screenshot'
                 detail = raw
             else:

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import os
 import uuid
@@ -11,17 +12,39 @@ from typing import Dict, List, Sequence
 from .interfaces import AICodeService, BrowserService, VisionService
 from .image_downscale import load_scaled_image_bytes
 from . import op_status
-from .playwright_browser import capture_html, parse_viewport, run_feedback_sequence
 from .prompt_builder import PromptPayload
 from .feedback_presets import FeedbackPreset
+from .chrome_devtools_service import ChromeDevToolsService
 
 
-class PlaywrightBrowserService(BrowserService):
-    def __init__(self, out_dir: Path | None = None, viewport: str | None = None) -> None:
+def _write_html_artifact(target: Path, html_code: str) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(html_code, encoding="utf-8")
+
+
+def _save_data_url(data_url: str, target: Path) -> None:
+    if not data_url or "," not in data_url:
+        return
+    _, payload = data_url.split(",", 1)
+    target.write_bytes(base64.b64decode(payload))
+
+
+def _format_console_entries(entries: List[Dict[str, str]]) -> List[str]:
+    flat: List[str] = []
+    for entry in entries or []:
+        level = str(entry.get("level") or "log")
+        message = str(entry.get("message") or "")
+        flat.append(f"[{level}] {message}")
+    return flat
+
+
+class DevToolsBrowserService(BrowserService):
+    """Default browser implementation backed by Chrome DevTools MCP."""
+
+    def __init__(self, out_dir: Path | None = None) -> None:
         self._out_dir = Path(out_dir or "artifacts").resolve()
         self._out_dir.mkdir(parents=True, exist_ok=True)
-        self._viewport = parse_viewport(viewport)
-        self._lock = asyncio.Lock()
+
     async def render_and_capture(
         self,
         html_code: str,
@@ -30,12 +53,11 @@ class PlaywrightBrowserService(BrowserService):
         capture_count: int = 1,
         interval_seconds: float = 1.0,
     ) -> tuple[List[str], List[str]]:
-        try:
-            count = int(capture_count)
-        except Exception:
-            count = 1
-        count = max(1, count)
+        service = ChromeDevToolsService()
+        if not service.enabled:
+            raise RuntimeError("Chrome DevTools MCP is not configured; cannot capture screenshots.")
 
+        count = max(1, int(capture_count or 1))
         try:
             interval = float(interval_seconds)
         except Exception:
@@ -46,33 +68,29 @@ class PlaywrightBrowserService(BrowserService):
         digest = hashlib.sha1(html_code.encode("utf-8")).hexdigest()[:12]
         token = uuid.uuid4().hex[:8]
         base_html = self._out_dir / f"page_{digest}_{token}.html"
-        base_html.write_text(html_code, encoding="utf-8")
-        png_paths = [self._out_dir / f"page_{digest}_{token}_{idx}.png" for idx in range(count)]
-        # Structured phase: "Screenshot|Playwright: capture"
-        op_status.set_phase(worker, "Screenshot|Playwright")
-        async with self._lock:
-            logs = await asyncio.to_thread(
-                capture_html,
-                base_html,
-                png_paths,
-                self._viewport,
-                interval,
-            )
-        # Flatten console texts for now to meet interface
-        flat_logs: List[str] = []
-        for entry in logs:
-            t = str(entry.get("type") or "log")
-            msg = str(entry.get("text") or "")
-            flat_logs.append(f"[{t}] {msg}")
-        op_status.clear_phase(worker)
-        for png in png_paths:
-            html_copy = png.with_suffix('.html')
-            try:
+        _write_html_artifact(base_html, html_code)
+
+        screenshot_paths: List[str] = []
+        op_status.set_phase(worker, "Screenshot|DevTools")
+        try:
+            await service.load_html_mcp(html_code)
+            for idx in range(count):
+                if idx > 0:
+                    await asyncio.sleep(interval)
+                data_url = await service.take_screenshot_mcp()
+                if not data_url:
+                    break
+                shot_path = self._out_dir / f"page_{digest}_{token}_{idx}.png"
+                _save_data_url(data_url, shot_path)
+                html_copy = shot_path.with_suffix(".html")
                 if not html_copy.exists():
-                    html_copy.write_text(html_code, encoding="utf-8")
-            except Exception:
-                pass
-        return ([str(p) for p in png_paths], flat_logs)
+                    _write_html_artifact(html_copy, html_code)
+                screenshot_paths.append(str(shot_path))
+            log_entries = await service.get_console_messages_mcp()
+            log_strings = _format_console_entries(log_entries)
+        finally:
+            op_status.clear_phase(worker)
+        return screenshot_paths, log_strings
 
     async def run_feedback_preset(
         self,
@@ -82,72 +100,50 @@ class PlaywrightBrowserService(BrowserService):
     ) -> tuple[List[str], List[str], List[str]]:
         if not preset.actions:
             return ([], [], [])
+        service = ChromeDevToolsService()
+        if not service.enabled:
+            raise RuntimeError("Chrome DevTools MCP is not configured; cannot run feedback preset.")
+
         digest = hashlib.sha1(html_code.encode("utf-8")).hexdigest()[:12]
         token = uuid.uuid4().hex[:8]
         base_html = self._out_dir / f"preset_{digest}_{token}.html"
-        base_html.write_text(html_code, encoding="utf-8")
+        _write_html_artifact(base_html, html_code)
 
-        plan: List[Dict[str, object]] = []
-        screenshot_paths: List[Path] = []
+        screenshot_paths: List[str] = []
         screenshot_labels: List[str] = []
         shot_idx = 0
-        for action in preset.actions:
-            kind = action.kind.lower()
-            if kind == "wait":
-                plan.append({"kind": "wait", "seconds": max(0.0, float(action.seconds))})
-            elif kind == "keypress":
-                plan.append(
-                    {
-                        "kind": "keypress",
-                        "key": action.key,
-                        "duration_ms": max(0, int(action.duration_ms)),
-                    }
-                )
-            elif kind == "screenshot":
-                filename = f"preset_{preset.id}_{token}_{shot_idx}.png"
-                shot_idx += 1
-                path = self._out_dir / filename
-                label = action.label or f"shot-{shot_idx}"
-                plan.append(
-                    {
-                        "kind": "screenshot",
-                        "path": path,
-                        "full_page": bool(action.full_page),
-                        "label": label,
-                    }
-                )
-                screenshot_paths.append(path)
-                screenshot_labels.append(label)
 
         op_status.set_phase(worker, f"Feedback|{preset.label or preset.id}")
+        try:
+            await service.load_html_mcp(html_code)
+            for action in preset.actions:
+                kind = (action.kind or "").lower()
+                if kind == "wait":
+                    await asyncio.sleep(max(0.0, float(action.seconds)))
+                elif kind == "keypress":
+                    await service.press_key_mcp(action.key or "", max(0, int(action.duration_ms)))
+                elif kind == "screenshot":
+                    data_url = await service.take_screenshot_mcp()
+                    if not data_url:
+                        continue
+                    filename = f"preset_{preset.id}_{token}_{shot_idx}.png"
+                    shot_idx += 1
+                    path = self._out_dir / filename
+                    _save_data_url(data_url, path)
+                    html_copy = path.with_suffix(".html")
+                    if not html_copy.exists():
+                        _write_html_artifact(html_copy, html_code)
+                    label = action.label or f"shot-{shot_idx}"
+                    screenshot_paths.append(str(path))
+                    screenshot_labels.append(label)
+        finally:
+            op_status.clear_phase(worker)
 
-        def _update_action(desc: str) -> None:
-            text = desc or preset.label or preset.id
-            op_status.set_phase(worker, f"Feedback|{text}")
+        log_entries = await service.get_console_messages_mcp()
+        log_strings = _format_console_entries(log_entries)
+        return screenshot_paths, log_strings, screenshot_labels
 
-        async with self._lock:
-            logs = await asyncio.to_thread(
-                run_feedback_sequence,
-                base_html,
-                plan,
-                self._viewport,
-                _update_action,
-            )
-        flat_logs: List[str] = []
-        for entry in logs:
-            t = str(entry.get("type") or "log")
-            msg = str(entry.get("text") or "")
-            flat_logs.append(f"[{t}] {msg}")
-        op_status.clear_phase(worker)
 
-        for png in screenshot_paths:
-            html_copy = png.with_suffix(".html")
-            try:
-                if not html_copy.exists():
-                    html_copy.write_text(html_code, encoding="utf-8")
-            except Exception:
-                pass
-        return ([str(p) for p in screenshot_paths], flat_logs, list(screenshot_labels))
 
 
 # ---- OpenRouter-backed services ----

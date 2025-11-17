@@ -94,11 +94,11 @@ async def _fake_capabilities(models: List[str]) -> dict:
 
 
 async def build_controller():
-    from src.services import PlaywrightBrowserService
+    from src.services import DevToolsBrowserService
     from src.controller import IterationController
 
     ai = _TestStubAICodeService()
-    browser = PlaywrightBrowserService()
+    browser = DevToolsBrowserService()
     vision = _TestStubVisionService()
     return IterationController(ai, browser, vision)
 
@@ -268,7 +268,7 @@ async def test_prompt_placeholders() -> Tuple[bool, str]:
     from src.controller import IterationController
     from src.interfaces import AICodeService, TransitionSettings
     from src.prompt_builder import _build_template_context
-    from src.services import PlaywrightBrowserService
+    from src.services import DevToolsBrowserService
 
     class RecordingAICodeService(AICodeService):
         def __init__(self) -> None:
@@ -289,7 +289,7 @@ async def test_prompt_placeholders() -> Tuple[bool, str]:
             return html, "", {}
 
     ai = RecordingAICodeService()
-    browser = PlaywrightBrowserService()
+    browser = DevToolsBrowserService()
     vision = _TestStubVisionService()
     ctrl = IterationController(ai, browser, vision)
 
@@ -389,7 +389,7 @@ async def test_shared_input_capture() -> Tuple[bool, str]:
 
 
 async def test_render_failure_cleanup() -> Tuple[bool, str]:
-    from src.services import PlaywrightBrowserService
+    from src.services import DevToolsBrowserService
 
     with patch("src.controller._detect_code_model_image_support", new=_fake_capabilities):
         ctrl = await build_controller()
@@ -399,7 +399,7 @@ async def test_render_failure_cleanup() -> Tuple[bool, str]:
         if ctrl.get_node(child_id) is None:
             return False, "initial child missing"
 
-        original_render = PlaywrightBrowserService.render_and_capture
+        original_render = DevToolsBrowserService.render_and_capture
 
         async def fail_once(self, html_code: str, worker: str = "main", *, capture_count: int = 1, interval_seconds: float = 1.0):
             if worker != "input" and fail_once.calls == 0:
@@ -409,7 +409,7 @@ async def test_render_failure_cleanup() -> Tuple[bool, str]:
 
         fail_once.calls = 0  # type: ignore[attr-defined]
 
-        with patch.object(PlaywrightBrowserService, "render_and_capture", new=fail_once):
+        with patch.object(DevToolsBrowserService, "render_and_capture", new=fail_once):
             try:
                 await ctrl.apply_transition(root_id, default_settings("Failure path"))
             except RuntimeError as exc:

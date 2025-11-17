@@ -32,16 +32,19 @@ from dataclasses import dataclass, field
 import importlib.util
 
 try:
-    from . import js_tool
     from . import logging as log_utils
+    from .browser_tools_for_agents import BrowserToolProvider
+    from .chrome_devtools_service import create_chrome_devtools_service, ChromeDevToolsService
 except (ImportError, ModuleNotFoundError):  # pragma: no cover - fallback for tooling/tests
-    import js_tool  # type: ignore
     MODULE_DIR = Path(__file__).resolve().parent
     _spec = importlib.util.spec_from_file_location("src.logging_fallback", MODULE_DIR / "logging.py")
     assert _spec and _spec.loader
     log_utils = importlib.util.module_from_spec(_spec)  # type: ignore[assignment]
     sys.modules.setdefault(_spec.name, log_utils)
     _spec.loader.exec_module(log_utils)  # type: ignore[arg-type]
+    BrowserToolProvider = None  # type: ignore[assignment]
+    ChromeDevToolsService = None  # type: ignore[assignment]
+    create_chrome_devtools_service = lambda *a, **k: None  # type: ignore[assignment]
 
 # ---------------- Settings & client ---------------- #
 
@@ -128,7 +131,19 @@ _MODELS_CACHE: Optional[List[ModelInfo]] = None
 _CACHE_TIMESTAMP: Optional[float] = None
 _CACHE_DURATION = 3600.0  # 1 hour
 _FETCH_LOCK = asyncio.Lock()
-DEFAULT_TOOL_SPECS: List[Dict[str, Any]] = [js_tool.JS_TOOL_SPEC]
+_BROWSER_TOOL_PROVIDER = BrowserToolProvider() if BrowserToolProvider else None
+_BROWSER_TOOL_SPECS: List[Dict[str, Any]] = (
+    _BROWSER_TOOL_PROVIDER.get_all_tools() if _BROWSER_TOOL_PROVIDER else []
+)
+DEFAULT_TOOL_SPECS: List[Dict[str, Any]] = list(_BROWSER_TOOL_SPECS)
+_BROWSER_TOOL_NAMES = {
+    spec.get("function", {}).get("name")
+    for spec in _BROWSER_TOOL_SPECS
+    if isinstance(spec, dict) and spec.get("function", {}).get("name")
+}
+_CHROME_DEVTOOLS_SERVICE: Optional[ChromeDevToolsService] = (
+    create_chrome_devtools_service() if ChromeDevToolsService else None
+)
 _MODEL_INDEX: Dict[str, ModelInfo] = {}
 
 
@@ -207,21 +222,66 @@ async def _execute_tool_call(model_slug: str, name: str, arguments: str) -> str:
     except json.JSONDecodeError:
         payload = {"code": arguments}
 
-    code = str(payload.get("code", ""))
-    if name != js_tool.TOOL_NAME:
-        return json.dumps({"error": f"Unknown tool: {name}"}, ensure_ascii=False)
-    if not code.strip():
-        return json.dumps({"error": "Missing JavaScript code"}, ensure_ascii=False)
-    try:
-        result = await js_tool.execute_tool(code)
-    except Exception as exc:
-        return json.dumps({"error": f"Tool execution failed: {exc}"}, ensure_ascii=False)
+    if name in _BROWSER_TOOL_NAMES:
+        response = await _execute_browser_tool(name, payload)
+        response_text = json.dumps(response, ensure_ascii=False)
+        try:
+            log_utils.log_tool_call(
+                model=model_slug,
+                tool=name,
+                code=json.dumps(payload, ensure_ascii=False),
+                output=response_text,
+            )
+        except Exception:
+            pass
+        return response_text
+
+    return json.dumps({"error": f"Unknown tool: {name}"}, ensure_ascii=False)
+
+
+async def _execute_browser_tool(name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    service = _CHROME_DEVTOOLS_SERVICE
+    if service is None or not getattr(service, "enabled", False):
+        return {"error": "chrome_devtools_disabled"}
 
     try:
-        log_utils.log_tool_call(model=model_slug, tool=name, code=code, output=result)
-    except Exception:
-        pass
-    return result
+        if name == "take_screenshot":
+            return {"screenshot": await service.take_screenshot_mcp()}
+        if name == "list_console_messages":
+            return {"messages": await service.get_console_messages_mcp(level=payload.get("level"))}
+        if name == "list_network_requests":
+            return {
+                "requests": await service.get_network_requests_mcp(filter_url=payload.get("filter"))
+            }
+        if name == "press_key":
+            key = str(payload.get("key", "")).strip()
+            if not key:
+                return {"error": "missing key"}
+            duration = int(payload.get("duration_ms", 100))
+            return {"ok": await service.press_key_mcp(key=key, duration_ms=duration)}
+        if name == "evaluate_script":
+            script = str(payload.get("script", ""))
+            if not script.strip():
+                return {"error": "missing script"}
+            return {"result": await service.evaluate_script_mcp(script)}
+        if name == "wait_for":
+            selector = str(payload.get("selector", "")).strip()
+            if not selector:
+                return {"error": "missing selector"}
+            return {
+                "ok": await service.wait_for_selector_mcp(
+                    selector=selector,
+                    timeout_ms=int(payload.get("timeout_ms", 5000)),
+                )
+            }
+        if name == "performance_start_trace":
+            return {"ok": await service.performance_trace_start_mcp()}
+        if name == "performance_stop_trace":
+            return {"result": await service.performance_trace_stop_mcp()}
+    except Exception as exc:  # pragma: no cover - defensive logging
+        return {"error": f"chrome_devtools_error: {exc}"}
+
+    return {"error": f"unsupported_tool: {name}"}
 
 
 async def list_models(query: str = "", vision_only: bool = False, limit: int = 20, force_refresh: bool = False) -> List[ModelInfo]:

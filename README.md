@@ -12,7 +12,7 @@ Current state:
 
 UI/UX additions:
 - Sticky operation status (top-right): shows current operation and services live phase with elapsed time
-  - Example phases: `Playwright: Capture screenshot`, `Code: <code_model>`, `Vision: <vision_model>`
+  - Example phases: `DevTools: Capture screenshot`, `Code: <code_model>`, `Vision: <vision_model>`
   - Idle state: green icon and “No operation running”
 - Operation lock: prevents concurrent user actions (e.g., "Create root" / "Iterate")
   - If an operation is in progress, further clicks are rejected with a warning
@@ -24,9 +24,9 @@ UI/UX additions:
 ```
 pip install -r requirements.txt
 ```
-3. Install Playwright browsers (required):
+3. Install Chrome DevTools MCP helper (required):
 ```
-python -m playwright install
+npm install -g chrome-devtools-mcp@latest
 ```
 4. Create `.env` from `.env_template` and fill values:
    - Required: `OPENROUTER_BASE_URL` (default provided), `OPENROUTER_API_KEY`
@@ -94,9 +94,9 @@ This will:
 
 ### Run the GUI prototype
 ```bash
-python -m src.main
+./start.sh
 ```
-Then open `http://localhost:8055`.
+`start.sh` simply runs `python -m src.main`; the Chrome DevTools MCP server spins up automatically on demand via the launcher embedded in the app whenever a tool call occurs.
 
 Workflow:
 - Create a root node: enter the overall goal, then click "Create root" (the coding agent creates the initial HTML).
@@ -119,7 +119,7 @@ python experiments/model_selector_artifact.py --capture
 The harness pre-populates the code-model selector, auto-expands the dropdown, and lists the mock capability matrix (tracking text, vision, and tool capabilities) so you can verify upcoming UI changes without hitting OpenRouter.
 
 ### JavaScript code interpreter tool
-- Every code/vision model that advertises tool-calling support automatically receives the `evaluate_javascript` QuickJS tool. The agent uses it to execute snippets for verification and there is no UI toggle to disable it.
+- Every code/vision model that supports tool-calling now receives the Chrome DevTools tool suite (take_screenshot, list_console_messages, list_network_requests, press_key, evaluate_script, wait_for, performance_start_trace, performance_stop_trace). The legacy `evaluate_javascript` helper has been removed now that DevTools handles in-page execution directly.
 - The tool captures `console.log` output and returns both the evaluated result and logs so model reasoning can cite concrete evidence.
 - Each invocation is appended to `logs/tool_calls.jsonl` (JSON per line) so you can audit which model ran which snippet and what the tool returned.
 
@@ -134,7 +134,7 @@ The harness pre-populates the code-model selector, auto-expands the dropdown, an
 ### Architecture overview
 - `src/interfaces.py`: dataclasses and service/controller interfaces (no UI deps)
 - `src/controller.py`: framework-agnostic iteration controller
-- `src/services.py`: OpenRouter AI services + Playwright browser service
+- `src/services.py`: OpenRouter AI services + Chrome DevTools browser service
 - `src/view.py`: NiceGUI view (UI only); reads defaults from `config.yaml` via `src/config.py`
 - `src/main.py`: dependency wiring and app entry (OpenRouter-only)
 
@@ -154,4 +154,4 @@ Execute:
 ```
 python integration-tests/test_feedback_presets.py
 ```
-This integration test spins up Playwright against an embedded HTML harness, runs a temporary preset (with long-duration key holds), and uses Pillow to confirm the screenshot captured the key-down state while also verifying that key-up events eventually fire via console logs.
+This integration test spins up the Chrome DevTools browser harness against embedded HTML, runs a temporary preset (with long-duration key holds), and uses Pillow to confirm the screenshot captured the key-down state while also verifying that key-up events eventually fire via console logs.
