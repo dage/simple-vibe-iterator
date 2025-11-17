@@ -1,0 +1,1 @@
+Create a joystick visualization that clearly and with no delay moves the joystick in up, down, right, left directions by listening for w,s,a and d keypresses. Use key down and up event. Also show a pad that indicates if spacebar is pressed.
