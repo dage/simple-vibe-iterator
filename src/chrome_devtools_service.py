@@ -26,6 +26,7 @@ class ChromeDevToolsService:
     _command: Optional[List[str]] = field(default=None, init=False)
     _client: Optional[MCPClient] = field(default=None, init=False)
     _client_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
+    _max_tool_attempts: int = field(default=2, init=False)
 
     def __post_init__(self) -> None:
         config_file = Path(self.mcp_config_path)
@@ -251,13 +252,114 @@ class ChromeDevToolsService:
     async def _ensure_client(self) -> Optional[MCPClient]:
         if not self.enabled or not self._command:
             return None
+
+        client: MCPClient | None
+        async with self._client_lock:
+            client = self._client
+        if client and not self._client_is_alive(client):
+            await self._close_client()
+
         async with self._client_lock:
             if self._client is None:
                 self._client = MCPClient(self._command)
-        await self._client.start()
-        return self._client
+            client = self._client
+
+        if client is None:
+            return None
+
+        try:
+            await client.start()
+            return client
+        except Exception:
+            await self._close_client()
+            raise
 
     async def aclose(self) -> None:
+        await self._close_client()
+
+    async def _call_tool(self, name: str, arguments: Optional[Dict[str, Any]] = None) -> Any:
+        last_exc: Exception | None = None
+        timeout = max(5.0, float(self.call_timeout))
+        for attempt in range(self._max_tool_attempts):
+            try:
+                return await self._call_tool_once(name, arguments, timeout)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                if not self._is_recoverable_exception(exc):
+                    raise
+                last_exc = exc
+                logger.warning(
+                    "Chrome DevTools tool '%s' failed (attempt %d/%d): %s; restarting MCP session",
+                    name,
+                    attempt + 1,
+                    self._max_tool_attempts,
+                    exc,
+                )
+                await self._restart_client()
+                if attempt == self._max_tool_attempts - 1:
+                    logger.error(
+                        "Chrome DevTools tool '%s' failed after %d attempts: %s",
+                        name,
+                        self._max_tool_attempts,
+                        exc,
+                    )
+                    raise
+                await asyncio.sleep(0.1)
+        assert last_exc is not None
+        raise last_exc
+
+    async def _call_tool_once(
+        self,
+        name: str,
+        arguments: Optional[Dict[str, Any]],
+        timeout: float,
+    ) -> Any:
+        client = await self._ensure_client()
+        if client is None:
+            raise RuntimeError("Chrome DevTools MCP client unavailable")
+        params = {
+            "name": name,
+            "arguments": arguments or {},
+        }
+        return await asyncio.wait_for(client.request("tools/call", params), timeout=timeout)
+
+    @staticmethod
+    def _is_recoverable_exception(exc: Exception) -> bool:
+        recoverable_types = (
+            asyncio.TimeoutError,
+            BrokenPipeError,
+            ConnectionResetError,
+            EOFError,
+            asyncio.IncompleteReadError,
+        )
+        if isinstance(exc, recoverable_types):
+            return True
+        if isinstance(exc, RuntimeError):
+            text = str(exc).lower()
+            keywords = ("mcp server", "read() called", "timeout after")
+            if any(keyword in text for keyword in keywords):
+                return True
+        return False
+
+    @staticmethod
+    def _client_is_alive(client: MCPClient | None) -> bool:
+        if client is None:
+            return False
+        proc = getattr(client, "_proc", None)
+        if proc is None:
+            return False
+        if proc.returncode is not None:
+            return False
+        reader = getattr(proc, "stdout", None)
+        if reader and getattr(reader, "at_eof", lambda: False)():
+            return False
+        return True
+
+    async def _restart_client(self) -> None:
+        await self._close_client()
+
+    async def _close_client(self) -> None:
         async with self._client_lock:
             client = self._client
             self._client = None
@@ -267,26 +369,6 @@ class ChromeDevToolsService:
             await client.close()
         except Exception as exc:  # pragma: no cover - defensive close
             logger.warning("Failed to close Chrome DevTools MCP client: %s", exc)
-
-    async def _call_tool(self, name: str, arguments: Optional[Dict[str, Any]] = None) -> Any:
-        client = await self._ensure_client()
-        if client is None:
-            return None
-        try:
-            params = {
-                "name": name,
-                "arguments": arguments or {},
-            }
-            return await asyncio.wait_for(
-                client.request("tools/call", params),
-                timeout=max(5.0, float(self.call_timeout)),
-            )
-        except asyncio.TimeoutError:
-            logger.error("Chrome DevTools tool '%s' timed out after %.1fs", name, self.call_timeout)
-            return {"error": f"timeout after {self.call_timeout}s"}
-        except Exception as exc:  # pragma: no cover - protective logging
-            logger.error("Chrome DevTools tool '%s' failed: %s", name, exc)
-            return {"error": str(exc)}
 
     @staticmethod
     def _extract_field(result: Any, key: str) -> Any:
