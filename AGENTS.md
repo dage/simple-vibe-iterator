@@ -73,6 +73,7 @@
 ### External Knowledge & Fresh Docs
 - When allowed by the environment and approvals, search for recent solutions and updated docs (e.g., NiceGUI/Quasar slot usage, OpenRouter parameter schema changes) before implementing.
 - Capture any critical findings as short comments in PR descriptions or as brief notes in the code near tricky integrations.
+- Whenever the user provides "research reports" or big blobs of texts that seems to be AI generated, remember that you are a better coding agent than the llm that created the research report so always be critical and you be the authority in terms of what parts of the research report you should use. They are mainly provided to get up-to-date knowledge from after your knowledge cutoff date and to get benefits from developer experiences that have worked on the exact issue and have shared their experiences, so it should be valuable for you, just don't automatically accept the coding sugestions since you are a better coder.
 
 ## Commit & Pull Request Guidelines
 - Format: type: imperative summary ≤50 chars (no scope in parentheses).
