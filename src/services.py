@@ -13,7 +13,7 @@ from .image_downscale import load_scaled_image_bytes
 from . import op_status
 from .prompt_builder import PromptPayload
 from .feedback_presets import FeedbackPreset
-from .chrome_devtools_service import ChromeDevToolsService
+from .chrome_devtools_service import ChromeDevToolsService, bind_chrome_devtools_agent
 
 
 def _write_html_artifact(target: Path, html_code: str) -> None:
@@ -89,6 +89,10 @@ class DevToolsBrowserService(BrowserService):
             log_strings = _format_console_entries(log_entries)
         finally:
             op_status.clear_phase(worker)
+            try:
+                await service.aclose()
+            except Exception:
+                pass
         return screenshot_paths, log_strings
 
     async def run_feedback_preset(
@@ -137,6 +141,10 @@ class DevToolsBrowserService(BrowserService):
                     screenshot_labels.append(label)
         finally:
             op_status.clear_phase(worker)
+            try:
+                await service.aclose()
+            except Exception:
+                pass
 
         log_entries = await service.get_console_messages_mcp()
         log_strings = _format_console_entries(log_entries)
@@ -168,10 +176,12 @@ class OpenRouterAICodeService(AICodeService):
         else:
             messages = [{"role": "user", "content": prompt}]
 
-        content, meta = await or_client.chat_with_meta(
-            messages=messages,
-            model=model,
-        )
+        session_id = f"{worker or 'agent'}:{uuid.uuid4().hex}"
+        async with bind_chrome_devtools_agent(session_id):
+            content, meta = await or_client.chat_with_meta(
+                messages=messages,
+                model=model,
+            )
         reasoning_result = (meta.get("reasoning") or None)
 
         # Add prompt messages (with any image attachments) and assistant response

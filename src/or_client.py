@@ -18,7 +18,14 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 from pathlib import Path
-import base64, mimetypes, asyncio, random, os, time, json, sys
+import asyncio
+import base64
+import json
+import mimetypes
+import os
+import random
+import sys
+import time
 
 from openai import (
     AsyncOpenAI,
@@ -33,8 +40,14 @@ import importlib.util
 
 try:
     from . import logging as log_utils
+    from . import op_status
     from .browser_tools_for_agents import BrowserToolProvider
-    from .chrome_devtools_service import create_chrome_devtools_service, ChromeDevToolsService
+    from .chrome_devtools_service import (
+        create_chrome_devtools_service,
+        ChromeDevToolsService,
+        get_chrome_devtools_session_manager,
+        get_current_devtools_agent_id,
+    )
 except (ImportError, ModuleNotFoundError):  # pragma: no cover - fallback for tooling/tests
     MODULE_DIR = Path(__file__).resolve().parent
     _spec = importlib.util.spec_from_file_location("src.logging_fallback", MODULE_DIR / "logging.py")
@@ -44,7 +57,22 @@ except (ImportError, ModuleNotFoundError):  # pragma: no cover - fallback for to
     _spec.loader.exec_module(log_utils)  # type: ignore[arg-type]
     BrowserToolProvider = None  # type: ignore[assignment]
     ChromeDevToolsService = None  # type: ignore[assignment]
-    create_chrome_devtools_service = lambda *a, **k: None  # type: ignore[assignment]
+
+    def create_chrome_devtools_service(*_args: Any, **_kwargs: Any) -> None:  # type: ignore[no-untyped-def]
+        return None
+
+    def get_chrome_devtools_session_manager() -> None:  # type: ignore[no-untyped-def]
+        return None
+
+    def get_current_devtools_agent_id() -> None:  # type: ignore[no-untyped-def]
+        return None
+
+    class _OpStatusStub:
+        @staticmethod
+        def set_phase(*_: Any, **__: Any) -> None:
+            return None
+
+    op_status = _OpStatusStub()  # type: ignore[assignment]
 
 # ---------------- Settings & client ---------------- #
 
@@ -144,7 +172,22 @@ _BROWSER_TOOL_NAMES = {
 _CHROME_DEVTOOLS_SERVICE: Optional[ChromeDevToolsService] = (
     create_chrome_devtools_service() if ChromeDevToolsService else None
 )
+_CHROME_DEVTOOLS_SESSION_MANAGER = (
+    get_chrome_devtools_session_manager() if ChromeDevToolsService else None
+)
 _MODEL_INDEX: Dict[str, ModelInfo] = {}
+
+
+async def _resolve_devtools_service() -> Optional[ChromeDevToolsService]:
+    manager = _CHROME_DEVTOOLS_SESSION_MANAGER
+    if manager is not None:
+        agent_id = get_current_devtools_agent_id()
+        if agent_id:
+            try:
+                return await manager.get_session(agent_id)
+            except Exception:
+                pass
+    return _CHROME_DEVTOOLS_SERVICE
 
 
 async def _fetch_all_models() -> List[ModelInfo]:
@@ -240,7 +283,7 @@ async def _execute_tool_call(model_slug: str, name: str, arguments: str) -> str:
 
 
 async def _execute_browser_tool(name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    service = _CHROME_DEVTOOLS_SERVICE
+    service = await _resolve_devtools_service()
     if service is None or not getattr(service, "enabled", False):
         return {"error": "chrome_devtools_disabled"}
 
@@ -455,7 +498,7 @@ async def _retry(coro_fn, max_tries: int = 5, base: float = 0.5, retry_on=None):
     for i in range(attempts):
         try:
             return await coro_fn()
-        except (RateLimitError, APITimeoutError, APIConnectionError) as e:
+        except (RateLimitError, APITimeoutError, APIConnectionError):
             # always back off for these
             if i == attempts - 1:
                 raise
