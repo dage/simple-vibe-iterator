@@ -1,0 +1,1 @@
+Test all the tools you have available in this environment. Figure out a small test you can do for each of them based on each tool description. Then reports your experiences with each of the tools. Just write a big blob of text in the html with your findings.

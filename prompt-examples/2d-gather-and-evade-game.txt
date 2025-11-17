@@ -1,0 +1,28 @@
+Create a 2D top-down exploration game with the following features:
+
+CORE GAMEPLAY:
+- Player controls a sprite character viewed from above
+- Movement using WASD keys (W=up, S=down, A=left, D=right)
+- Hold spacebar for a speed boost
+- Objective: collect food items while avoiding enemies
+- No combat mechanics - survival through movement only
+
+WORLD:
+- Procedurally generated environment
+- World extends beyond initial screen view
+
+COLLECTIBLES & HAZARDS:
+- Food items scattered throughout the world (collectible)
+- Enemy entities that patrol or move (must be avoided)
+
+UI ELEMENTS:
+
+- Display player's current world coordinates (x, y) in the top-left corner
+- Coordinates should update in real-time as player moves
+
+VISUAL STYLE:
+- 2D sprites for player, enemies, and food
+- Top-down perspective
+- Clear visual distinction between player, enemies, and collectibles
+
+Build this as a single playable application with smooth controls and clear win/lose conditions.
