@@ -55,6 +55,8 @@
 - Chrome DevTools MCP provides eight core tools for every iteration: take_screenshot, list_console_messages, list_network_requests, press_key, evaluate_script, wait_for, performance_start_trace, and performance_stop_trace.
 - Treat these tools as required instrumentation: capture screenshots frequently, inspect console/network failures before guessing, and verify controls with press_key plus screenshots.
 - Use the performance trace tools only when diagnosing FPS or timing issues; remember to call `performance_stop_trace` to retrieve metrics.
+- `evaluate_script` mirrors Chrome's `Runtime.evaluate()` so it only accepts single expressions, not semicolon-terminated statements. Favor property reads, assignments, comma sequences, or an IIFE that returns a result; spread multi-step logic across repeated calls or global vars instead of chaining statements. When escaping is tricky, wrap logic in a named function and return the final value rather than writing raw statements.
+- For richer JS interactions rely on the best-practice combo: console logging plus `list_console_messages` for debug insight, DOM injection/querying via `evaluate_script` for UI validation, IIFEs for bundled logic, and stepwise execution (global state plus multiple simple evals) when you need stateful transitions. Avoid trying to cram general script execution into a single `evaluate_script` call—use other tools or multiple targeted expressions instead.
 
 ### OpenRouter / Model Parameters Invariants
 - Only send parameters explicitly stored by the user per model. Do not invent defaults.
