@@ -90,6 +90,8 @@ templates:
     - Text & typography: readability, styling, positioning
     - Error states: broken images, failed renders, blank areas, console errors manifested visually
     - Animations: progression, consider zoom levels etc, relate to the overall user goal and feedback
+    - Keypresses: what keys are being pressed and what is the effect of the keypresses on the overall user goal and feedback based on the auto feedback system.
+    - Zoom level and viewport scale: verify numerical zoom extents to ensure the visible area is properly normalized—neither excessively zoomed in to cause incomprehensible detail nor zoomed out to obscure critical elements—maintaining optimal visibility aligned with user goals and feedback.    
 
     REPORTING GUIDELINES:
     - Be specific and quantitative where possible (colors as hex, sizes in pixels, positions relative to viewport)
