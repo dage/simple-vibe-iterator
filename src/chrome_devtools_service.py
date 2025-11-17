@@ -4,9 +4,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from contextlib import asynccontextmanager
+from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from .mcp_client import MCPClient, build_command
 
@@ -91,14 +93,14 @@ class ChromeDevToolsService:
         await self.evaluate_script_mcp(
             "() => {"
             " const root = document.documentElement; "
-            " if (root && !root.style.backgroundColor) { root.style.backgroundColor = '#ffffff'; }"
+            " if (root && !root.style.backgroundColor) { root.style.backgroundColor = '#000000'; }"
             " let body = document.body;"
             " if (!body) {"
             "   body = document.createElement('body');"
             "   if (root) { root.appendChild(body); }"
             " }"
-            " if (body && !body.style.backgroundColor) { body.style.backgroundColor = '#ffffff'; }"
-            " if (body && !body.style.color) { body.style.color = '#000000'; }"
+            " if (body && !body.style.backgroundColor) { body.style.backgroundColor = '#000000'; }"
+            " if (body && !body.style.color) { body.style.color = '#FFFFFF'; }"
             " return true;"
             "}",
             is_function=True,
@@ -255,6 +257,17 @@ class ChromeDevToolsService:
         await self._client.start()
         return self._client
 
+    async def aclose(self) -> None:
+        async with self._client_lock:
+            client = self._client
+            self._client = None
+        if client is None:
+            return
+        try:
+            await client.close()
+        except Exception as exc:  # pragma: no cover - defensive close
+            logger.warning("Failed to close Chrome DevTools MCP client: %s", exc)
+
     async def _call_tool(self, name: str, arguments: Optional[Dict[str, Any]] = None) -> Any:
         client = await self._ensure_client()
         if client is None:
@@ -304,3 +317,66 @@ def create_chrome_devtools_service(
     enabled: bool = True,
 ) -> ChromeDevToolsService:
     return ChromeDevToolsService(mcp_config_path=mcp_config_path, enabled=enabled)
+
+
+class ChromeDevToolsSessionManager:
+    """Allocates isolated Chrome DevTools instances per agent."""
+
+    def __init__(self, factory: Callable[[], ChromeDevToolsService] | None = None) -> None:
+        self._factory = factory or ChromeDevToolsService
+        self._sessions: Dict[str, ChromeDevToolsService] = {}
+        self._lock = asyncio.Lock()
+
+    async def get_session(self, agent_id: str) -> ChromeDevToolsService:
+        if not agent_id:
+            raise ValueError("agent_id is required for Chrome DevTools session")
+        async with self._lock:
+            service = self._sessions.get(agent_id)
+            if service is None:
+                service = self._factory()
+                self._sessions[agent_id] = service
+            return service
+
+    async def release_session(self, agent_id: str) -> None:
+        if not agent_id:
+            return
+        async with self._lock:
+            service = self._sessions.pop(agent_id, None)
+        if service is None:
+            return
+        try:
+            await service.aclose()
+        except Exception as exc:  # pragma: no cover - defensive cleanup
+            logger.warning("Error closing Chrome DevTools session %s: %s", agent_id, exc)
+
+
+_CURRENT_AGENT_ID: ContextVar[Optional[str]] = ContextVar("chrome_devtools_agent_id", default=None)
+_SESSION_MANAGER: ChromeDevToolsSessionManager | None = None
+
+
+def get_chrome_devtools_session_manager() -> ChromeDevToolsSessionManager:
+    global _SESSION_MANAGER
+    if _SESSION_MANAGER is None:
+        _SESSION_MANAGER = ChromeDevToolsSessionManager()
+    return _SESSION_MANAGER
+
+
+def get_current_devtools_agent_id() -> Optional[str]:
+    return _CURRENT_AGENT_ID.get()
+
+
+@asynccontextmanager
+async def bind_chrome_devtools_agent(agent_id: str | None):
+    """Bind Chrome DevTools calls within the context to a dedicated session."""
+
+    if not agent_id:
+        yield None
+        return
+    manager = get_chrome_devtools_session_manager()
+    token: Token[Optional[str]] = _CURRENT_AGENT_ID.set(agent_id)
+    await manager.get_session(agent_id)
+    try:
+        yield agent_id
+    finally:
+        _CURRENT_AGENT_ID.reset(token)
+        await manager.release_session(agent_id)
