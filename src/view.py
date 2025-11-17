@@ -183,7 +183,6 @@ class NiceGUIView(IterationEventListener):
                         settings_manager.save_settings(settings)
                         await self.controller.start_new_tree(settings)
                         self._set_overall_goal_heading(display_goal)
-                        print(f"[view] start_new_tree succeeded")
                         self._initial_goal_complete()
                     except asyncio.CancelledError:
                         ui.notify('Operation cancelled', color='warning', timeout=2000)
