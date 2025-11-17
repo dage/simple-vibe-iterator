@@ -18,6 +18,8 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 from pathlib import Path
+from contextvars import ContextVar
+from string import capwords
 import asyncio
 import base64
 import json
@@ -169,25 +171,25 @@ _BROWSER_TOOL_NAMES = {
     for spec in _BROWSER_TOOL_SPECS
     if isinstance(spec, dict) and spec.get("function", {}).get("name")
 }
-_CHROME_DEVTOOLS_SERVICE: Optional[ChromeDevToolsService] = (
-    create_chrome_devtools_service() if ChromeDevToolsService else None
-)
 _CHROME_DEVTOOLS_SESSION_MANAGER = (
     get_chrome_devtools_session_manager() if ChromeDevToolsService else None
 )
 _MODEL_INDEX: Dict[str, ModelInfo] = {}
+_TOOL_CALL_COUNT: ContextVar[int] = ContextVar("_tool_call_count", default=0)
 
 
-async def _resolve_devtools_service() -> Optional[ChromeDevToolsService]:
+async def _resolve_devtools_service() -> tuple[Optional[ChromeDevToolsService], bool]:
     manager = _CHROME_DEVTOOLS_SESSION_MANAGER
     if manager is not None:
         agent_id = get_current_devtools_agent_id()
         if agent_id:
             try:
-                return await manager.get_session(agent_id)
+                return await manager.get_session(agent_id), False
             except Exception:
                 pass
-    return _CHROME_DEVTOOLS_SERVICE
+    if not ChromeDevToolsService:
+        return None, False
+    return create_chrome_devtools_service(), True
 
 
 async def _fetch_all_models() -> List[ModelInfo]:
@@ -259,6 +261,22 @@ def _parse_model_data(data: Dict[str, Any]) -> Optional[ModelInfo]:
         return None
 
 
+def _describe_tool_phase(name: str, worker: str, *, payload: Optional[Dict[str, Any]] = None) -> str:
+    tool = (name or "tool").strip().lower() or "tool"
+    target = (worker or "agent").strip() or "agent"
+    if tool == "wait_for" and isinstance(payload, dict):
+        selector = str(payload.get("selector", "") or "").strip()
+        if selector:
+            snippet = selector.replace("\n", " ").replace("\r", " ")
+            snippet = snippet[:10]
+            tool = f"{tool} {snippet}"
+    return f"{tool}|{target}"
+
+
+def _increment_tool_call_count() -> None:
+    _TOOL_CALL_COUNT.set(_TOOL_CALL_COUNT.get() + 1)
+
+
 async def _execute_tool_call(model_slug: str, name: str, arguments: str) -> str:
     try:
         payload = json.loads(arguments or "{}") if arguments else {}
@@ -266,7 +284,15 @@ async def _execute_tool_call(model_slug: str, name: str, arguments: str) -> str:
         payload = {"code": arguments}
 
     if name in _BROWSER_TOOL_NAMES:
-        response = await _execute_browser_tool(name, payload)
+        worker = model_slug or "agent"
+        tool_phase = _describe_tool_phase(name, worker, payload=payload)
+        coding_phase = f"Coding|{worker}"
+        op_status.set_phase(worker, tool_phase)
+        try:
+            _increment_tool_call_count()
+            response = await _execute_browser_tool(name, payload)
+        finally:
+            op_status.set_phase(worker, coding_phase)
         response_text = json.dumps(response, ensure_ascii=False)
         try:
             log_utils.log_tool_call(
@@ -283,7 +309,7 @@ async def _execute_tool_call(model_slug: str, name: str, arguments: str) -> str:
 
 
 async def _execute_browser_tool(name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    service = await _resolve_devtools_service()
+    service, close_source = await _resolve_devtools_service()
     if service is None or not getattr(service, "enabled", False):
         return {"error": "chrome_devtools_disabled"}
 
@@ -321,10 +347,15 @@ async def _execute_browser_tool(name: str, payload: Dict[str, Any]) -> Dict[str,
             return {"ok": await service.performance_trace_start_mcp()}
         if name == "performance_stop_trace":
             return {"result": await service.performance_trace_stop_mcp()}
+        return {"error": f"unsupported_tool: {name}"}
     except Exception as exc:  # pragma: no cover - defensive logging
         return {"error": f"chrome_devtools_error: {exc}"}
-
-    return {"error": f"unsupported_tool: {name}"}
+    finally:
+        if close_source:
+            try:
+                await service.aclose()
+            except Exception:
+                pass
 
 
 async def list_models(query: str = "", vision_only: bool = False, limit: int = 20, force_refresh: bool = False) -> List[ModelInfo]:
@@ -581,6 +612,18 @@ async def chat_with_meta(
         - total_cost: float | None (USD, from GET /generation)
         - generation_time: float | None (seconds, from GET /generation)
     """
+    token = _TOOL_CALL_COUNT.set(0)
+    try:
+        return await _chat_with_meta_impl(messages=messages, model=model, **kwargs)
+    finally:
+        _TOOL_CALL_COUNT.reset(token)
+
+
+async def _chat_with_meta_impl(
+    messages: List[Dict[str, Any]],
+    model: Optional[str] = None,
+    **kwargs,
+) -> tuple[str, Dict[str, Any]]:
     s = _settings()
 
     # Merge stored per-model params (if any), filtered to supported keys, as in chat()
@@ -743,4 +786,5 @@ async def chat_with_meta(
         "generation_time": generation_time,
     }
     meta["messages"] = conversation
+    meta["tool_call_count"] = _TOOL_CALL_COUNT.get()
     return (content or "", meta)

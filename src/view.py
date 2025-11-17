@@ -747,9 +747,16 @@ class NiceGUIView(IterationEventListener):
                                 time_s = getattr(out, 'generation_time', None)
                                 cost_str = (f"${cost:.6f}" if isinstance(cost, (int, float)) else "$—")
                                 time_str = (f"{float(time_s):.1f}s" if isinstance(time_s, (int, float)) else "—")
-                                ui.label(f"{cost_str} · {time_str}").classes('text-xs text-gray-500 dark:text-gray-400 leading-tight')
+                                calls_value = getattr(out, 'tool_call_count', None)
+                                calls_number = 0
+                                if calls_value is not None:
+                                    try:
+                                        calls_number = int(calls_value)
+                                    except Exception:
+                                        calls_number = 0
+                                ui.label(f"{cost_str} · {time_str} · {calls_number} tool calls").classes('text-xs text-gray-500 dark:text-gray-400 leading-tight')
                             except Exception:
-                                ui.label("$— · —").classes('text-xs text-gray-500 dark:text-gray-400 leading-tight')
+                                ui.label("$— · — · 0 tool calls").classes('text-xs text-gray-500 dark:text-gray-400 leading-tight')
                             out_png = out.artifacts.screenshot_filename
                             if out_png:
                                 ui.image(out_png).classes('w-full h-auto max-w-full rounded border border-gray-600')

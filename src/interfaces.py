@@ -55,6 +55,7 @@ class ModelOutput:
     generation_time: float | None = None
     messages: Optional[List[Dict[str, Any]]] = None
     assistant_response: str = ""
+    tool_call_count: int | None = None
 
 
 @dataclass

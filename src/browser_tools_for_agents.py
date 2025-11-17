@@ -101,11 +101,16 @@ class BrowserToolProvider:
             "type": "function",
             "function": {
                 "name": "evaluate_script",
-                "description": "Execute JavaScript inside the browser context.",
+                "description": (
+                    "Execute a single JavaScript expression (mirrors Chrome Runtime.evaluate). "
+                    "Avoid semicolon-terminated statements; prefer property reads, assignments, "
+                    "comma expressions, or an IIFE that returns the result. Split multi-step logic "
+                    "across repeated calls or helpers instead of chaining statements."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "script": {"type": "string", "description": "JavaScript snippet"}
+                        "script": {"type": "string", "description": "JavaScript expression"}
                     },
                     "required": ["script"],
                 },

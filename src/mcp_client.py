@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -78,7 +79,34 @@ class MCPClient:
                 await asyncio.wait_for(proc.wait(), timeout=2)
             except asyncio.TimeoutError:
                 proc.kill()
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=2)
+                except asyncio.TimeoutError:
+                    pass
+        proc = self._proc
+        if proc is not None:
+            transport = getattr(proc, "_transport", None)
+            if transport is not None:
+                with contextlib.suppress(Exception):
+                    transport.close()
         self._proc = None
+        writer = self._writer
+        if writer is not None:
+            transport = getattr(writer, "transport", None)
+            if transport is not None:
+                with contextlib.suppress(Exception):
+                    transport.close()
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
+        reader = self._reader
+        if reader is not None:
+            transport = getattr(reader, "_transport", None)
+            if transport is not None:
+                with contextlib.suppress(Exception):
+                    transport.close()
         self._reader = None
         self._writer = None
         self._initialized = False

@@ -115,6 +115,7 @@ class DevToolsBrowserService(BrowserService):
         screenshot_paths: List[str] = []
         screenshot_labels: List[str] = []
         shot_idx = 0
+        log_entries: List[Dict[str, str]] = []
 
         op_status.set_phase(worker, f"Feedback|{preset.label or preset.id}")
         try:
@@ -139,14 +140,13 @@ class DevToolsBrowserService(BrowserService):
                     label = action.label or f"shot-{shot_idx}"
                     screenshot_paths.append(str(path))
                     screenshot_labels.append(label)
+            log_entries = await service.get_console_messages_mcp()
         finally:
             op_status.clear_phase(worker)
             try:
                 await service.aclose()
             except Exception:
                 pass
-
-        log_entries = await service.get_console_messages_mcp()
         log_strings = _format_console_entries(log_entries)
         return screenshot_paths, log_strings, screenshot_labels
 

@@ -52,15 +52,33 @@ async def run_one(test_path: Path, timeout_s: float | None) -> TestResult:
         stderr=asyncio.subprocess.PIPE,
         env=env,
     )
+    communicate_task = asyncio.create_task(proc.communicate())
     try:
-        stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=None if timeout_s is None or timeout_s <= 0 else timeout_s)
+        stdout_b, stderr_b = await asyncio.wait_for(
+            communicate_task,
+            timeout=None if timeout_s is None or timeout_s <= 0 else timeout_s,
+        )
         rc = proc.returncode or 0
     except asyncio.TimeoutError:
         with contextlib.suppress(ProcessLookupError):
             proc.kill()
+        communicate_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await communicate_task
         stdout_b = b""
         stderr_b = f"[TIMEOUT] Exceeded {timeout_s:.0f}s limit".encode("utf-8") if timeout_s else b"[TIMEOUT]"
         rc = 124
+        await proc.wait()
+    finally:
+        if not communicate_task.done():
+            communicate_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await communicate_task
+        for stream in (proc.stdin, proc.stdout, proc.stderr):
+            if stream is None:
+                continue
+            with contextlib.suppress(Exception):
+                stream.close()
     duration = monotonic() - start
     return TestResult(
         path=test_path,
@@ -109,7 +127,7 @@ async def run_all(tests: Iterable[Path], jobs: int, timeout_s: float | None, ver
 def parse_args(argv: List[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run all integration tests in integration-tests directory.")
     parser.add_argument("-k", metavar="SUBSTR", help="Only run tests with SUBSTR in filename", default=None)
-    parser.add_argument("-j", "--jobs", type=int, default=30, help="Number of parallel jobs (default: 30)")
+    parser.add_argument("-j", "--jobs", type=int, default=10, help="Number of parallel jobs (default: 10)")
     parser.add_argument(
         "--timeout",
         type=float,

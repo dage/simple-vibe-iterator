@@ -600,6 +600,7 @@ class IterationController:
             generation_time = None
             messages = None
             assistant_response = ""
+            tool_call_count: int | None = None
             try:
                 if isinstance(meta, dict):
                     tc = meta.get('total_cost')
@@ -608,6 +609,12 @@ class IterationController:
                     generation_time = float(gt) if gt is not None else None
                     messages = meta.get('messages')
                     assistant_response = str(meta.get('assistant_response', ''))
+                    raw_tool_calls = meta.get('tool_call_count')
+                    if raw_tool_calls is not None:
+                        try:
+                            tool_call_count = int(raw_tool_calls)
+                        except Exception:
+                            tool_call_count = None
             except Exception:
                 total_cost = None
                 generation_time = None
@@ -621,6 +628,7 @@ class IterationController:
                 generation_time=generation_time,
                 messages=messages,
                 assistant_response=assistant_response,
+                tool_call_count=tool_call_count,
             )
         return outputs_dict
 
