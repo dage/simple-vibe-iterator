@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 from dataclasses import dataclass
 from typing import Callable, Dict, Tuple
 
@@ -16,6 +18,7 @@ class _StatusRow:
     cancel_button: ui.button | None = None
     cancel_enabled: bool = False
     phase_raw: str = ''
+    started_at: float | None = None
 
 
 class StatusPanel:
@@ -59,7 +62,7 @@ class StatusPanel:
                 self._rows[worker] = row
 
             headline, detail = self._parse_phase(phase_text)
-            elapsed_display = max(0, int(elapsed))
+            elapsed_display = self._compute_elapsed_seconds(row, elapsed)
             detail_text = f"{detail} · {elapsed_display}s"
 
             if row.headline_text != headline:
@@ -231,3 +234,19 @@ class StatusPanel:
             self._on_cancel(worker)
         except Exception:
             pass
+
+    # --- helpers ---------------------------------------------------------
+    def _compute_elapsed_seconds(self, row: _StatusRow, elapsed: float | int) -> int:
+        now = time.monotonic()
+        try:
+            raw_elapsed = float(elapsed)
+        except (TypeError, ValueError):
+            raw_elapsed = 0.0
+        if raw_elapsed < 0:
+            raw_elapsed = 0.0
+        if row.started_at is None:
+            row.started_at = now - raw_elapsed
+        total = now - (row.started_at or now)
+        if total < 0:
+            total = 0.0
+        return int(total)
