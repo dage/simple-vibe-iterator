@@ -94,6 +94,8 @@ Note on sharing commit messages in chat:
 
 ## Development Rules & Invariants
 - No hardcoded fallback/mocked data; on API failure, surface the error.
+- Fail fast when dependencies are missing or misconfigured. If a helper module (e.g., browser tools, presets, configs) cannot be imported or initialized, raise/log the error immediately instead of providing silent defaults or degraded behavior.
+- Do not add silent fallbacks for optional integrations (status panel helpers, browser tool specs, presets, etc.); surface the failure and stop instead of guessing or supplying defaults.
 - Avoid scope creep; implement only requested changes.
 - Re-running mid-chain deletes descendants; do not bypass operation locking.
 - Preserve state-machine flow: render → screenshot/console → vision → code → output.
