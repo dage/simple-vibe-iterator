@@ -18,7 +18,6 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 from pathlib import Path
-from contextvars import ContextVar
 from string import capwords
 import asyncio
 import base64
@@ -41,8 +40,7 @@ from dataclasses import dataclass, field
 import importlib.util
 
 try:
-    from . import logging as log_utils
-    from . import op_status
+    from . import context_data, logging as log_utils, op_status
     from .browser_tools_for_agents import BrowserToolProvider
     from .chrome_devtools_service import (
         create_chrome_devtools_service,
@@ -57,6 +55,11 @@ except (ImportError, ModuleNotFoundError):  # pragma: no cover - fallback for to
     log_utils = importlib.util.module_from_spec(_spec)  # type: ignore[assignment]
     sys.modules.setdefault(_spec.name, log_utils)
     _spec.loader.exec_module(log_utils)  # type: ignore[arg-type]
+    _ctx_spec = importlib.util.spec_from_file_location("src.context_data_fallback", MODULE_DIR / "context_data.py")
+    assert _ctx_spec and _ctx_spec.loader
+    context_data = importlib.util.module_from_spec(_ctx_spec)  # type: ignore[assignment]
+    sys.modules.setdefault(_ctx_spec.name, context_data)
+    _ctx_spec.loader.exec_module(context_data)  # type: ignore[arg-type]
     BrowserToolProvider = None  # type: ignore[assignment]
     ChromeDevToolsService = None  # type: ignore[assignment]
 
@@ -175,7 +178,6 @@ _CHROME_DEVTOOLS_SESSION_MANAGER = (
     get_chrome_devtools_session_manager() if ChromeDevToolsService else None
 )
 _MODEL_INDEX: Dict[str, ModelInfo] = {}
-_TOOL_CALL_COUNT: ContextVar[int] = ContextVar("_tool_call_count", default=0)
 
 
 async def _resolve_devtools_service() -> tuple[Optional[ChromeDevToolsService], bool]:
@@ -274,7 +276,7 @@ def _describe_tool_phase(name: str, worker: str, *, payload: Optional[Dict[str, 
 
 
 def _increment_tool_call_count() -> None:
-    _TOOL_CALL_COUNT.set(_TOOL_CALL_COUNT.get() + 1)
+    context_data.increment("tool_call_count")
 
 
 async def _execute_tool_call(model_slug: str, name: str, arguments: str) -> str:
@@ -612,11 +614,16 @@ async def chat_with_meta(
         - total_cost: float | None (USD, from GET /generation)
         - generation_time: float | None (seconds, from GET /generation)
     """
-    token = _TOOL_CALL_COUNT.set(0)
+    ctx_token = None
+    if not context_data.has_context():
+        ctx_token = context_data.reset_context({"tool_call_count": 0})
+    else:
+        context_data.set("tool_call_count", 0)
     try:
         return await _chat_with_meta_impl(messages=messages, model=model, **kwargs)
     finally:
-        _TOOL_CALL_COUNT.reset(token)
+        if ctx_token is not None:
+            context_data.restore_context(ctx_token)
 
 
 async def _chat_with_meta_impl(
@@ -786,5 +793,5 @@ async def _chat_with_meta_impl(
         "generation_time": generation_time,
     }
     meta["messages"] = conversation
-    meta["tool_call_count"] = _TOOL_CALL_COUNT.get()
+    meta["tool_call_count"] = context_data.get("tool_call_count", 0)
     return (content or "", meta)

@@ -4,13 +4,15 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Sequence
 
 from .interfaces import AICodeService, BrowserService, VisionService
 from .image_downscale import load_scaled_image_bytes
-from . import op_status
+from . import context_data, op_status
 from .prompt_builder import PromptPayload
 from .feedback_presets import FeedbackPreset
 from .chrome_devtools_service import ChromeDevToolsService, bind_chrome_devtools_agent
@@ -167,6 +169,20 @@ class OpenRouterAICodeService(AICodeService):
 
         # Minimal call: the controller provides a full prompt with context
         # Structured phase: "Coding|<model>"
+        worker_name = worker or model or "agent"
+        operation_id = uuid.uuid4().hex
+        started_monotonic = time.monotonic()
+        started_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        devtools_agent_id = f"{worker_name}:{operation_id}"
+        ctx_token = context_data.reset_context({
+            "tool_call_count": 0,
+            "worker_id": worker_name,
+            "operation_id": operation_id,
+            "model_slug": model,
+            "session_started_at_monotonic": started_monotonic,
+            "session_started_at_iso": started_iso,
+            "devtools_agent_id": devtools_agent_id,
+        })
         op_status.set_phase(worker, f"Coding|{model}")
 
         if isinstance(prompt, PromptPayload):
@@ -176,22 +192,24 @@ class OpenRouterAICodeService(AICodeService):
         else:
             messages = [{"role": "user", "content": prompt}]
 
-        session_id = f"{worker or 'agent'}:{uuid.uuid4().hex}"
-        async with bind_chrome_devtools_agent(session_id):
-            content, meta = await or_client.chat_with_meta(
-                messages=messages,
-                model=model,
-            )
-        reasoning_result = (meta.get("reasoning") or None)
+        try:
+            async with bind_chrome_devtools_agent(devtools_agent_id):
+                content, meta = await or_client.chat_with_meta(
+                    messages=messages,
+                    model=model,
+                )
+            reasoning_result = (meta.get("reasoning") or None)
 
-        # Add prompt messages (with any image attachments) and assistant response
-        if meta is None:
-            meta = {}
-        meta["messages"] = messages
-        meta["assistant_response"] = content or ""
+            # Add prompt messages (with any image attachments) and assistant response
+            if meta is None:
+                meta = {}
+            meta["messages"] = messages
+            meta["assistant_response"] = content or ""
 
-        op_status.clear_phase(worker)
-        return (content or "", reasoning_result, meta)
+            op_status.clear_phase(worker)
+            return (content or "", reasoning_result, meta)
+        finally:
+            context_data.restore_context(ctx_token)
 
 
 class OpenRouterVisionService(VisionService):
@@ -206,6 +224,18 @@ class OpenRouterVisionService(VisionService):
         from . import or_client
 
         # Structured phase: "Vision|<model>"
+        worker_name = worker or "vision"
+        operation_id = uuid.uuid4().hex
+        started_monotonic = time.monotonic()
+        started_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        ctx_token = context_data.reset_context({
+            "tool_call_count": 0,
+            "worker_id": worker_name,
+            "operation_id": operation_id,
+            "model_slug": model,
+            "session_started_at_monotonic": started_monotonic,
+            "session_started_at_iso": started_iso,
+        })
         op_status.set_phase(worker, f"Vision|{model}")
         parts = [{"type": "text", "text": prompt}]
         for path in screenshot_paths:
@@ -220,11 +250,15 @@ class OpenRouterVisionService(VisionService):
             parts.append({"type": "image_url", "image_url": {"url": data_url}})
         if len(parts) == 1:
             op_status.clear_phase(worker)
+            context_data.restore_context(ctx_token)
             return ""
-        reply = await or_client.chat(
-            messages=[{"role": "user", "content": parts}],
-            model=model,
-            temperature=0,
-        )
-        op_status.clear_phase(worker)
-        return reply or ""
+        try:
+            reply = await or_client.chat(
+                messages=[{"role": "user", "content": parts}],
+                model=model,
+                temperature=0,
+            )
+            op_status.clear_phase(worker)
+            return reply or ""
+        finally:
+            context_data.restore_context(ctx_token)

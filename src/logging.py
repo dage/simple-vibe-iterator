@@ -17,6 +17,7 @@ from uuid import uuid4
 import queue
 
 from dotenv import load_dotenv
+from . import context_data
 
 load_dotenv()
 
@@ -352,6 +353,20 @@ def log_tool_call(*, model: str, tool: str, code: str, output: str) -> None:
         "code_preview": code.strip()[:200],
         "output": _safe_json_blob(output),
     }
+    ctx = context_data.get_all()
+    if ctx:
+        for source_key, target_key in (
+            ("worker_id", "worker"),
+            ("operation_id", "operation_id"),
+            ("model_slug", "context_model"),
+            ("session_started_at_iso", "session_started_at"),
+        ):
+            value = ctx.get(source_key)
+            if value:
+                entry[target_key] = value
+        tool_count = ctx.get("tool_call_count")
+        if tool_count is not None:
+            entry["context_tool_calls"] = tool_count
     _TOOL_LOGGER.write(entry)
 
 

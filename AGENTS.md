@@ -102,6 +102,12 @@ Note on sharing commit messages in chat:
 - Streaming responses are unsupported; always call language/vision APIs with `stream=False` and avoid streaming-specific plumbing.
 - Default preset-driven capture uses `code: x-ai/grok-4-fast` and `vision: qwen/qwen3-vl-235b-a22b-instruct`; keep those hardcoded inside preset artifacts unless product direction changes.
 
+### Async Context Data
+- `src/context_data.py` exposes a per-async-task data store backed by `ContextVar`. Service entrypoints (`OpenRouterAICodeService`, `OpenRouterVisionService`, input capture) must call `reset_context` with defaults and `restore_context` in `finally` so downstream layers share scoped state.
+- Canonical keys today: `tool_call_count`, `worker_id`, `operation_id`, `model_slug`, `session_started_at_monotonic`, `session_started_at_iso`, and `devtools_agent_id`. Extend only when absolutely necessary and keep values to lightweight scalars/identifiers.
+- Other modules read via `get`/`increment` without mutating lifecycle. Never stash prompts, HTML, attachments, or use the store as a hidden feature flag surface.
+- When UI/logging layers need derived data (e.g., tool counts in status boxes), read from `context_data` snapshots instead of wiring new dependencies between feature modules; the context store is the sharing mechanism.
+
 ### Simplicity & Modularity
 - Prefer the simplest working approach. Avoid introducing fallback data or extra layers unless required by product constraints.
 - Consolidate functionality and keep modules focused; extract UI components when they grow complex, but do not duplicate logic across places.

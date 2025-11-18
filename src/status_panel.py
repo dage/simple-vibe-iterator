@@ -7,6 +7,8 @@ from typing import Callable, Dict, Tuple
 
 from nicegui import ui
 
+from . import context_data, op_status
+
 
 @dataclass
 class _StatusRow:
@@ -55,6 +57,7 @@ class StatusPanel:
         self._clear_idle()
         self._remove_stale_rows(active_workers=set(phases.keys()))
 
+        snapshots = context_data.get_all_snapshots()
         for worker, (phase_text, elapsed) in phases.items():
             row = self._rows.get(worker)
             if row is None:
@@ -63,7 +66,17 @@ class StatusPanel:
 
             headline, detail = self._parse_phase(phase_text)
             elapsed_display = self._compute_elapsed_seconds(row, elapsed)
+            tool_calls = 0
+            snapshot = snapshots.get(worker) if snapshots else None
+            if snapshot is None:
+                snapshot = context_data.get_worker_snapshot(worker)
+            if snapshot is not None:
+                try:
+                    tool_calls = int(snapshot.get('tool_call_count', 0))
+                except Exception:
+                    tool_calls = 0
             detail_text = f"{detail} · {elapsed_display}s"
+            detail_text = f"{detail_text} · {tool_calls} tool call{'s' if tool_calls != 1 else ''}"
 
             if row.headline_text != headline:
                 row.headline_label.set_text(headline)

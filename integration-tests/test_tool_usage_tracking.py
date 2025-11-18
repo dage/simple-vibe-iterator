@@ -14,7 +14,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src import or_client  # noqa: E402
+from src import context_data, or_client  # noqa: E402
 from src.controller import IterationController  # noqa: E402
 from src.interfaces import TransitionArtifacts  # noqa: E402
 
@@ -26,40 +26,52 @@ def ensure_cwd_project_root() -> Path:
 
 
 async def test_tool_call_status_and_counter() -> Tuple[bool, str]:
-    or_client._TOOL_CALL_COUNT.set(0)
     fake_browser = AsyncMock(return_value={"result": "ok"})
     expected_tool_phase = or_client._describe_tool_phase("press_key", "test-model")
     expected_coding_phase = "Coding|test-model"
-    with patch.object(or_client, "_execute_browser_tool", fake_browser):
-        with patch.object(or_client.op_status, "set_phase") as mock_set_phase:
-            await or_client._execute_tool_call("test-model", "press_key", '{"key":"w"}')
-    if mock_set_phase.call_count != 2:
-        return False, f"expected two status updates, got {mock_set_phase.call_count}"
-    first_args = mock_set_phase.call_args_list[0][0]
-    second_args = mock_set_phase.call_args_list[1][0]
-    if first_args[1] != expected_tool_phase:
-        return False, f"tool phase mismatch: expected {expected_tool_phase!r}, got {first_args[1]!r}"
-    if second_args[1] != expected_coding_phase:
-        return False, f"resume phase mismatch: expected {expected_coding_phase!r}, got {second_args[1]!r}"
+    token = context_data.reset_context({
+        "tool_call_count": 0,
+        "worker_id": "test-model",
+        "operation_id": "test",
+    })
     try:
-        fake_browser.assert_awaited_once_with("press_key", {"key": "w"})
-    except AssertionError as exc:
-        return False, f"browser tool not invoked as expected: {exc}"
-    calls = or_client._TOOL_CALL_COUNT.get()
-    or_client._TOOL_CALL_COUNT.set(0)
-    if calls != 1:
-        return False, f"tool counter value wrong: {calls}"
-    return True, "tracks status updates and counter"
+        with patch.object(or_client, "_execute_browser_tool", fake_browser):
+            with patch.object(or_client.op_status, "set_phase") as mock_set_phase:
+                await or_client._execute_tool_call("test-model", "press_key", '{"key":"w"}')
+        if mock_set_phase.call_count != 2:
+            return False, f"expected two status updates, got {mock_set_phase.call_count}"
+        first_args = mock_set_phase.call_args_list[0][0]
+        second_args = mock_set_phase.call_args_list[1][0]
+        if first_args[1] != expected_tool_phase:
+            return False, f"tool phase mismatch: expected {expected_tool_phase!r}, got {first_args[1]!r}"
+        if second_args[1] != expected_coding_phase:
+            return False, f"resume phase mismatch: expected {expected_coding_phase!r}, got {second_args[1]!r}"
+        try:
+            fake_browser.assert_awaited_once_with("press_key", {"key": "w"})
+        except AssertionError as exc:
+            return False, f"browser tool not invoked as expected: {exc}"
+        calls = context_data.get("tool_call_count")
+        if calls != 1:
+            return False, f"tool counter value wrong: {calls}"
+        snapshot = context_data.get_worker_snapshot("test-model")
+        if snapshot.get("tool_call_count") != 1:
+            return False, "context snapshot missing tool count"
+        return True, "tracks status updates and counter"
+    finally:
+        context_data.restore_context(token)
 
 
 async def test_wait_for_phase_includes_selector() -> Tuple[bool, str]:
-    or_client._TOOL_CALL_COUNT.set(0)
     selector = "#main-content .item"
     fake_browser = AsyncMock(return_value={"ok": True})
     payload = {"selector": selector, "timeout_ms": 1234}
-    with patch.object(or_client, "_execute_browser_tool", fake_browser):
-        with patch.object(or_client.op_status, "set_phase") as mock_set_phase:
-            await or_client._execute_tool_call("test-model", "wait_for", json.dumps(payload))
+    token = context_data.reset_context({"tool_call_count": 0})
+    try:
+        with patch.object(or_client, "_execute_browser_tool", fake_browser):
+            with patch.object(or_client.op_status, "set_phase") as mock_set_phase:
+                await or_client._execute_tool_call("test-model", "wait_for", json.dumps(payload))
+    finally:
+        context_data.restore_context(token)
     first_phase = mock_set_phase.call_args_list[0][0][1]
     expected = "wait_for #main-cont|test-model"
     if first_phase != expected:
