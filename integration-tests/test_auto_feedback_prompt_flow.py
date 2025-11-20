@@ -38,7 +38,14 @@ class RecordingAICodeService:
     def __init__(self) -> None:
         self.prompts: List[str] = []
 
-    async def generate_html(self, prompt, model: str, worker: str = "main") -> Tuple[str, str | None, Dict | None]:
+    async def generate_html(
+        self,
+        prompt,
+        model: str,
+        worker: str = "main",
+        *,
+        template_context: Dict[str, Any] | None = None,
+    ) -> Tuple[str, str | None, Dict | None]:
         self.prompts.append(_prompt_to_text(prompt))
         html = "<!DOCTYPE html><html><body><main>ok</main></body></html>"
         return html, "", {}

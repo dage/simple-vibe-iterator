@@ -9,9 +9,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / "src"
-if str(SRC) not in sys.path:
-    sys.path.insert(0, str(SRC))
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
 def guess_format(text: str) -> str:
@@ -34,7 +33,7 @@ def guess_format(text: str) -> str:
 
 
 async def run_once(slug: str, prompt: str) -> dict:
-    import or_client  # type: ignore
+    from src import or_client  # type: ignore
 
     # Ask for visible reasoning with a high effort hint.
     # We send via kwargs to avoid mutating stored per-model params.

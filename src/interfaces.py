@@ -75,7 +75,14 @@ class IterationNode:
 # ---- Service protocols (unchanged public surface) ----
 
 class AICodeService(Protocol):
-    async def generate_html(self, prompt: Any, model: str, worker: str = "main") -> tuple[str, str | None, dict | None]: ...
+    async def generate_html(
+        self,
+        prompt: Any,
+        model: str,
+        worker: str = "main",
+        *,
+        template_context: Dict[str, Any] | None = None,
+    ) -> tuple[str, str | None, dict | None]: ...
 
 
 class BrowserService(Protocol):

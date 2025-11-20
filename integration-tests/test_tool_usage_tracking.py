@@ -98,6 +98,47 @@ async def test_results_include_tool_call_counts() -> Tuple[bool, str]:
     return True, "tool call count recorded on model output"
 
 
+async def test_analyze_screen_tool_runs_vision() -> Tuple[bool, str]:
+    class StubService:
+        def __init__(self) -> None:
+            self.enabled = True
+
+        async def take_screenshot_mcp(self):
+            return "data:image/png;base64,ZmFrZQ=="
+
+        async def get_console_messages_mcp(self, level: str | None = None):
+            return [
+                {"level": "log", "message": "render complete"},
+                {"level": "error", "message": "bad shader"},
+            ]
+
+    service = StubService()
+    resolver = AsyncMock(return_value=(service, False))
+    fake_vision = AsyncMock(return_value="- Observed UI state")
+    query = "Is the save button visible?"
+
+    with patch.object(or_client, "_resolve_devtools_service", resolver):
+        with patch.object(or_client, "vision_single", fake_vision):
+            result = await or_client._execute_browser_tool("analyze_screen", {"query": query})
+
+    if "analysis" not in result or not result["analysis"]:
+        return False, "analyze_screen did not return analysis text"
+    if not result.get("console_logs"):
+        return False, "console logs missing from analyze_screen response"
+    try:
+        fake_vision.assert_awaited_once()
+    except AssertionError as exc:
+        return False, f"vision helper not invoked: {exc}"
+    prompt, image = fake_vision.call_args[0][:2]
+    if query not in prompt:
+        return False, "custom query not passed to vision prompt"
+    if "console logs" not in prompt.lower():
+        return False, "console logs not included in vision prompt"
+    if not isinstance(image, str) or not image.startswith("data:image/png"):
+        return False, "screenshot data URL not forwarded"
+    return True, "analyze_screen captures screenshot and runs vision"
+
+
 async def main() -> int:
     ensure_cwd_project_root()
 
@@ -105,6 +146,7 @@ async def main() -> int:
         ("Tool call status tracking", test_tool_call_status_and_counter),
         ("wait_for selector labeling", test_wait_for_phase_includes_selector),
         ("Model output tool counts", test_results_include_tool_call_counts),
+        ("analyze_screen vision bridge", test_analyze_screen_tool_runs_vision),
     ]
 
     ok_all = True

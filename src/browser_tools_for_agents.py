@@ -12,7 +12,7 @@ class BrowserToolProvider:
     def get_all_tools(self) -> List[Dict[str, Any]]:
         return [
             self.get_load_html_tool(),
-            self.get_take_screenshot_tool(),
+            self.get_analyze_screen_tool(),
             self.get_list_console_messages_tool(),
             self.get_list_network_requests_tool(),
             self.get_press_key_tool(),
@@ -23,16 +23,29 @@ class BrowserToolProvider:
         ]
 
     @staticmethod
-    def get_take_screenshot_tool() -> Dict[str, Any]:
+    def get_analyze_screen_tool() -> Dict[str, Any]:
         return {
             "type": "function",
             "function": {
-                "name": "take_screenshot",
+                "name": "analyze_screen",
                 "description": (
-                    "Capture the current browser viewport as a PNG (base64 data URL). "
-                    "Use this frequently to visually verify changes between iterations."
+                    "Capture the current viewport and run a lightweight vision analysis. "
+                    "Use this to visually confirm updates, detect rendering issues, or verify "
+                    "element positions. It will generate a bullet list of observations in context of the overall goal and user feedback."
                 ),
-                "parameters": {"type": "object", "properties": {}, "required": []},
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": (
+                                "Optional question about the current screen. Overrides the "
+                                "default prompt for this call."
+                            ),
+                        }
+                    },
+                    "required": [],
+                },
             },
         }
 

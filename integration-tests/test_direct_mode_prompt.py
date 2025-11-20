@@ -111,7 +111,14 @@ class RecordingAICodeService:
         self.last_prompt_text: str = ""
         self.last_messages: List[dict] = []
 
-    async def generate_html(self, prompt, model: str, worker: str = "main") -> tuple[str, str | None, dict | None]:
+    async def generate_html(
+        self,
+        prompt,
+        model: str,
+        worker: str = "main",
+        *,
+        template_context: dict | None = None,
+    ) -> tuple[str, str | None, dict | None]:
         text, content = _prompt_to_text(prompt)
         self.last_prompt_text = text
         self.last_messages = content if content else []

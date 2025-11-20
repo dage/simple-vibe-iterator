@@ -21,14 +21,14 @@ def ensure_root_cwd() -> Path:
 
 
 def inject_src() -> None:
-    p = project_root() / "src"
-    if str(p) not in sys.path:
-        sys.path.insert(0, str(p))
+    root = project_root()
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
 
 
 async def test_generation_metadata() -> Tuple[bool, str]:
-    import config as app_config
-    import or_client
+    from src import config as app_config
+    from src import or_client
 
     cfg = app_config.get_config()
 

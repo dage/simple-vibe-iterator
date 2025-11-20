@@ -37,47 +37,14 @@ from openai import (
 )
 from dotenv import load_dotenv
 from dataclasses import dataclass, field
-import importlib.util
-
-try:
-    from . import context_data, logging as log_utils, op_status
-    from .browser_tools_for_agents import BrowserToolProvider
-    from .chrome_devtools_service import (
-        create_chrome_devtools_service,
-        ChromeDevToolsService,
-        get_chrome_devtools_session_manager,
-        get_current_devtools_agent_id,
-    )
-except (ImportError, ModuleNotFoundError):  # pragma: no cover - fallback for tooling/tests
-    MODULE_DIR = Path(__file__).resolve().parent
-    _spec = importlib.util.spec_from_file_location("src.logging_fallback", MODULE_DIR / "logging.py")
-    assert _spec and _spec.loader
-    log_utils = importlib.util.module_from_spec(_spec)  # type: ignore[assignment]
-    sys.modules.setdefault(_spec.name, log_utils)
-    _spec.loader.exec_module(log_utils)  # type: ignore[arg-type]
-    _ctx_spec = importlib.util.spec_from_file_location("src.context_data_fallback", MODULE_DIR / "context_data.py")
-    assert _ctx_spec and _ctx_spec.loader
-    context_data = importlib.util.module_from_spec(_ctx_spec)  # type: ignore[assignment]
-    sys.modules.setdefault(_ctx_spec.name, context_data)
-    _ctx_spec.loader.exec_module(context_data)  # type: ignore[arg-type]
-    BrowserToolProvider = None  # type: ignore[assignment]
-    ChromeDevToolsService = None  # type: ignore[assignment]
-
-    def create_chrome_devtools_service(*_args: Any, **_kwargs: Any) -> None:  # type: ignore[no-untyped-def]
-        return None
-
-    def get_chrome_devtools_session_manager() -> None:  # type: ignore[no-untyped-def]
-        return None
-
-    def get_current_devtools_agent_id() -> None:  # type: ignore[no-untyped-def]
-        return None
-
-    class _OpStatusStub:
-        @staticmethod
-        def set_phase(*_: Any, **__: Any) -> None:
-            return None
-
-    op_status = _OpStatusStub()  # type: ignore[assignment]
+from . import context_data, logging as log_utils, op_status
+from .browser_tools_for_agents import BrowserToolProvider
+from .chrome_devtools_service import (
+    create_chrome_devtools_service,
+    ChromeDevToolsService,
+    get_chrome_devtools_session_manager,
+    get_current_devtools_agent_id,
+)
 
 # ---------------- Settings & client ---------------- #
 
@@ -85,6 +52,12 @@ TIMEOUT_SECONDS: float = 120.0
 
 
 load_dotenv()
+
+DEFAULT_ANALYZE_SCREEN_PROMPT = (
+    "Analyze the captured screenshot of the application UI. Describe visible elements, layout, "
+    "animations, and any rendering errors. Call out whether recent code changes appear on screen "
+    "and note the state of interactive controls."
+)
 
 
 @dataclass(frozen=True)
@@ -279,6 +252,50 @@ def _increment_tool_call_count() -> None:
     context_data.increment("tool_call_count")
 
 
+def _format_console_log_entries(entries: Optional[Sequence[Dict[str, Any]]]) -> List[str]:
+    formatted: List[str] = []
+    if not entries:
+        return formatted
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        level = str(entry.get("level") or "log").strip() or "log"
+        message = str(entry.get("message") or "").strip()
+        formatted.append(f"[{level}] {message}" if message else f"[{level}]")
+        if len(formatted) >= 20:
+            break
+    return formatted
+
+
+def _format_template_safe(template: str, ctx: Dict[str, Any]) -> str:
+    if not template:
+        return ""
+    try:
+        return template.format(**ctx)
+    except Exception:
+        return template
+
+
+def _resolve_analyze_screen_prompt(query: Optional[str]) -> tuple[str, str]:
+    cfg = _import_config()
+    template = str(context_data.get("vision_template") or "").strip()
+    if not template:
+        template = cfg.vision_template
+    ctx = context_data.get("vision_template_context")
+    ctx_dict = dict(ctx) if isinstance(ctx, dict) else {}
+    prompt = _format_template_safe(template, ctx_dict)
+    if not prompt.strip():
+        prompt = DEFAULT_ANALYZE_SCREEN_PROMPT
+    extra = (query or "").strip()
+    if extra:
+        prompt = f"{prompt.rstrip()}\n\nQuestion: {extra}"
+    model = str(
+        context_data.get("active_vision_model")
+        or cfg.vision_model
+    ).strip() or cfg.vision_model
+    return prompt, model
+
+
 async def _execute_tool_call(model_slug: str, name: str, arguments: str) -> str:
     try:
         payload = json.loads(arguments or "{}") if arguments else {}
@@ -316,8 +333,31 @@ async def _execute_browser_tool(name: str, payload: Dict[str, Any]) -> Dict[str,
         return {"error": "chrome_devtools_disabled"}
 
     try:
-        if name == "take_screenshot":
-            return {"screenshot": await service.take_screenshot_mcp()}
+        if name == "analyze_screen":
+            query = str(payload.get("query", "") or "").strip()
+            screenshot = await service.take_screenshot_mcp()
+            if not screenshot:
+                return {"error": "screenshot_unavailable"}
+            logs_raw = await service.get_console_messages_mcp()
+            log_strings = _format_console_log_entries(logs_raw)
+            prompt, model = _resolve_analyze_screen_prompt(query)
+            prompt_with_logs = prompt
+            if log_strings:
+                joined = "\n".join(log_strings)
+                prompt_with_logs = f"{prompt}\n\nConsole logs:\n{joined}"
+            try:
+                analysis = await vision_single(
+                    prompt_with_logs,
+                    screenshot,
+                    model=model,
+                )
+            except Exception as exc:
+                return {"error": f"vision_error: {exc}"}
+            return {
+                "analysis": analysis,
+                "model": model,
+                "console_logs": log_strings,
+            }
         if name == "load_html":
             html = str(payload.get("html_content", ""))
             if not html.strip():
@@ -508,16 +548,20 @@ def encode_image_to_data_url(
     Accepts raw bytes or a filesystem path; returns a data: URL suitable
     for OpenAI/OpenRouter Chat Completions image input.
     """
-    if isinstance(data, (str, Path)) and Path(str(data)).exists():
+    if isinstance(data, str) and data.startswith("data:"):
+        return data
+    if isinstance(data, (str, Path)):
         p = Path(str(data))
-        raw = p.read_bytes()
-        mime = mime or _guess_mime(p)
+        if p.exists():
+            raw = p.read_bytes()
+            mime = mime or _guess_mime(p)
+        else:
+            # Treat as literal content (e.g., HTML canvas export) rather than a file path
+            raw = data.encode("utf-8")
+            mime = mime or "text/plain"
     elif isinstance(data, (bytes, bytearray)):
         raw = bytes(data)
         mime = mime or "image/png"
-    elif isinstance(data, str) and data.startswith("data:"):
-        # already a data URL; pass through
-        return data
     else:
         raise ValueError("encode_image_to_data_url expects bytes, data: URL, or existing file path")
 

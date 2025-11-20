@@ -119,7 +119,7 @@ python experiments/model_selector_artifact.py --capture
 The harness pre-populates the code-model selector, auto-expands the dropdown, and lists the mock capability matrix (tracking text, vision, and tool capabilities) so you can verify upcoming UI changes without hitting OpenRouter.
 
 ### JavaScript code interpreter tool
-- Every code/vision model that supports tool-calling now receives the Chrome DevTools tool suite (load_html, take_screenshot, list_console_messages, list_network_requests, press_key, evaluate_script, wait_for, performance_start_trace, performance_stop_trace). The legacy `evaluate_javascript` helper has been removed now that DevTools handles in-page execution directly.
+- Every code/vision model that supports tool-calling now receives the Chrome DevTools tool suite (load_html, analyze_screen, list_console_messages, list_network_requests, press_key, evaluate_script, wait_for, performance_start_trace, performance_stop_trace).
 - The tool captures `console.log` output and returns both the evaluated result and logs so model reasoning can cite concrete evidence.
 - Each invocation is appended to `logs/tool_calls.jsonl` (JSON per line) so you can audit which model ran which snippet and what the tool returned.
 

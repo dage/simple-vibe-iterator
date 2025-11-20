@@ -24,9 +24,9 @@ def ensure_root_cwd() -> Path:
 
 
 def inject_src() -> None:
-    p = project_root() / "src"
-    if str(p) not in sys.path:
-        sys.path.insert(0, str(p))
+    root = project_root()
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
 
 
 async def test_deepseek_reasoning_vs_plain() -> Tuple[bool, str]:
@@ -35,15 +35,14 @@ async def test_deepseek_reasoning_vs_plain() -> Tuple[bool, str]:
     Some providers emit short reasoning traces even without explicit opts, so the
     assertion is based on aggregate output length rather than strict absence.
     """
-    import config as app_config
-    import or_client
+    from src import config as app_config
+    from src import or_client
 
     # Use a temp params file to avoid cross-test interference
     tmp = tempfile.NamedTemporaryFile(prefix="model_params_", suffix=".json", delete=False)
     os.environ["MODEL_PARAMS_PATH"] = tmp.name
 
-    import importlib
-    mp = importlib.import_module('model_params')
+    from src import model_params as mp
 
     cfg = app_config.get_config()
     preferred_slugs = [

@@ -54,7 +54,14 @@ def _prompt_to_text(prompt) -> str:
 
 
 class _TestStubAICodeService:
-    async def generate_html(self, prompt, model: str, worker: str = "main") -> str:
+    async def generate_html(
+        self,
+        prompt,
+        model: str,
+        worker: str = "main",
+        *,
+        template_context: dict | None = None,
+    ) -> tuple[str, str | None, dict | None]:
         await asyncio.sleep(0.05)
         safe = _prompt_to_text(prompt).strip()[:200]
         html = (
@@ -273,7 +280,14 @@ async def test_prompt_placeholders() -> Tuple[bool, str]:
     class RecordingAICodeService(AICodeService):
         def __init__(self) -> None:
             self.last_prompt: str = ""
-        async def generate_html(self, prompt, model: str, worker: str = "main") -> str:
+        async def generate_html(
+            self,
+            prompt,
+            model: str,
+            worker: str = "main",
+            *,
+            template_context: dict | None = None,
+        ) -> tuple[str, str | None, dict | None]:
             text = _prompt_to_text(prompt)
             self.last_prompt = text
             safe = text.strip()[:200]

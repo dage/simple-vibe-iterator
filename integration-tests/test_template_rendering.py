@@ -81,7 +81,14 @@ class RecordingAICodeService:
         self.payload_history: list[Any] = []
         self._script_lines: list[str] = list(script_lines or [])
 
-    async def generate_html(self, prompt, model: str, worker: str = "main") -> tuple[str, str | None, dict | None]:
+    async def generate_html(
+        self,
+        prompt,
+        model: str,
+        worker: str = "main",
+        *,
+        template_context: Dict[str, Any] | None = None,
+    ) -> tuple[str, str | None, dict | None]:
         text = _prompt_to_text(prompt)
         self.last_prompt = text
         self.prompt_history.append(text)

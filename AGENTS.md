@@ -53,8 +53,8 @@
 - Keep dialogs full-width for complex forms and prefer outlined, dense inputs for readability.
 
 ### Chrome DevTools Browser Tools
-- Chrome DevTools MCP provides nine core tools for every iteration: load_html, take_screenshot, list_console_messages, list_network_requests, press_key, evaluate_script, wait_for, performance_start_trace, and performance_stop_trace.
-- Treat these tools as required instrumentation: capture screenshots frequently, inspect console/network failures before guessing, and verify controls with press_key plus screenshots.
+- Chrome DevTools MCP provides nine core tools for every iteration: load_html, analyze_screen, list_console_messages, list_network_requests, press_key, evaluate_script, wait_for, performance_start_trace, and performance_stop_trace.
+- Treat these tools as required instrumentation: capture analyze_screen transcripts frequently so you understand the latest visuals, inspect console/network failures before guessing, and verify controls with press_key plus analyze_screen.
 - Use the performance trace tools only when diagnosing FPS or timing issues; remember to call `performance_stop_trace` to retrieve metrics.
 - `evaluate_script` accepts a single JavaScript expression, not semicolon-terminated statements. In practice it reliably supports property reads and assignments (for example `window.score`, `window.score = 5`, `document.title`) but NOT function definitions, function calls, IIFEs, or comma expressions that involve functions—those patterns are unstable and may fail.
 - For richer JS interactions rely on this best-practice combo: put complex logic and event listeners directly into the HTML/JS you send via `load_html`, use console logging plus `list_console_messages` for debug insight, and use `evaluate_script` only to read or tweak existing state (simple expressions). Avoid trying to cram general script execution into a single `evaluate_script` call—build behavior into the page instead and use the tool for lightweight inspection.

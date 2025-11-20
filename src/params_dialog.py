@@ -3,13 +3,8 @@ from __future__ import annotations
 from typing import List, Dict
 
 from nicegui import ui
-
-try:
-    from . import or_client as orc
-    from . import model_params as mp
-except Exception:  # pragma: no cover
-    import or_client as orc  # type: ignore
-    import model_params as mp  # type: ignore
+from . import or_client as orc
+from . import model_params as mp
 
 
 async def _resolve_supported(slug: str) -> List[str]:

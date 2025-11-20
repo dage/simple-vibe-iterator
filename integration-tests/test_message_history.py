@@ -4,7 +4,7 @@ import asyncio
 import os
 import sys
 from pathlib import Path
-from typing import Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Sequence, Tuple
 from unittest.mock import patch
 
 
@@ -76,7 +76,14 @@ class RecordingHistoryAICodeService:
     def __init__(self) -> None:
         self.calls: List[List[Dict[str, object]]] = []
 
-    async def generate_html(self, prompt, model: str, worker: str = "main") -> tuple[str, str | None, Dict[str, object]]:
+    async def generate_html(
+        self,
+        prompt,
+        model: str,
+        worker: str = "main",
+        *,
+        template_context: Dict[str, Any] | None = None,
+    ) -> tuple[str, str | None, Dict[str, object]]:
         del model, worker
         if hasattr(prompt, "messages"):
             messages = list(getattr(prompt, "messages", []) or [])

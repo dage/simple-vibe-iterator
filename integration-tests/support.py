@@ -29,9 +29,12 @@ def get_env_value(name: str, dotenv: Dict[str, str]) -> Optional[str]:
 
 def ensure_project_root(*, add_src_to_syspath: bool = False) -> Path:
     os.chdir(PROJECT_ROOT)
-    target = PROJECT_ROOT / "src" if add_src_to_syspath else PROJECT_ROOT
-    if str(target) not in sys.path:
-        sys.path.insert(0, str(target))
+    if str(PROJECT_ROOT) not in sys.path:
+        sys.path.insert(0, str(PROJECT_ROOT))
+    if add_src_to_syspath:
+        src_path = PROJECT_ROOT / "src"
+        if str(src_path) not in sys.path:
+            sys.path.append(str(src_path))
     return PROJECT_ROOT
 
 

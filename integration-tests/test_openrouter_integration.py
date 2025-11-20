@@ -21,7 +21,7 @@ def _one_line(text: str) -> str:
 
 
 async def validate_api_key_through_models_list():
-    import or_client  # imported after sys.path injection
+    from src import or_client  # imported after sys.path injection
 
     try:
         client = or_client._client()  # uses cached settings from .env
@@ -35,7 +35,7 @@ async def validate_api_key_through_models_list():
 
 
 async def test_code_model() -> Tuple[bool, str]:
-    import or_client
+    from src import or_client
 
     try:
         reply = await or_client.chat(
@@ -49,7 +49,7 @@ async def test_code_model() -> Tuple[bool, str]:
 
 
 async def test_vision_model() -> Tuple[bool, str]:
-    import or_client
+    from src import or_client
 
     try:
         # Generate a 256x256 image with a solid black circle in the center
@@ -86,7 +86,7 @@ async def test_vision_model() -> Tuple[bool, str]:
 
 
 async def main() -> int:
-    _, dotenv = bootstrap_test_env(add_src_to_syspath=True)
+    _, dotenv = bootstrap_test_env()
 
     # Gather required environment values
     api_key = get_env_value("OPENROUTER_API_KEY", dotenv)

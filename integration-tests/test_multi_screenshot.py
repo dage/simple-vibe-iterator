@@ -5,7 +5,7 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Sequence, Tuple
 from unittest.mock import patch
 
 os.environ.setdefault("OPENROUTER_DISABLE_RETRY", "1")
@@ -85,7 +85,14 @@ class _StubAICodeService:
         self.limits = limits
         self.calls: List[Tuple[str, Sequence[str]]] = []
 
-    async def generate_html(self, prompt, model: str, worker: str = "main") -> tuple[str, str | None, dict | None]:
+    async def generate_html(
+        self,
+        prompt,
+        model: str,
+        worker: str = "main",
+        *,
+        template_context: Dict[str, Any] | None = None,
+    ) -> tuple[str, str | None, dict | None]:
         # The prompt payload may attach image URLs; we only record counts.
         try:
             if hasattr(prompt, "messages"):

@@ -22,11 +22,7 @@ from .ui_theme import apply_theme
 from .view_utils import extract_vision_summary, format_html_size
 from .node_summary_dialog import create_node_summary_dialog
 from .status_panel import StatusPanel
-
-try:  # pragma: no cover - import differs during tests
-    from . import or_client as orc
-except Exception:  # pragma: no cover
-    import or_client as orc  # type: ignore
+from . import or_client as orc
 
 GOAL_SUMMARY_MODEL = "x-ai/grok-4-fast"
 GOAL_SUMMARY_CHAR_LIMIT = 280
@@ -458,6 +454,9 @@ class NiceGUIView(IterationEventListener):
                 single_selection=True,
             ), persistent=persistent_selectors)
             vision_model = vision_selector.input
+            ui.label('This model will also be used in the analyze_screen agent tool.').classes(
+                'text-xs text-gray-500 self-start'
+            )
 
         return {
             'user_feedback': user_feedback,
@@ -628,7 +627,6 @@ class NiceGUIView(IterationEventListener):
                         allow_overall_goal_edit=False,
                         show_user_feedback=(index > 1),
                     )
-                    ui.label('Adjust prompt, model, and auto feedback before transforming.').classes('text-xs text-gray-500')
 
                 def _collect_transition_settings(fallback_code_slug: str = '', *, user_feedback_override: str | None = None) -> TransitionSettings:
                     settings_manager = get_settings()

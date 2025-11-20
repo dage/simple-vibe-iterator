@@ -76,7 +76,7 @@ class StatusPanel:
                 except Exception:
                     tool_calls = 0
             detail_text = f"{detail} · {elapsed_display}s"
-            detail_text = f"{detail_text} · {tool_calls}tc"
+            detail_text = f"{detail_text} · {tool_calls} tools"
 
             if row.headline_text != headline:
                 row.headline_label.set_text(headline)

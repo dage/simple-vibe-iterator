@@ -22,11 +22,7 @@ from . import task_registry
 from .prompt_builder import build_code_payload, build_vision_prompt
 from .model_capabilities import get_image_limit, get_input_screenshot_interval
 from . import feedback_presets
-
-try:  # pragma: no cover - import differs during tests
-    from . import or_client as orc
-except Exception:  # pragma: no cover
-    import or_client as orc  # type: ignore
+from . import or_client as orc
 
 
 @dataclass
@@ -179,7 +175,7 @@ async def δ(
             while True:
                 selected_attachments = attachment_policy.attachments_for(model)
                 try:
-                    payload = build_code_payload(
+                    payload, template_context = build_code_payload(
                         html_input=context.html_input,
                         settings=settings,
                         interpretation_summary=interpretation.summary,
@@ -189,7 +185,12 @@ async def δ(
                         message_history=message_history,
                         allow_attachments=bool(selected_attachments),
                     )
-                    html_output, reasoning, meta = await ai_service.generate_html(payload, model, worker=model)
+                    html_output, reasoning, meta = await ai_service.generate_html(
+                        payload,
+                        model,
+                        worker=model,
+                        template_context=template_context,
+                    )
                     out_screenshots, out_console_logs = await browser_service.render_and_capture(html_output, worker=model)
                     out_screenshot_path = out_screenshots[0] if out_screenshots else ""
                     artifacts = _create_artifacts(

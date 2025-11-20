@@ -5,11 +5,7 @@ from typing import Any, Dict, Iterable, List
 
 from .interfaces import IterationAsset, TransitionSettings
 from .image_downscale import load_scaled_image_bytes
-
-try:
-    from . import or_client as orc
-except Exception:  # pragma: no cover
-    import or_client as orc  # type: ignore
+from . import or_client as orc
 
 
 class PromptPayload:
@@ -129,7 +125,7 @@ def build_code_payload(
     message_history: List[Dict[str, Any]] | None = None,
     auto_feedback: str = "",
     allow_attachments: bool = False,
-) -> PromptPayload:
+) -> tuple[PromptPayload, Dict[str, Any]]:
     attachments = list(attachments if allow_attachments else [])
     ctx = _build_template_context(
         html_input=html_input,
@@ -158,7 +154,12 @@ def build_code_payload(
             messages.insert(0, {"role": "system", "content": system_prompt})
     user_message = _build_user_message(base_iteration_prompt, attachments, bool(attachments))
     messages.append(user_message)
-    return PromptPayload(messages)
+    template_context = {
+        "vision_template": settings.vision_template,
+        "template_vars": ctx,
+        "vision_model": settings.vision_model,
+    }
+    return PromptPayload(messages), template_context
 
 
 def _strip_vision_mentions(prompt: str) -> str:

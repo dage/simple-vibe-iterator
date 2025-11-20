@@ -163,6 +163,8 @@ class OpenRouterAICodeService(AICodeService):
         prompt: PromptPayload | Sequence[dict] | str,
         model: str,
         worker: str = "main",
+        *,
+        template_context: Dict[str, Any] | None = None,
     ) -> tuple[str, str | None, dict | None]:
         # Defer import to avoid requiring env when using stubs/tests
         from . import or_client
@@ -174,6 +176,7 @@ class OpenRouterAICodeService(AICodeService):
         started_monotonic = time.monotonic()
         started_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         devtools_agent_id = f"{worker_name}:{operation_id}"
+        templ_ctx = template_context or {}
         ctx_token = context_data.reset_context({
             "tool_call_count": 0,
             "worker_id": worker_name,
@@ -182,6 +185,9 @@ class OpenRouterAICodeService(AICodeService):
             "session_started_at_monotonic": started_monotonic,
             "session_started_at_iso": started_iso,
             "devtools_agent_id": devtools_agent_id,
+            "vision_template": str(templ_ctx.get("vision_template") or ""),
+            "vision_template_context": dict(templ_ctx.get("template_vars") or {}),
+            "active_vision_model": str(templ_ctx.get("vision_model") or ""),
         })
         op_status.set_phase(worker, f"Coding|{model}")
 

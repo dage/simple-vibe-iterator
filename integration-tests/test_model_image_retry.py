@@ -67,7 +67,14 @@ class FlakyAICodeService:
         self.calls: List[List[Dict[str, object]]] = []
         self.fail_next_with_images = True
 
-    async def generate_html(self, prompt, model: str, worker: str = "main") -> tuple[str, str | None, dict | None]:
+    async def generate_html(
+        self,
+        prompt,
+        model: str,
+        worker: str = "main",
+        *,
+        template_context: dict | None = None,
+    ) -> tuple[str, str | None, dict | None]:
         del model, worker
         if hasattr(prompt, "messages"):
             messages = list(getattr(prompt, "messages", []) or [])

@@ -8,11 +8,7 @@ import datetime
 from nicegui import ui
 from . import op_status
 from .params_dialog import open_params_dialog
-
-try:
-    from . import or_client as orc
-except Exception:  # pragma: no cover - fallback for tests that import without package context
-    import or_client as orc  # type: ignore
+from . import or_client as orc
 
 
 class ModelSelector:
