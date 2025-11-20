@@ -14,7 +14,6 @@ class BrowserToolProvider:
             self.get_load_html_tool(),
             self.get_analyze_screen_tool(),
             self.get_list_console_messages_tool(),
-            self.get_list_network_requests_tool(),
             self.get_press_key_tool(),
             self.get_evaluate_script_tool(),
             self.get_wait_for_tool(),
@@ -92,26 +91,6 @@ class BrowserToolProvider:
                             "type": "string",
                             "enum": ["error", "warn", "log", "info"],
                             "description": "Optional log level filter",
-                        }
-                    },
-                    "required": [],
-                },
-            },
-        }
-
-    @staticmethod
-    def get_list_network_requests_tool() -> Dict[str, Any]:
-        return {
-            "type": "function",
-            "function": {
-                "name": "list_network_requests",
-                "description": "Inspect network traffic for failed resource loads.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "filter": {
-                            "type": "string",
-                            "description": "Optional substring to filter URLs",
                         }
                     },
                     "required": [],

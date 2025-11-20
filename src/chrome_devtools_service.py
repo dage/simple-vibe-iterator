@@ -165,14 +165,6 @@ class ChromeDevToolsService:
         except Exception:
             return None
 
-    async def get_network_requests_mcp(self, filter_url: Optional[str] = None) -> List[Dict[str, Any]]:
-        result = await self._call_tool("list_network_requests")
-        value = self._extract_field(result, "requests")
-        entries = value if isinstance(value, list) else []
-        if filter_url:
-            return [entry for entry in entries if filter_url in str(entry.get("url", ""))]
-        return entries
-
     async def press_key_mcp(self, key: str, duration_ms: int = 100) -> bool:
         normalized = (key or "").strip()
         if not normalized:

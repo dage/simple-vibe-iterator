@@ -41,14 +41,6 @@ async def test_devtools_methods_without_server() -> None:
                 ]
             }
         ],
-        "list_network_requests": [
-            {
-                "requests": [
-                    {"url": "https://cdn.example/asset.js", "status": 200},
-                    {"url": "https://other.example/main.css", "status": 200},
-                ]
-            }
-        ],
         "press_key": [{"ok": True}],
         "wait_for": [{"ok": True}],
         "performance_start_trace": [{"ok": True}],
@@ -69,9 +61,6 @@ async def test_devtools_methods_without_server() -> None:
 
     logs = await service.get_console_messages_mcp()
     assert logs and logs[0]["message"] == "case:simple"
-
-    network = await service.get_network_requests_mcp("cdn")
-    assert len(network) == 1 and "cdn.example" in network[0]["url"]
 
     assert await service.press_key_mcp("w") is True
     assert await service.wait_for_selector_mcp("Hello World") is True

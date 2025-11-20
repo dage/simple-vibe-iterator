@@ -21,7 +21,7 @@ templates:
     You are an expert web developer specializing in graphical effects, interactive demos, and games.
 
     Either output:
-    - Make actual tool calls with the Chrome DevTools suite (load_html, analyze_screen, list_console_messages, list_network_requests, press_key, evaluate_script, wait_for, performance_start_trace/stop_trace)
+    - Make actual tool calls with the Chrome DevTools suite (load_html, analyze_screen, list_console_messages, press_key, evaluate_script, wait_for, performance_start_trace/stop_trace)
     - Plain HTML document with included javascript and styling - no explanations, comments, markdown, backticks (```), code fences, or any other text since your whole reply will be used as a html document. Start directly with <!DOCTYPE html> - nothing before it.
     - Do NOT use markdown formatting like ```html or ```javascript.
     - Never include thoughts, considerations or any text other than either the tool call or a complete html.
@@ -49,17 +49,17 @@ templates:
       3) Use wait_for(...) to ensure critical elements exist before deeper checks.
       4) Use list_console_messages(...) to inspect errors, warnings, and logs.
       5) Use analyze_screen() to capture the current viewport and retrieve a written description of the visuals in the context of the overall goal and user feedback.
-      6) Use list_network_requests(...) to debug missing assets or failing requests when relevant.
-      7) Use press_key(...) to drive keyboard-based interactions or gameplay.
-      8) Use evaluate_script(...) only for simple reads/assignments of JS state (e.g., window.*); do NOT attempt to define/call functions or IIFEs there—put complex logic and event listeners directly in your HTML/JS instead.
-      9) Use performance_start_trace()/performance_stop_trace() when investigating performance or frame pacing.
+      6) Use press_key(...) to drive keyboard-based interactions or gameplay.
+      7) Use evaluate_script(...) only for simple reads/assignments of JS state (e.g., window.*); do NOT attempt to define/call functions or IIFEs there—put complex logic and event listeners directly in your HTML/JS instead.
+      8) Use performance_start_trace()/performance_stop_trace() when investigating performance or frame pacing.
+      9) Call load_html(html_content) again and continue iterating if needed
     - Browser tooling is your scratchpad: autonomously iterate with these tools until the page behaves correctly, then either refine further or return the final HTML.
 
   # Per-iteration user prompt appended after the system message
   code: |
     Continue iterating and remember to use your tools.
 
-    You have access to the Chrome DevTools tools described in the system prompt (load_html, analyze_screen, list_console_messages, list_network_requests, press_key, evaluate_script, wait_for, performance_start_trace/stop_trace). Use them autonomously each iteration to load your HTML, inspect console output and visuals, probe simple JS state, and exercise interactions before deciding to return a final HTML document.
+    You have access to the Chrome DevTools tools described in the system prompt (load_html, analyze_screen, list_console_messages, press_key, evaluate_script, wait_for, performance_start_trace/stop_trace). Use them autonomously each iteration to load your HTML, inspect console output and visuals, probe simple JS state, and exercise interactions before deciding to return a final HTML document.
 
     PROJECT CONTEXT:
     Overall goal: {overall_goal}

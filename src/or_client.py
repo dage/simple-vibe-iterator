@@ -365,10 +365,6 @@ async def _execute_browser_tool(name: str, payload: Dict[str, Any]) -> Dict[str,
             return {"ok": await service.load_html_mcp(html)}
         if name == "list_console_messages":
             return {"messages": await service.get_console_messages_mcp(level=payload.get("level"))}
-        if name == "list_network_requests":
-            return {
-                "requests": await service.get_network_requests_mcp(filter_url=payload.get("filter"))
-            }
         if name == "press_key":
             key = str(payload.get("key", "")).strip()
             if not key:
