@@ -28,7 +28,10 @@ class BrowserToolProvider:
             "type": "function",
             "function": {
                 "name": "take_screenshot",
-                "description": "Capture the current browser viewport as a PNG (base64 data URL).",
+                "description": (
+                    "Capture the current browser viewport as a PNG (base64 data URL). "
+                    "Use this frequently to visually verify changes between iterations."
+                ),
                 "parameters": {"type": "object", "properties": {}, "required": []},
             },
         }
@@ -65,7 +68,10 @@ class BrowserToolProvider:
             "type": "function",
             "function": {
                 "name": "list_console_messages",
-                "description": "Retrieve console logs for debugging JavaScript errors.",
+                "description": (
+                    "Retrieve console logs (log, info, warn, error) to debug JavaScript behavior. "
+                    "Call this after interactions or state changes to inspect new messages."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -106,7 +112,10 @@ class BrowserToolProvider:
             "type": "function",
             "function": {
                 "name": "press_key",
-                "description": "Simulate keyboard input (e.g., WASD or space).",
+                "description": (
+                    "Simulate keyboard input (any key, including arrows, WASD, space, etc.) "
+                    "to drive in-page interactions and gameplay."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -129,10 +138,14 @@ class BrowserToolProvider:
             "function": {
                 "name": "evaluate_script",
                 "description": (
-                    "Execute a single JavaScript expression (mirrors Chrome Runtime.evaluate). "
-                    "Avoid semicolon-terminated statements; prefer property reads, assignments, "
-                    "comma expressions, or an IIFE that returns the result. Split multi-step logic "
-                    "across repeated calls or helpers instead of chaining statements."
+                    "Evaluate a single JavaScript expression in the page context for quick "
+                    "state inspection or simple tweaks. Supports property reads and assignments "
+                    "like `window.score`, `window.score = 5`, or `document.title`. Do NOT rely "
+                    "on it to define or call functions, run IIFEs, or use comma expressions "
+                    "that involve functions—those patterns are not reliably supported and may "
+                    "throw errors. Avoid semicolon-terminated statements. For multi-step logic "
+                    "or event listeners, put the JavaScript directly in your HTML via load_html "
+                    "and use evaluate_script only to read or adjust existing state."
                 ),
                 "parameters": {
                     "type": "object",

@@ -43,21 +43,23 @@ templates:
     - Console logs contain feedback from previous iterations - use them to fix issues
     - Build incrementally on existing HTML rather than starting over
     - Each iteration should show measurable progress or enhancement
-    - Browser tooling: use the Chrome DevTools functions (load_html, evaluate_script, take_screenshot, list_console_messages, list_network_requests, press_key, wait_for, performance traces) as your scratchpad before finalizing HTML.
+    - Preferred workflow per iteration:
+      1) Generate or update the full HTML document string.
+      2) Call load_html(html_content) to render it in the browser.
+      3) Use wait_for(...) to ensure critical elements exist before deeper checks.
+      4) Use list_console_messages(...) to inspect errors, warnings, and logs.
+      5) Use take_screenshot() to visually verify layout, animations, and effects.
+      6) Use list_network_requests(...) to debug missing assets or failing requests when relevant.
+      7) Use press_key(...) to drive keyboard-based interactions or gameplay.
+      8) Use evaluate_script(...) only for simple reads/assignments of JS state (e.g., window.*); do NOT attempt to define/call functions or IIFEs there—put complex logic and event listeners directly in your HTML/JS instead.
+      9) Use performance_start_trace()/performance_stop_trace() when investigating performance or frame pacing.
+    - Browser tooling is your scratchpad: autonomously iterate with these tools until the page behaves correctly, then either refine further or return the final HTML.
 
   # Per-iteration user prompt appended after the system message
   code: |
-    Please continue fixing and improving the HTML based on the feedback provided.
+    Continue iterating and remember to use your tools.
 
-    AVAILABLE TOOLS:
-    - load_html(html_content): push your generated document into the browser so the DOM is ready for other tools
-    - take_screenshot(): capture the viewport whenever you need visual confirmation
-    - list_console_messages(level?): inspect JavaScript errors or warnings
-    - list_network_requests(filter?): debug missing assets or CORS failures
-    - press_key(key, duration_ms?): test WASD/space/etc interactions
-    - evaluate_script(script): run JavaScript in the page context to validate state
-    - wait_for(selector, timeout_ms?): ensure critical elements exist before proceeding
-    - performance_start_trace() / performance_stop_trace(): profile rendering performance
+    You have access to the Chrome DevTools tools described in the system prompt (load_html, take_screenshot, list_console_messages, list_network_requests, press_key, evaluate_script, wait_for, performance_start_trace/stop_trace). Use them autonomously each iteration to load your HTML, inspect console output and visuals, probe simple JS state, and exercise interactions before deciding to return a final HTML document.
 
     PROJECT CONTEXT:
     Overall goal: {overall_goal}
@@ -113,4 +115,6 @@ templates:
     - Observation 3
 
   code_first_prompt: |
+    Now implement the user goal and remember to test using the tools and iterate until it's working perfectly.
+    
     {overall_goal}
