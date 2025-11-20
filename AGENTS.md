@@ -44,6 +44,7 @@
 - When adding config/state files, isolate tests from user data (use env overrides like `MODEL_PARAMS_PATH` or temp dirs) to avoid cross‑test interference.
 - Reproduce reported bugs locally before handing off; include the minimal command to verify the fix.
 - If tests require network or browsers, run only the smallest set needed until ready for a full run.
+- Always run the linter yourself (e.g., `ruff check …`) instead of asking the developer to do it; treat linting as part of your change validation.
 
 ### NiceGUI & Quasar Patterns
 - NiceGUI UI components represent state synchronized between Python and the browser via WebSockets. To update component values programmatically and ensure the UI reflects changes without page refresh, always use provided async setter methods (e.g., await component.set_value(...)) inside async event handlers or tasks. Avoid direct attribute assignments followed by .update(), which often do not trigger UI refresh. For reactive two-way binding, use bind_value to link Python variables with component state and keep them in sync automatically. This pattern enables reliable, real-time UI updates following user interactions or internal logic changes.
