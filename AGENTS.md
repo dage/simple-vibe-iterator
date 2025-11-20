@@ -53,7 +53,7 @@
 - Keep dialogs full-width for complex forms and prefer outlined, dense inputs for readability.
 
 ### Chrome DevTools Browser Tools
-- Chrome DevTools MCP provides eight core tools for every iteration: take_screenshot, list_console_messages, list_network_requests, press_key, evaluate_script, wait_for, performance_start_trace, and performance_stop_trace.
+- Chrome DevTools MCP provides nine core tools for every iteration: load_html, take_screenshot, list_console_messages, list_network_requests, press_key, evaluate_script, wait_for, performance_start_trace, and performance_stop_trace.
 - Treat these tools as required instrumentation: capture screenshots frequently, inspect console/network failures before guessing, and verify controls with press_key plus screenshots.
 - Use the performance trace tools only when diagnosing FPS or timing issues; remember to call `performance_stop_trace` to retrieve metrics.
 - `evaluate_script` mirrors Chrome's `Runtime.evaluate()` so it only accepts single expressions, not semicolon-terminated statements. Favor property reads, assignments, comma sequences, or an IIFE that returns a result; spread multi-step logic across repeated calls or global vars instead of chaining statements. When escaping is tricky, wrap logic in a named function and return the final value rather than writing raw statements.

@@ -318,6 +318,11 @@ async def _execute_browser_tool(name: str, payload: Dict[str, Any]) -> Dict[str,
     try:
         if name == "take_screenshot":
             return {"screenshot": await service.take_screenshot_mcp()}
+        if name == "load_html":
+            html = str(payload.get("html_content", ""))
+            if not html.strip():
+                return {"error": "missing html_content"}
+            return {"ok": await service.load_html_mcp(html)}
         if name == "list_console_messages":
             return {"messages": await service.get_console_messages_mcp(level=payload.get("level"))}
         if name == "list_network_requests":

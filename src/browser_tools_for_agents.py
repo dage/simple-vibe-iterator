@@ -11,6 +11,7 @@ class BrowserToolProvider:
 
     def get_all_tools(self) -> List[Dict[str, Any]]:
         return [
+            self.get_load_html_tool(),
             self.get_take_screenshot_tool(),
             self.get_list_console_messages_tool(),
             self.get_list_network_requests_tool(),
@@ -29,6 +30,32 @@ class BrowserToolProvider:
                 "name": "take_screenshot",
                 "description": "Capture the current browser viewport as a PNG (base64 data URL).",
                 "parameters": {"type": "object", "properties": {}, "required": []},
+            },
+        }
+
+    @staticmethod
+    def get_load_html_tool() -> Dict[str, Any]:
+        return {
+            "type": "function",
+            "function": {
+                "name": "load_html",
+                "description": (
+                    "Render a complete HTML document directly in the browser so "
+                    "subsequent tooling calls can inspect it."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "html_content": {
+                            "type": "string",
+                            "description": (
+                                "Full HTML document string including <!DOCTYPE html>, "
+                                "<html>, and <body>."
+                            ),
+                        }
+                    },
+                    "required": ["html_content"],
+                },
             },
         }
 
