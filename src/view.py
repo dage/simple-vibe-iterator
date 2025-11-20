@@ -14,7 +14,6 @@ import html as _html
 from .controller import IterationController
 from .interfaces import IterationEventListener, IterationNode, TransitionSettings
 from . import op_status
-from . import prefs
 from . import task_registry
 from . import feedback_presets
 from .model_selector import ModelSelector
@@ -108,7 +107,6 @@ class NiceGUIView(IterationEventListener):
                  .classes('w-full text-base placeholder-transparent').style('white-space: pre-wrap;')
 
                 # Add example prompt selector
-                import os
                 from pathlib import Path
                 prompt_options = []
                 prompt_dir = Path('prompt-examples')
@@ -347,18 +345,10 @@ class NiceGUIView(IterationEventListener):
                 panel = self._create_node_panel(idx, node, expanded=(idx == total))
                 self.node_panels[node.id] = panel
 
-    def _render_settings_editor(
-        self,
-        initial: TransitionSettings,
-        *,
-        persistent_selectors: bool = False,
-        show_user_feedback: bool = True,
-        allow_overall_goal_edit: bool = True,
-    ) -> Dict[str, ui.element]:
-        """Left-side settings editor used in both Start area and iteration cards."""
-
+    def _feedback_preset_context(
+        self, initial: TransitionSettings
+    ) -> tuple[str, Dict[str, str], Dict[str, feedback_presets.FeedbackPreset]]:
         settings_manager = get_settings()
-
         preset_entries = list(feedback_presets.list_enabled_presets())
         preset_lookup = {p.id: p for p in preset_entries}
         preset_label_to_id = {preset.label: preset.id for preset in preset_entries}
@@ -368,6 +358,17 @@ class NiceGUIView(IterationEventListener):
             (getattr(initial, 'feedback_preset_id', None) or settings_manager.get_feedback_preset_id()).strip()
         )
         initial_preset_label = preset_id_to_label.get(initial_preset_id, first_preset_label)
+        return initial_preset_label, preset_label_to_id, preset_lookup
+
+    def _create_feedback_preset_placeholder(self, initial: TransitionSettings) -> SimpleNamespace:
+        initial_label, label_to_id, _ = self._feedback_preset_context(initial)
+        placeholder = SimpleNamespace(value=initial_label)
+        placeholder._preset_value_map = label_to_id  # type: ignore[attr-defined]
+        return placeholder
+
+    def _create_feedback_preset_controls(self, initial: TransitionSettings) -> ui.select:
+        """Render auto feedback preset selector and summary, returning the selector element."""
+        initial_preset_label, preset_label_to_id, preset_lookup = self._feedback_preset_context(initial)
         feedback_preset_select = ui.select(
             options=list(preset_label_to_id.keys()),
             value=initial_preset_label,
@@ -414,12 +415,19 @@ class NiceGUIView(IterationEventListener):
                     pass
 
         _update_preset_summary()
+        feedback_preset_select.on_value_change(lambda _: _update_preset_summary())
+        feedback_preset_select.on('update:model-value', lambda _: _update_preset_summary())
+        return feedback_preset_select
 
-        def _refresh_summary() -> None:
-            _update_preset_summary()
-
-        feedback_preset_select.on_value_change(lambda _: _refresh_summary())
-        feedback_preset_select.on('update:model-value', lambda _: _refresh_summary())
+    def _render_settings_editor(
+        self,
+        initial: TransitionSettings,
+        *,
+        persistent_selectors: bool = False,
+        show_user_feedback: bool = True,
+        allow_overall_goal_edit: bool = True,
+    ) -> Dict[str, ui.element]:
+        """Settings editor used in iteration cards."""
 
         if allow_overall_goal_edit:
             overall_goal = ui.textarea(label='Overall goal', value=initial.overall_goal).classes('w-full')
@@ -456,7 +464,6 @@ class NiceGUIView(IterationEventListener):
             'overall_goal': overall_goal,
             'code_model': code_model,
             'vision_model': vision_model,
-            'feedback_preset': feedback_preset_select,
         }
 
     def _create_node_panel(self, index: int, node: IterationNode, *, expanded: bool) -> ui.element:
@@ -663,7 +670,7 @@ class NiceGUIView(IterationEventListener):
                 with ui.column().classes('w-[64px] shrink-0 items-center justify-center h-full transform-column'):
                     ui.button('', icon='arrow_forward', on_click=lambda: asyncio.create_task(_transform_current_node())).props('unelevated size=lg').classes('w-16 h-36 bg-primary-500 text-white shadow-lg rounded-xl mt-4')
 
-                with ui.column().classes(f'{output_basis} min-w-0 gap-6 output-column'):
+                with ui.column().classes(f'{output_basis} min-w-0 output-column'):
                     if allow_meta and not show_input_column:
                         _render_meta_controls()
                     output_messages_dialog = ui.dialog()
@@ -739,6 +746,14 @@ class NiceGUIView(IterationEventListener):
                                 summary_btn = ui.button('Summary', on_click=summary_handler).props('flat dense').classes('text-xs font-semibold tracking-wide uppercase text-gray-500')
                                 if summary_disabled:
                                     summary_btn.props('disable')
+
+                    if node.outputs:
+                        with ui.column().classes('w-full gap-1 -mt-2 output-auto-feedback'):
+                            feedback_preset_select = self._create_feedback_preset_controls(node.settings)
+                    else:
+                        feedback_preset_select = self._create_feedback_preset_placeholder(node.settings)
+                    inputs['feedback_preset'] = feedback_preset_select
+
                     for model_slug, out in node.outputs.items():
                         with ui.column().classes('w-full min-w-0 gap-2 border rounded p-2'):
                             ui.label(f'{model_slug}').classes('text-sm font-semibold')
@@ -760,7 +775,6 @@ class NiceGUIView(IterationEventListener):
                             out_png = out.artifacts.screenshot_filename
                             if out_png:
                                 ui.image(out_png).classes('w-full h-auto max-w-full rounded border border-gray-600')
-                            out_html = out.html_output
                             from pathlib import Path as _OutputPath
                             out_html_url = ''
                             try:
