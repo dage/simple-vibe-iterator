@@ -263,6 +263,7 @@ class OpenRouterVisionService(VisionService):
                 messages=[{"role": "user", "content": parts}],
                 model=model,
                 temperature=0,
+                allow_tools=False,
             )
             op_status.clear_phase(worker)
             return reply or ""

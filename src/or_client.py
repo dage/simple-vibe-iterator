@@ -303,9 +303,13 @@ async def _execute_tool_call(model_slug: str, name: str, arguments: str) -> str:
         payload = {"code": arguments}
 
     if name in _BROWSER_TOOL_NAMES:
-        worker = model_slug or "agent"
-        tool_phase = _describe_tool_phase(name, worker, payload=payload)
-        coding_phase = f"Coding|{worker}"
+        # Prefer the worker id from the current async context so all tool
+        # phases attach to the same status row used by the calling service.
+        worker = str(context_data.get("worker_id") or model_slug or "agent")
+        display_worker = str(model_slug or worker or "agent")
+        context_model = str(context_data.get("model_slug") or display_worker or "agent")
+        tool_phase = _describe_tool_phase(name, context_model, payload=payload)
+        coding_phase = f"Coding|{context_model}"
         op_status.set_phase(worker, tool_phase)
         try:
             _increment_tool_call_count()
@@ -607,6 +611,8 @@ async def _retry(coro_fn, max_tries: int = 5, base: float = 0.5, retry_on=None):
 async def chat(
     messages: List[Dict[str, Any]],
     model: Optional[str] = None,
+    *,
+    allow_tools: bool = True,
     **kwargs,
 ) -> str:
     """
@@ -618,7 +624,12 @@ async def chat(
     merged_kwargs = await _merge_model_params(model, kwargs)
 
     # Use the richer helper and return only textual content for backward compatibility
-    content, _meta = await chat_with_meta(messages=messages, model=model, **merged_kwargs)
+    content, _meta = await chat_with_meta(
+        messages=messages,
+        model=model,
+        allow_tools=allow_tools,
+        **merged_kwargs,
+    )
     return content or ""
 
 
@@ -641,12 +652,19 @@ async def vision_single(
             {"type": "image_url", "image_url": {"url": data_url}},
         ],
     }]
-    return await chat(msgs, model=model or s.vision_model, **kwargs)
+    return await chat(
+        msgs,
+        model=model or s.vision_model,
+        allow_tools=False,
+        **kwargs,
+    )
 
 
 async def chat_with_meta(
     messages: List[Dict[str, Any]],
     model: Optional[str] = None,
+    *,
+    allow_tools: bool = True,
     **kwargs,
 ) -> tuple[str, Dict[str, Any]]:
     """
@@ -661,11 +679,15 @@ async def chat_with_meta(
     """
     ctx_token = None
     if not context_data.has_context():
+        # Stateless callers get a minimal context with a fresh tool counter.
         ctx_token = context_data.reset_context({"tool_call_count": 0})
-    else:
-        context_data.set("tool_call_count", 0)
     try:
-        return await _chat_with_meta_impl(messages=messages, model=model, **kwargs)
+        return await _chat_with_meta_impl(
+            messages=messages,
+            model=model,
+            allow_tools=allow_tools,
+            **kwargs,
+        )
     finally:
         if ctx_token is not None:
             context_data.restore_context(ctx_token)
@@ -674,6 +696,8 @@ async def chat_with_meta(
 async def _chat_with_meta_impl(
     messages: List[Dict[str, Any]],
     model: Optional[str] = None,
+    *,
+    allow_tools: bool = True,
     **kwargs,
 ) -> tuple[str, Dict[str, Any]]:
     s = _settings()
@@ -684,7 +708,7 @@ async def _chat_with_meta_impl(
     slug = model or s.code_model
     conversation = [dict(m) for m in messages]
     info = await _get_model_info(slug)
-    tool_specs = list(DEFAULT_TOOL_SPECS) if _model_supports_tools(info) else []
+    tool_specs = list(DEFAULT_TOOL_SPECS) if (allow_tools and _model_supports_tools(info)) else []
     max_tool_hops = 30
     res = None
     last_tool_calls: Sequence[Any] = []

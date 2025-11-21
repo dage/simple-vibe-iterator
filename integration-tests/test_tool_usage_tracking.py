@@ -139,6 +139,24 @@ async def test_analyze_screen_tool_runs_vision() -> Tuple[bool, str]:
     return True, "analyze_screen captures screenshot and runs vision"
 
 
+async def test_vision_single_disables_tools() -> Tuple[bool, str]:
+    fake_chat = AsyncMock(return_value="- ok -")
+    with patch.object(or_client, "chat", fake_chat):
+        result = await or_client.vision_single("prompt", b"data", model="vision-model")
+    if result != "- ok -":
+        return False, f"unexpected vision_single result: {result!r}"
+    try:
+        called = fake_chat.await_args
+    except AttributeError:
+        return False, "vision_single did not await chat helper"
+    if not called:
+        return False, "vision_single did not await chat helper"
+    _, kwargs = called
+    if kwargs.get("allow_tools") is not False:
+        return False, "vision_single must disable tools for its chat call"
+    return True, "vision_single disables tools when requesting output"
+
+
 async def main() -> int:
     ensure_cwd_project_root()
 
@@ -147,6 +165,7 @@ async def main() -> int:
         ("wait_for selector labeling", test_wait_for_phase_includes_selector),
         ("Model output tool counts", test_results_include_tool_call_counts),
         ("analyze_screen vision bridge", test_analyze_screen_tool_runs_vision),
+        ("vision_single disables tools", test_vision_single_disables_tools),
     ]
 
     ok_all = True

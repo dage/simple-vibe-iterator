@@ -76,7 +76,8 @@ class StatusPanel:
                 except Exception:
                     tool_calls = 0
             detail_text = f"{detail} · {elapsed_display}s"
-            detail_text = f"{detail_text} · {tool_calls} tools"
+            if self._should_display_tool_count(row):
+                detail_text = f"{detail_text} · {tool_calls} tools"
 
             if row.headline_text != headline:
                 row.headline_label.set_text(headline)
@@ -236,6 +237,15 @@ class StatusPanel:
                 headline = 'Working'
                 detail = raw
         return headline or 'Working', detail
+
+    def _should_display_tool_count(self, row: _StatusRow) -> bool:
+        try:
+            headline = (row.headline_text or '').strip().lower()
+        except Exception:
+            headline = ''
+        if headline == 'vision':
+            return False
+        return True
 
     def _handle_cancel(self, worker: str) -> None:
         if self._on_cancel is None:
