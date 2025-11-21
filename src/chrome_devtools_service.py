@@ -62,26 +62,7 @@ class ChromeDevToolsService:
         """Replace the page contents with provided HTML using document.write."""
         if not html:
             html = "<!DOCTYPE html><title>Empty</title><body></body>"
-        instrument = """
-<script>
-(function(){
-  window.__sviLogs = [];
-  const stringify = (value) => {
-    if (typeof value === 'string') { return value; }
-    try { return JSON.stringify(value); } catch (err) { return String(value); }
-  };
-  ['log','info','warn','error'].forEach((level) => {
-    const original = console[level];
-    console[level] = (...args) => {
-      const message = args.map(stringify).join(' ');
-      window.__sviLogs.push({ level, message });
-      if (original && original.apply) { original.apply(console, args); }
-    };
-  });
-})();
-</script>
-""".strip()
-        escaped = json.dumps(instrument + html)
+        escaped = json.dumps(html)
         fn = (
             "() => {"
             "  document.open();"
@@ -91,21 +72,7 @@ class ChromeDevToolsService:
             "}"
         )
         result = await self.evaluate_script_mcp(fn, is_function=True)
-        await self.evaluate_script_mcp(
-            "() => {"
-            " const root = document.documentElement; "
-            " if (root && !root.style.backgroundColor) { root.style.backgroundColor = '#000000'; }"
-            " let body = document.body;"
-            " if (!body) {"
-            "   body = document.createElement('body');"
-            "   if (root) { root.appendChild(body); }"
-            " }"
-            " if (body && !body.style.backgroundColor) { body.style.backgroundColor = '#000000'; }"
-            " if (body && !body.style.color) { body.style.color = '#FFFFFF'; }"
-            " return true;"
-            "}",
-            is_function=True,
-        )
+        await self._install_console_capture()
         await self.evaluate_script_mcp(
             "(async () => { await new Promise(requestAnimationFrame); return true; })()",
             is_function=True,
@@ -164,6 +131,33 @@ class ChromeDevToolsService:
             return json.loads(snippet)
         except Exception:
             return None
+
+    async def _install_console_capture(self) -> None:
+        script = (
+            "() => {"
+            " if (window.__sviLogs && window.__sviLogs.__patched) { return true; }"
+            " const stringify = (value) => {"
+            "   if (typeof value === 'string') { return value; }"
+            "   try { return JSON.stringify(value); } catch (err) { return String(value); }"
+            " };"
+            " const levels = ['log','info','warn','error'];"
+            " window.__sviLogs = [];"
+            " window.__sviLogs.__patched = true;"
+            " levels.forEach((level) => {"
+            "   const original = console[level];"
+            "   console[level] = (...args) => {"
+            "     const message = args.map(stringify).join(' ');"
+            "     window.__sviLogs.push({ level, message });"
+            "     if (original && original.apply) { original.apply(console, args); }"
+            "   };"
+            " });"
+            " return true;"
+            "}"
+        )
+        try:
+            await self.evaluate_script_mcp(script, is_function=True)
+        except Exception:
+            logger.exception("Failed to install console capture hook")
 
     async def press_key_mcp(self, key: str, duration_ms: int = 100) -> bool:
         normalized = (key or "").strip()
