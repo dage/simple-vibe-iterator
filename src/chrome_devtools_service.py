@@ -67,31 +67,22 @@ class ChromeDevToolsService:
         fn = (
             "() => {"
             f"  const html = {escaped};"
+            "  delete window.__sviWaitForLoad;"
             "  document.open();"
             "  document.write(html);"
             "  document.close();"
-            "  const isReady = () => document.readyState === 'complete' || document.readyState === 'interactive';"
-            "  if (isReady()) { return true; }"
-            "  return new Promise((resolve) => {"
-            "    let settled = false;"
-            "    const done = () => { if (settled) { return; } settled = true; resolve(true); };"
-            "    document.addEventListener('DOMContentLoaded', done, { once: true });"
-            "    setTimeout(done, 3000);"
-            "  });"
+            "  return true;"
             "}"
         )
         result = await self.evaluate_script_mcp(fn, is_function=True)
         await self._install_console_capture()
-        await self.evaluate_script_mcp(
-            "(async () => { await new Promise(requestAnimationFrame); return true; })()",
-            is_function=True,
-        )
+        await self._wait_for_page_ready()
         return bool(result) if isinstance(result, bool) else True
 
     async def take_screenshot_mcp(self) -> Optional[str]:
         if not self.enabled:
             return None
-        await asyncio.sleep(1.0)
+        await self._wait_for_page_ready()
         result = await self._call_tool("take_screenshot")
         image = self._extract_field(result, "content")
         if isinstance(image, list):
@@ -170,6 +161,60 @@ class ChromeDevToolsService:
             await self.evaluate_script_mcp(script, is_function=True)
         except Exception:
             logger.exception("Failed to install console capture hook")
+
+    async def _wait_for_page_ready(self, *, timeout_ms: int = 10000, extra_delay_s: float = 0.5) -> bool:
+        delay_ms = max(0, int(extra_delay_s * 1000))
+        timeout = max(0, int(timeout_ms))
+        script = (
+            "() => {"
+            f"  const timeoutMs = {timeout};"
+            f"  const extraDelayMs = {delay_ms};"
+            "  if (window.__sviWaitForLoad) { return window.__sviWaitForLoad; }"
+            "  const hasRenderableDom = () => {"
+            "    return !!document.querySelector('canvas, svg, video, img, body > *:not(script):not(style)');"
+            "  };"
+            "  let loadDone = document.readyState === 'complete';"
+            "  let renderDone = hasRenderableDom();"
+            "  let settle;"
+            "  window.__sviWaitForLoad = new Promise((resolve) => {"
+            "    let finished = false;"
+            "    settle = () => {"
+            "      if (finished) { return; }"
+            "      finished = true;"
+            "      resolve(true);"
+            "    };"
+            "    const maybeDone = () => { if (loadDone && renderDone) { settle(); } };"
+            "    if (renderDone && loadDone) { settle(); return; }"
+            "    const observer = new MutationObserver(() => {"
+            "      if (renderDone) { return; }"
+            "      renderDone = hasRenderableDom();"
+            "      maybeDone();"
+            "    });"
+            "    observer.observe(document.documentElement || document, { childList: true, subtree: true });"
+            "    window.addEventListener('load', () => { loadDone = true; maybeDone(); }, { once: true });"
+            "    const poll = setInterval(() => {"
+            "      if (renderDone) { return; }"
+            "      renderDone = hasRenderableDom();"
+            "      maybeDone();"
+            "    }, 50);"
+            "    setTimeout(() => {"
+            "      clearInterval(poll);"
+            "      observer.disconnect();"
+            "      settle();"
+            "    }, timeoutMs);"
+            "  })"
+            "    .then(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))"
+            "    .then(() => new Promise((resolve) => {"
+            "      if (extraDelayMs <= 0) { resolve(true); return; }"
+            "      setTimeout(resolve, extraDelayMs);"
+            "    }))"
+            "    .then(() => true)"
+            "    .finally(() => { window.__sviWaitForLoad = null; });"
+            "  return window.__sviWaitForLoad;"
+            "}"
+        )
+        result = await self.evaluate_script_mcp(script, is_function=True)
+        return bool(result) if isinstance(result, bool) else True
 
     async def press_key_mcp(self, key: str, duration_ms: int = 100) -> bool:
         normalized = (key or "").strip()

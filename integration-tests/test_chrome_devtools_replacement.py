@@ -32,6 +32,7 @@ async def test_devtools_methods_without_server() -> None:
             {"result": True},
             {"result": True},
             {"result": True},
+            {"result": True},
             {"result": [{"level": "log", "message": "case:simple"}]},
         ],
         "take_screenshot": [
@@ -70,6 +71,40 @@ async def test_devtools_methods_without_server() -> None:
     assert await service.performance_trace_start_mcp() is True
     trace = await service.performance_trace_stop_mcp()
     assert isinstance(trace, dict) and trace.get("fps") == 60
+
+
+@pytest.mark.asyncio
+async def test_waits_for_load_before_actions() -> None:
+    service = ChromeDevToolsService(enabled=False)
+    service.enabled = True
+
+    scripts: list[str] = []
+
+    async def fake_eval(self, script: str, *, is_function: bool = False):
+        scripts.append(script)
+        return True
+
+    async def fake_call_tool(self, name: str, arguments: dict | None = None):
+        if name == "take_screenshot":
+            return {
+                "content": [
+                    {"type": "image", "mimeType": "image/png", "data": "ZmFrZQ=="},
+                ]
+            }
+        return {"ok": True}
+
+    service.evaluate_script_mcp = fake_eval.__get__(service, ChromeDevToolsService)  # type: ignore[attr-defined]
+    service._call_tool = fake_call_tool.__get__(service, ChromeDevToolsService)  # type: ignore[attr-defined]
+
+    await service.load_html_mcp("<!DOCTYPE html><html><body>Hi</body></html>")
+    load_wait = any("addEventListener('load'" in script and "extraDelayMs" in script for script in scripts)
+
+    scripts.clear()
+    await service.take_screenshot_mcp()
+    screenshot_wait = any("addEventListener('load'" in script and "extraDelayMs" in script for script in scripts)
+
+    assert load_wait is True
+    assert screenshot_wait is True
 
 
 @pytest.mark.asyncio
