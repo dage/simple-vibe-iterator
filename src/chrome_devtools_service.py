@@ -66,10 +66,18 @@ class ChromeDevToolsService:
         escaped = json.dumps(html)
         fn = (
             "() => {"
+            f"  const html = {escaped};"
             "  document.open();"
-            f"  document.write({escaped});"
+            "  document.write(html);"
             "  document.close();"
-            "  return true;"
+            "  const isReady = () => document.readyState === 'complete' || document.readyState === 'interactive';"
+            "  if (isReady()) { return true; }"
+            "  return new Promise((resolve) => {"
+            "    let settled = false;"
+            "    const done = () => { if (settled) { return; } settled = true; resolve(true); };"
+            "    document.addEventListener('DOMContentLoaded', done, { once: true });"
+            "    setTimeout(done, 3000);"
+            "  });"
             "}"
         )
         result = await self.evaluate_script_mcp(fn, is_function=True)
@@ -81,6 +89,9 @@ class ChromeDevToolsService:
         return bool(result) if isinstance(result, bool) else True
 
     async def take_screenshot_mcp(self) -> Optional[str]:
+        if not self.enabled:
+            return None
+        await asyncio.sleep(1.0)
         result = await self._call_tool("take_screenshot")
         image = self._extract_field(result, "content")
         if isinstance(image, list):
