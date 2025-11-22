@@ -6,3 +6,4 @@ artifacts/
 *.log
 logs/auto_logger.jsonl
 logs/tool_calls.jsonl
+prompt-examples/visualizer-fkn-face.json
