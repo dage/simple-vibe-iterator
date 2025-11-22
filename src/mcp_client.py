@@ -7,6 +7,7 @@ import contextlib
 import json
 import logging
 import os
+import signal
 from asyncio.subprocess import Process
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
@@ -59,6 +60,7 @@ class MCPClient:
                 stderr=asyncio.subprocess.PIPE,
                 cwd=self._cwd,
                 env=env,
+                start_new_session=True,
             )
             self._reader = self._proc.stdout
             self._writer = self._proc.stdin
@@ -73,16 +75,26 @@ class MCPClient:
         proc = self._proc
         if not proc:
             return
-        if proc.returncode is None:
-            proc.terminate()
+        
+        # Use process group to ensure all children (e.g. Chrome) are killed
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        except Exception:
+            if proc.returncode is None:
+                proc.terminate()
+
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=2)
+        except asyncio.TimeoutError:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except Exception:
+                proc.kill()
             try:
                 await asyncio.wait_for(proc.wait(), timeout=2)
             except asyncio.TimeoutError:
-                proc.kill()
-                try:
-                    await asyncio.wait_for(proc.wait(), timeout=2)
-                except asyncio.TimeoutError:
-                    pass
+                pass
+        
         proc = self._proc
         if proc is not None:
             transport = getattr(proc, "_transport", None)
