@@ -1,18 +1,5 @@
 {
   "name": "2D Gather And Evade Game",
   "goal": "Create a 2D top-down exploration game with the following features:\n\nCORE GAMEPLAY:\n- Player controls a sprite character viewed from above\n- Movement using WASD keys (W=up, S=down, A=left, D=right)\n- Hold spacebar for a speed boost\n- Objective: collect food items while avoiding enemies\n- No combat mechanics - survival through movement only\n\nWORLD:\n- Procedurally generated environment\n- World extends beyond initial screen view\n\nCOLLECTIBLES & HAZARDS:\n- Food items scattered throughout the world (collectible)\n- Enemy entities that patrol or move (must be avoided)\n\nUI ELEMENTS:\n\n- Display player's current world coordinates (x, y) in the top-left corner\n- Coordinates should update in real-time as player moves\n\nVISUAL STYLE:\n- 2D sprites for player, enemies, and food\n- Top-down perspective\n- Clear visual distinction between player, enemies, and collectibles\n\nBuild this as a single playable application with smooth controls and clear win/lose conditions.",
-  "user_feedback": "",
-  "template_variables": {
-    "text": {
-      "PRESET_HINT": "This preset includes an embedded sample asset for 2D Gather And Evade Game. Replace it with your own file if needed."
-    },
-    "files": [
-      {
-        "key": "2D_GATHER_AND_EVADE_GAME_ASSET_DATA_URL",
-        "filename": "preset-swatch.png",
-        "mime_type": "image/png",
-        "data_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGNgAAACAAEA//8DAAAGAAVX/gAAAABJRU5ErkJggg=="
-      }
-    ]
-  }
+  "user_feedback": ""
 }

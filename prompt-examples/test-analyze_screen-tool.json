@@ -1,18 +1,5 @@
 {
   "name": "Test Analyze_Screen Tool",
   "goal": "Write \"Hi\" with a big font, then use the analyze_screen tool exactly one time and output the visual analysis as static html in the final response html.",
-  "user_feedback": "",
-  "template_variables": {
-    "text": {
-      "PRESET_HINT": "This preset includes an embedded sample asset for Test Analyze_Screen Tool. Replace it with your own file if needed."
-    },
-    "files": [
-      {
-        "key": "TEST_ANALYZE_SCREEN_TOOL_ASSET_DATA_URL",
-        "filename": "preset-swatch.png",
-        "mime_type": "image/png",
-        "data_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGNgAAACAAEA//8DAAAGAAVX/gAAAABJRU5ErkJggg=="
-      }
-    ]
-  }
+  "user_feedback": ""
 }

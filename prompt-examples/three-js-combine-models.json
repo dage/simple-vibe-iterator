@@ -1,18 +1,5 @@
 {
   "name": "Three Js Combine Models",
   "goal": "Make an amazing 3d demo using three.js where you combine the different resources from the table bellow to create an immersive and interactive experience.\n\nName                |  URL                                                                                                                  |  Description                                         \n--------------------+-----------------------------------------------------------------------------------------------------------------------+------------------------------------------------------\nTree OBJ            |  https://raw.githubusercontent.com/mrdoob/three.js/master/examples/models/obj/tree.obj                                |  Simple tree geometry in OBJ format, verified working\nDuck GLB            |  https://raw.githubusercontent.com/mrdoob/three.js/master/examples/models/gltf/duck.glb                               |  Classic duck model in GLB format                    \nDamagedHelmet GLTF  |  https://raw.githubusercontent.com/mrdoob/three.js/master/examples/models/gltf/DamagedHelmet/glTF/DamagedHelmet.gltf  |  Helmet in GLTF format with separate files      \nBoomBox GLB         |  https://raw.githubusercontent.com/mrdoob/three.js/master/examples/models/gltf/BoomBox.glb                            |  Retro boombox 3D model                              \nSoldier GLB         |  https://raw.githubusercontent.com/mrdoob/three.js/master/examples/models/gltf/Soldier.glb                            |  Animated character model                            \nCrate Texture       |  https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/crate.gif                                 |  Classic wooden crate texture for testing materials",
-  "user_feedback": "",
-  "template_variables": {
-    "text": {
-      "PRESET_HINT": "This preset includes an embedded sample asset for Three Js Combine Models. Replace it with your own file if needed."
-    },
-    "files": [
-      {
-        "key": "THREE_JS_COMBINE_MODELS_ASSET_DATA_URL",
-        "filename": "preset-swatch.png",
-        "mime_type": "image/png",
-        "data_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGNgAAACAAEA//8DAAAGAAVX/gAAAABJRU5ErkJggg=="
-      }
-    ]
-  }
+  "user_feedback": ""
 }
