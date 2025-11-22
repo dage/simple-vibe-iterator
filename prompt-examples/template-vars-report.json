@@ -1,0 +1,25 @@
+{
+  "name": "Template Variables Report",
+  "goal": "Load the provided template variables and generate a short QA report on whether each asset was injected correctly. Show the image inline, render the text file contents in a pre block, and summarize any problems or missing placeholders.",
+  "user_feedback": "Verify every placeholder resolves and note any failures.",
+  "template_variables": {
+    "text": {
+      "REPORT_INSTRUCTIONS": "Check that all template variables render: data URL image, text file contents, and inline text snippet.",
+      "INLINE_SNIPPET": "This is inline text from a template variable."
+    },
+    "files": [
+      {
+        "key": "SAMPLE_IMAGE_DATA_URL",
+        "filename": "sample.png",
+        "mime_type": "image/png",
+        "data_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGNgAAACAAEA//8DAAAGAAVX/gAAAABJRU5ErkJggg=="
+      },
+      {
+        "key": "SAMPLE_TEXT_FILE",
+        "filename": "notes.txt",
+        "mime_type": "text/plain",
+        "data_base64": "VGhpcyBpcyBhIHNpbXBsZSB0ZXh0IGZpbGUgZmVlZCBmb3IgdGVtcGxhdGUgdmFyaWFibGUgdmVyaWZpY2F0aW9uLiBOZXh0IHNlbnRlbmNlIGJlIGFkZGVkIGhlcmUu"
+      }
+    ]
+  }
+}

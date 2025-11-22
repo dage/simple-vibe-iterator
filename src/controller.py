@@ -4,6 +4,8 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 import json
+from pathlib import Path
+import re
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .interfaces import (
@@ -16,6 +18,9 @@ from .interfaces import (
     TransitionSettings,
     VisionService,
     ModelOutput,
+    TemplateVariables,
+    TemplateVariableSummary,
+    TemplateFileVar,
 )
 from . import op_status
 from . import task_registry
@@ -23,6 +28,7 @@ from .prompt_builder import build_code_payload, build_vision_prompt
 from .model_capabilities import get_image_limit, get_input_screenshot_interval
 from . import feedback_presets
 from . import or_client as orc
+from .services import encode_file_to_data_url
 
 
 @dataclass
@@ -39,12 +45,179 @@ class TransitionContext:
 class InterpretationResult:
     summary: str = ""
     attachments: List[IterationAsset] = field(default_factory=list)
+
+
+_DOUBLE_BRACE_PATTERN = re.compile(r"\{\{([A-Z0-9_]+)\}\}")
+_SINGLE_BRACE_PATTERN = re.compile(r"\{([A-Z0-9_]+)\}")
+_TEXT_MIME_PREFIXES = ("text/",)
+_TEXT_MIME_EXACT = {
+    "application/json",
+    "application/javascript",
+    "application/xml",
+    "application/yaml",
+    "application/x-yaml",
+    "application/x-sh",
+    "application/x-python",
+    "application/x-shellscript",
+}
+_TEXT_EXTENSIONS = {
+    ".txt",
+    ".md",
+    ".markdown",
+    ".json",
+    ".js",
+    ".ts",
+    ".css",
+    ".html",
+    ".htm",
+    ".csv",
+    ".py",
+    ".sh",
+    ".yaml",
+    ".yml",
+    ".ini",
+    ".cfg",
+    ".conf",
+    ".toml",
+    ".sql",
+    ".xml",
+    ".env",
+    ".log",
+}
+
+
+def _format_bytes(num: int) -> str:
+    units = ["B", "KB", "MB", "GB", "TB"]
+    value = float(max(0, num))
+    for unit in units:
+        if value < 1024 or unit == units[-1]:
+            if unit == "B":
+                return f"{int(value)} {unit}"
+            return f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{value:.1f} TB"
+
+
+def _looks_like_text(data: bytes) -> bool:
+    if not data:
+        return True
+    sample = data[:4096]
+    text_count = sum(1 for b in sample if 32 <= b <= 126 or b in (9, 10, 13))
+    ratio = text_count / len(sample)
+    return ratio >= 0.9
+
+
+def _should_inject_file_as_text(file_entry: TemplateFileVar) -> bool:
+    mime = (file_entry.mime_type or "").strip().lower()
+    if any(mime.startswith(prefix) for prefix in _TEXT_MIME_PREFIXES):
+        return True
+    if mime in _TEXT_MIME_EXACT:
+        return True
+    suffix = Path(file_entry.filename or "").suffix.lower()
+    if suffix in _TEXT_EXTENSIONS:
+        return True
+    if not mime and _looks_like_text(file_entry.data):
+        return True
+    return False
+
+
+def _render_file_value(file_entry: TemplateFileVar) -> str:
+    if _should_inject_file_as_text(file_entry):
+        try:
+            return file_entry.data.decode("utf-8")
+        except UnicodeDecodeError:
+            return file_entry.data.decode("utf-8", errors="replace")
+    return encode_file_to_data_url(file_entry.data, file_entry.mime_type)
+
+
+def _summaries_for_template_vars(template_vars: TemplateVariables) -> List[TemplateVariableSummary]:
+    summaries: List[TemplateVariableSummary] = []
+    for key, data in sorted(template_vars.file_vars.items()):
+        injects_as_text = _should_inject_file_as_text(data)
+        note = "text" if injects_as_text else "data-url"
+        summaries.append(
+            TemplateVariableSummary(
+                key=key,
+                kind="file",
+                description=f"{data.mime_type} · {_format_bytes(data.size_bytes)}",
+                size_bytes=data.size_bytes,
+                mime_type=data.mime_type,
+                filename=data.filename,
+                notes=note,
+            )
+        )
+    for key, text in sorted(template_vars.text_vars.items()):
+        text_value = text or ""
+        previews = text_value.strip().splitlines()
+        head = previews[0] if previews else text_value[:80]
+        preview = head[:80]
+        if len(text_value) > len(preview):
+            preview = preview.rstrip() + "…"
+        summaries.append(
+            TemplateVariableSummary(
+                key=key,
+                kind="text",
+                description=preview,
+                char_length=len(text_value),
+            )
+        )
+    return sorted(summaries, key=lambda entry: entry.key)
+
+
+def _summaries_to_prompt_text(entries: Sequence[TemplateVariableSummary]) -> str:
+    if not entries:
+        return "None"
+    lines: List[str] = []
+    for entry in entries:
+        if entry.kind == "file":
+            bits: List[str] = []
+            if entry.mime_type:
+                bits.append(entry.mime_type)
+            bits.append(_format_bytes(entry.size_bytes))
+            if entry.filename:
+                bits.append(entry.filename)
+            if entry.notes:
+                bits.append(f"injected as {entry.notes}")
+            detail = ", ".join(bits)
+            lines.append(f"- {entry.key}: file ({detail})")
+        else:
+            preview = entry.description or ""
+            lines.append(f"- {entry.key}: text ({entry.char_length} chars) preview=\"{preview}\"")
+    return "\n".join(lines)
+
+
+def _inject_template_variables(html: str, template_vars: TemplateVariables | None) -> tuple[str, set[str]]:
+    if not html or template_vars is None:
+        return html, set()
+
+    files = template_vars.file_vars
+    texts = template_vars.text_vars
+    missing: set[str] = set()
+
+    def _resolve(key: str, original: str) -> str:
+        if key in files:
+            try:
+                file_entry = files[key]
+                return _render_file_value(file_entry)
+            except Exception:
+                missing.add(key)
+                return original
+        if key in texts:
+            return texts[key]
+        missing.add(key)
+        return original
+
+    injected = _DOUBLE_BRACE_PATTERN.sub(lambda match: _resolve(match.group(1), match.group(0)), html)
+    injected = _SINGLE_BRACE_PATTERN.sub(lambda match: _resolve(match.group(1), match.group(0)), injected)
+    return injected, missing
 async def _capture_input_context(
     html_input: str,
     settings: TransitionSettings,
     models: List[str],
     browser_service: BrowserService,
     vision_service: VisionService,
+    *,
+    template_vars_summary: str = "",
 ) -> tuple[TransitionContext, InterpretationResult, str, Dict[str, bool]]:
     context = TransitionContext(html_input=html_input or "")
 
@@ -97,7 +270,7 @@ async def _capture_input_context(
                 except Exception:
                     pass
 
-    interpretation = await _interpret_input(settings, context, vision_service)
+    interpretation = await _interpret_input(settings, context, vision_service, template_vars_summary=template_vars_summary)
     auto_feedback = _format_auto_feedback(context)
     return context, interpretation, auto_feedback, model_image_support
 
@@ -154,7 +327,13 @@ async def δ(
     context: TransitionContext | None = None,
     interpretation: InterpretationResult | None = None,
     auto_feedback: str | None = None,
+    *,
+    template_vars: TemplateVariables | None = None,
+    template_vars_summary: str = "",
 ) -> tuple[Dict[str, Tuple[str, str, dict | None, TransitionArtifacts]], TransitionArtifacts | None, TransitionContext, InterpretationResult]:
+    if not template_vars_summary and template_vars is not None:
+        # Recompute a descriptive summary if the caller forgot to pass one
+        template_vars_summary = _summaries_to_prompt_text(_summaries_for_template_vars(template_vars))
     if context is None or interpretation is None or auto_feedback is None:
         context, interpretation, auto_feedback, model_image_support = await _capture_input_context(
             html_input,
@@ -162,6 +341,7 @@ async def δ(
             models,
             browser_service,
             vision_service,
+            template_vars_summary=template_vars_summary,
         )
     else:
         model_image_support = await _detect_code_model_image_support(models)
@@ -184,6 +364,7 @@ async def δ(
                         attachments=selected_attachments,
                         message_history=message_history,
                         allow_attachments=bool(selected_attachments),
+                        template_vars_summary=template_vars_summary,
                     )
                     html_output, reasoning, meta = await ai_service.generate_html(
                         payload,
@@ -191,7 +372,19 @@ async def δ(
                         worker=model,
                         template_context=template_context,
                     )
-                    out_screenshots, out_console_logs = await browser_service.render_and_capture(html_output, worker=model)
+                    final_html, missing_keys = _inject_template_variables(html_output, template_vars)
+                    if missing_keys:
+                        try:
+                            joined = ", ".join(sorted(missing_keys))
+                            op_status.enqueue_notification(
+                                f"Missing template variables: {joined}",
+                                color="warning",
+                                timeout=6000,
+                                close_button=True,
+                            )
+                        except Exception:
+                            pass
+                    out_screenshots, out_console_logs = await browser_service.render_and_capture(final_html, worker=model)
                     out_screenshot_path = out_screenshots[0] if out_screenshots else ""
                     artifacts = _create_artifacts(
                         model=model,
@@ -201,7 +394,7 @@ async def δ(
                         console_logs=out_console_logs,
                         vision_output=interpretation.summary,
                     )
-                    return model, html_output, (reasoning or ""), (meta or None), artifacts
+                    return model, final_html, (reasoning or ""), (meta or None), artifacts
                 except Exception as exc:
                     if not attachment_policy.handle_error(model, exc):
                         raise
@@ -314,6 +507,8 @@ async def _interpret_input(
     settings: TransitionSettings,
     context: TransitionContext,
     vision_service: VisionService,
+    *,
+    template_vars_summary: str = "",
 ) -> InterpretationResult:
     result = InterpretationResult()
 
@@ -345,6 +540,7 @@ async def _interpret_input(
         settings=settings,
         console_logs=context.input_console_logs,
         auto_feedback=auto_feedback,
+        template_vars_summary=template_vars_summary,
     )
     analysis = await vision_service.analyze_screenshot(
         vision_prompt,
@@ -520,9 +716,98 @@ class IterationController:
         self._vision_service = vision_service
         self._nodes: Dict[str, IterationNode] = {}
         self._listeners: List[IterationEventListener] = []
+        self._template_vars = TemplateVariables()
 
     def add_listener(self, listener: IterationEventListener) -> None:
         self._listeners.append(listener)
+
+    # Template variable management
+
+    def normalize_template_key(self, raw_key: str) -> str:
+        if raw_key is None:
+            raise ValueError("Template variable key is required")
+        cleaned = re.sub(r"[^A-Za-z0-9]+", "_", str(raw_key)).strip("_").upper()
+        if not cleaned:
+            raise ValueError("Template variable key must contain letters or numbers")
+        if len(cleaned) > 120:
+            cleaned = cleaned[:120]
+        return cleaned
+
+    def set_template_text_variable(self, key: str, value: str) -> TemplateVariableSummary:
+        normalized = self.normalize_template_key(key)
+        if not (value or "").strip():
+            raise ValueError("Text value cannot be empty")
+        self._template_vars.text_vars[normalized] = value
+        self._template_vars.file_vars.pop(normalized, None)
+        return self._summary_for_key(normalized)
+
+    def set_template_file_variable(
+        self,
+        key: str,
+        data: bytes,
+        *,
+        mime_type: str,
+        filename: str = "",
+    ) -> TemplateVariableSummary:
+        normalized = self.normalize_template_key(key)
+        if not data:
+            raise ValueError("File content is empty")
+        entry = TemplateFileVar(data=bytes(data), mime_type=(mime_type or "application/octet-stream"), filename=filename)
+        self._template_vars.file_vars[normalized] = entry
+        self._template_vars.text_vars.pop(normalized, None)
+        return self._summary_for_key(normalized)
+
+    def remove_template_variable(self, key: str) -> None:
+        normalized = self.normalize_template_key(key)
+        removed = False
+        if normalized in self._template_vars.file_vars:
+            self._template_vars.file_vars.pop(normalized, None)
+            removed = True
+        if normalized in self._template_vars.text_vars:
+            self._template_vars.text_vars.pop(normalized, None)
+            removed = True
+        if not removed:
+            raise ValueError(f"Template variable '{normalized}' not found")
+
+    def rename_template_variable(self, current_key: str, new_key: str) -> TemplateVariableSummary:
+        source = self.normalize_template_key(current_key)
+        target = self.normalize_template_key(new_key)
+        if source == target:
+            return self._summary_for_key(source)
+        if target in self._template_vars.file_vars or target in self._template_vars.text_vars:
+            raise ValueError(f"Template variable '{target}' already exists")
+        if source in self._template_vars.file_vars:
+            entry = self._template_vars.file_vars.pop(source)
+            self._template_vars.file_vars[target] = entry
+        elif source in self._template_vars.text_vars:
+            entry = self._template_vars.text_vars.pop(source)
+            self._template_vars.text_vars[target] = entry
+        else:
+            raise ValueError(f"Template variable '{source}' not found")
+        return self._summary_for_key(target)
+
+    def list_template_variables(self) -> List[TemplateVariableSummary]:
+        return _summaries_for_template_vars(self._template_vars)
+
+    def template_vars_prompt_text(self) -> str:
+        summaries = self.list_template_variables()
+        return _summaries_to_prompt_text(summaries)
+
+    def get_template_variables_snapshot(self) -> TemplateVariables:
+        return TemplateVariables(
+            file_vars=dict(self._template_vars.file_vars),
+            text_vars=dict(self._template_vars.text_vars),
+        )
+
+    def _summary_for_key(self, key: str) -> TemplateVariableSummary:
+        entries = _summaries_for_template_vars(self._template_vars)
+        for entry in entries:
+            if entry.key == key:
+                return entry
+        raise ValueError(f"Template variable '{key}' not found")
+
+    def clear_template_variables(self) -> None:
+        self._template_vars = TemplateVariables()
 
     # Data accessors
     def get_node(self, node_id: str) -> Optional[IterationNode]:
@@ -665,6 +950,9 @@ class IterationController:
         # Collect message history (single source of truth)
         message_history = self._collect_message_history(parent_id, base_model) if parent_id is not None else None
 
+        template_vars_summary = self.template_vars_prompt_text()
+        template_vars = self.get_template_variables_snapshot()
+
         # Run transition
         results, input_artifacts, ctx, interpretation = await δ(
             html_input=html_input,
@@ -674,6 +962,8 @@ class IterationController:
             browser_service=self._browser_service,
             vision_service=self._vision_service,
             message_history=message_history,
+            template_vars=template_vars,
+            template_vars_summary=template_vars_summary,
         )
 
         auto_feedback_text = _format_auto_feedback(ctx)
@@ -708,6 +998,9 @@ class IterationController:
         self._delete_descendants(node_id)
         message_history = self._collect_message_history(parent_id, base_model) if parent_id is not None else None
 
+        template_vars_summary = self.template_vars_prompt_text()
+        template_vars = self.get_template_variables_snapshot()
+
         results, input_artifacts, ctx, interpretation = await δ(
             html_input=html_input,
             settings=settings,
@@ -719,6 +1012,8 @@ class IterationController:
             context=node.context,
             interpretation=node.interpretation,
             auto_feedback=node.auto_feedback,
+            template_vars=template_vars,
+            template_vars_summary=template_vars_summary,
         )
 
         node.outputs = self._results_to_model_outputs(results)
@@ -760,12 +1055,15 @@ class IterationController:
 
         models = [m.strip() for m in settings.code_model.split(',') if m.strip()]
 
+        template_vars_summary = self.template_vars_prompt_text()
+
         context, interpretation, auto_feedback, _ = await _capture_input_context(
             html_input,
             settings,
             models,
             self._browser_service,
             self._vision_service,
+            template_vars_summary=template_vars_summary,
         )
         input_artifacts = _build_input_artifacts(context, interpretation) if context and interpretation else None
 

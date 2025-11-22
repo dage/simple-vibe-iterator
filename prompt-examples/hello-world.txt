@@ -1,1 +1,0 @@
-Write Hello World with the least amount of html possible.

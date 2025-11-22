@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import mimetypes
 import time
 import uuid
 from datetime import datetime, timezone
@@ -269,3 +270,14 @@ class OpenRouterVisionService(VisionService):
             return reply or ""
         finally:
             context_data.restore_context(ctx_token)
+
+
+def detect_mime_type(filename: str, default: str = "application/octet-stream") -> str:
+    guessed, _ = mimetypes.guess_type(filename or "")
+    return guessed or default
+
+
+def encode_file_to_data_url(file_bytes: bytes, mime_type: str | None = None) -> str:
+    safe_mime = (mime_type or "").strip() or "application/octet-stream"
+    payload = base64.b64encode(file_bytes or b"").decode("ascii") if file_bytes else ""
+    return f"data:{safe_mime};base64,{payload}"

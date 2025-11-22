@@ -28,6 +28,7 @@ def _build_template_context(
     interpretation_summary: str = "",
     console_logs: List[str] | None = None,
     auto_feedback: str = "",
+    template_vars_summary: str = "",
 ) -> Dict[str, Any]:
     """Shared context used for both code and vision templates."""
     raw = asdict(settings)
@@ -43,6 +44,7 @@ def _build_template_context(
             "vision_output": interpretation_summary or "",
             "console_logs": "\n".join(console_logs or []),
             "auto_feedback": auto_feedback or "",
+            "template_vars_list": (template_vars_summary or "None"),
         }
     )
     return ctx
@@ -105,6 +107,7 @@ def build_vision_prompt(
     settings: TransitionSettings,
     console_logs: List[str] | None,
     auto_feedback: str = "",
+    template_vars_summary: str = "",
 ) -> str:
     ctx = _build_template_context(
         html_input=html_input,
@@ -112,6 +115,7 @@ def build_vision_prompt(
         interpretation_summary="",
         console_logs=console_logs,
         auto_feedback=auto_feedback,
+        template_vars_summary=template_vars_summary,
     )
     return settings.vision_template.format(**ctx)
 
@@ -125,6 +129,7 @@ def build_code_payload(
     message_history: List[Dict[str, Any]] | None = None,
     auto_feedback: str = "",
     allow_attachments: bool = False,
+    template_vars_summary: str = "",
 ) -> tuple[PromptPayload, Dict[str, Any]]:
     attachments = list(attachments if allow_attachments else [])
     ctx = _build_template_context(
@@ -133,6 +138,7 @@ def build_code_payload(
         interpretation_summary=interpretation_summary,
         console_logs=console_logs,
         auto_feedback=auto_feedback,
+        template_vars_summary=template_vars_summary,
     )
     starting_from_blank = not (html_input or "").strip()
     is_first_message = (not message_history) and starting_from_blank

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import uuid
-from typing import Any, Dict, List, Optional, Protocol, Sequence, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Protocol, Sequence, TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from .feedback_presets import FeedbackPreset
@@ -70,6 +70,35 @@ class IterationNode:
     context: Any | None = None
     interpretation: Any | None = None
     auto_feedback: str | None = None
+
+
+@dataclass
+class TemplateFileVar:
+    data: bytes
+    mime_type: str
+    filename: str = ""
+
+    @property
+    def size_bytes(self) -> int:
+        return len(self.data)
+
+
+@dataclass
+class TemplateVariables:
+    file_vars: Dict[str, TemplateFileVar] = field(default_factory=dict)
+    text_vars: Dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class TemplateVariableSummary:
+    key: str
+    kind: Literal["file", "text"]
+    description: str = ""
+    size_bytes: int = 0
+    char_length: int = 0
+    mime_type: str = ""
+    filename: str = ""
+    notes: str = ""
 
 
 # ---- Service protocols (unchanged public surface) ----

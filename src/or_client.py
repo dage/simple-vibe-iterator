@@ -384,12 +384,21 @@ async def _execute_browser_tool(name: str, payload: Dict[str, Any]) -> Dict[str,
             selector = str(payload.get("selector", "")).strip()
             if not selector:
                 return {"error": "missing selector"}
-            return {
-                "ok": await service.wait_for_selector_mcp(
-                    selector=selector,
-                    timeout_ms=int(payload.get("timeout_ms", 5000)),
-                )
-            }
+            wait_result = await service.wait_for_selector_mcp(
+                selector=selector,
+                timeout_ms=int(payload.get("timeout_ms", 5000)),
+            )
+            ok = False
+            duration_ms = 0
+            if isinstance(wait_result, dict):
+                ok = bool(wait_result.get("ok"))
+                try:
+                    duration_ms = int(wait_result.get("duration_ms", 0))
+                except Exception:
+                    duration_ms = 0
+            else:
+                ok = bool(wait_result)
+            return {"ok": ok, "duration_ms": duration_ms}
         if name == "performance_start_trace":
             return {"ok": await service.performance_trace_start_mcp()}
         if name == "performance_stop_trace":

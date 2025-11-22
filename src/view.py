@@ -3,16 +3,19 @@ from __future__ import annotations
 
 import asyncio
 import json
+import base64
 from typing import Any, Dict, List, Callable
 from types import SimpleNamespace
 import time
+import re
+from pathlib import Path
 
 from nicegui import ui
 from diff_match_patch import diff_match_patch
 import html as _html
 
 from .controller import IterationController
-from .interfaces import IterationEventListener, IterationNode, TransitionSettings
+from .interfaces import IterationEventListener, IterationNode, TransitionSettings, TemplateVariableSummary
 from . import op_status
 from . import task_registry
 from . import feedback_presets
@@ -23,12 +26,14 @@ from .view_utils import extract_vision_summary, format_html_size
 from .node_summary_dialog import create_node_summary_dialog
 from .status_panel import StatusPanel
 from . import or_client as orc
+from .services import detect_mime_type
 
 GOAL_SUMMARY_MODEL = "x-ai/grok-4-fast"
 GOAL_SUMMARY_CHAR_LIMIT = 280
 GOAL_SUMMARY_WORD_LIMIT = 55
 GOAL_SUMMARY_LINE_LIMIT = 4
 GOAL_SUMMARY_MAX_OUTPUT_WORDS = 16
+TEMPLATE_VAR_MAX_FILE_SIZE = 10 * 1024 * 1024
 
 
 class NiceGUIView(IterationEventListener):
@@ -55,6 +60,13 @@ class NiceGUIView(IterationEventListener):
         self._last_status_refresh: float = 0.0
         self._goal_heading_label: ui.element | None = None
         self._current_overall_goal: str = ""
+        self._template_var_list: ui.column | None = None
+        self._template_var_badge: ui.element | None = None
+        self._template_var_items: List[TemplateVariableSummary] = []
+        self._text_var_key_input: ui.input | None = None
+        self._text_var_value_input: ui.textarea | None = None
+        self._template_var_empty_label: ui.element | None = None
+        self._prompt_examples: List[Dict[str, Any]] = []
 
         # Set some default styling
         apply_theme()
@@ -103,26 +115,51 @@ class NiceGUIView(IterationEventListener):
                  .classes('w-full text-base placeholder-transparent').style('white-space: pre-wrap;')
 
                 # Add example prompt selector
-                from pathlib import Path
-                prompt_options = []
                 prompt_dir = Path('prompt-examples')
-                if prompt_dir.exists():
-                    for file_path in sorted(prompt_dir.glob('*.txt')):
-                        name = file_path.stem
-                        prompt_options.append(name)
+                self._prompt_examples = self._load_prompt_examples(prompt_dir)
+                prompt_labels = [entry['label'] for entry in self._prompt_examples]
 
-                def _on_prompt_select(event):
+                async def _apply_prompt_example(label: str) -> None:
+                    entry = next((p for p in self._prompt_examples if p['label'] == label), None)
+                    if entry is None:
+                        return
+                    try:
+                        await _set_goal_text(entry.get('goal', ''))
+                        self.controller.clear_template_variables()
+                        text_vars: Dict[str, str] = entry.get('text_vars', {})
+                        for key, value in text_vars.items():
+                            self.controller.set_template_text_variable(key, value)
+                        file_vars: List[Dict[str, Any]] = entry.get('file_vars', [])
+                        for f in file_vars:
+                            raw_b64 = str(f.get('data_base64', '') or '')
+                            if not raw_b64:
+                                continue
+                            try:
+                                file_bytes = base64.b64decode(raw_b64)
+                            except Exception:
+                                ui.notify(f"Could not decode file for {f.get('key','')}", color='warning', timeout=4000)
+                                continue
+                            key = str(f.get('key') or '').strip() or str(f.get('filename') or 'ASSET')
+                            mime_type = str(f.get('mime_type') or detect_mime_type(str(f.get('filename') or 'asset.bin')))
+                            filename = str(f.get('filename') or '')
+                            self.controller.set_template_file_variable(
+                                key,
+                                file_bytes,
+                                mime_type=mime_type,
+                                filename=filename,
+                            )
+                        self._refresh_template_vars_ui()
+                        ui.notify(f"Loaded preset '{label}' with {len(text_vars) + len(file_vars)} template variables.", color='positive', timeout=2500)
+                    except Exception as exc:
+                        ui.notify(f"Failed to load preset '{label}': {exc}", color='negative', timeout=0, close_button=True)
+
+                async def _on_prompt_select(event):
                     if event.value:
-                        prompt_file = prompt_dir / f"{event.value}.txt"
-                        try:
-                            content = prompt_file.read_text(encoding='utf-8').strip()
-                            asyncio.create_task(_set_goal_text(content))
-                        except Exception as e:
-                            print(f"Error reading prompt file {prompt_file}: {e}")
+                        await _apply_prompt_example(str(event.value))
 
-                if prompt_options:
+                if prompt_labels:
                     ui.select(
-                        options=prompt_options,
+                        options=prompt_labels,
                         label='Presets',
                         on_change=_on_prompt_select
                     ).props('outlined dense clearable').classes('w-full')
@@ -186,9 +223,39 @@ class NiceGUIView(IterationEventListener):
                     finally:
                         self._end_operation()
 
+                with ui.expansion('Template Variables', value=False).classes('w-full bg-slate-950/60 rounded-lg text-white border border-slate-800/80'):
+                    with ui.column().classes('w-full gap-3 p-1'):
+                        self._build_template_variable_section()
+
                 ui.button('Start Building', on_click=_submit_goal).props('unelevated size=lg').classes('bg-amber-300 text-slate-900 font-semibold w-full hover:bg-amber-200 shadow-md rounded-lg')
 
         return panel
+
+    def _build_template_variable_section(self) -> None:
+        ui.label('Upload assets or store snippets that you can reference as {{KEY}} inside prompts and HTML. Files are injected as data URLs after the AI responds.').classes('text-sm text-slate-200')
+        tabs = ui.tabs(value='files').classes('w-full').props('dense')
+        with tabs:
+            ui.tab('files', 'File Uploads')
+            ui.tab('text', 'Text Snippets')
+        with ui.tab_panels(tabs, value='files').classes('w-full bg-slate-950/60 rounded-lg p-3'):
+            with ui.tab_panel('files'):
+                ui.label('Drag and drop assets under 10 MB. Keys are generated from filenames.').classes('text-xs text-slate-300 mb-2')
+                ui.upload(
+                    label='Upload files',
+                    multiple=True,
+                    on_upload=self._handle_template_file_upload,
+                ).classes('w-full border border-dashed border-slate-600 rounded-lg px-4 py-6 bg-slate-900')
+            with ui.tab_panel('text'):
+                self._text_var_key_input = ui.input(label='Variable key (e.g. API_DOCS)').props('outlined dense clearable').classes('w-full text-black dark:text-white')
+                self._text_var_value_input = ui.textarea(label='Text content').props('filled autogrow').classes('w-full text-black dark:text-white')
+                ui.button('Add text variable', on_click=self._handle_template_text_submit).props('unelevated color=primary')
+
+        badge_row = ui.row().classes('w-full items-center mt-2')
+        with badge_row:
+            self._template_var_badge = ui.label('No variables').classes('text-xs text-amber-200')
+        self._template_var_list = ui.column().classes('w-full gap-2')
+        self._template_var_empty_label = ui.label('No template variables configured yet.').classes('text-sm text-slate-300')
+        self._refresh_template_vars_ui()
 
     def _initial_goal_complete(self) -> None:
         if self.goal_panel is not None:
@@ -198,6 +265,159 @@ class NiceGUIView(IterationEventListener):
                 pass
             self.goal_panel = None
         self.initial_goal_input = None
+
+    async def _handle_template_file_upload(self, event) -> None:
+        try:
+            content = getattr(event, 'content', None)
+            if content is None:
+                raise ValueError('No file content provided')
+            if hasattr(content, 'seek'):
+                try:
+                    content.seek(0)
+                except Exception:
+                    pass
+            if hasattr(content, 'read'):
+                raw = content.read()
+            else:
+                raw = content if isinstance(content, (bytes, bytearray)) else b''
+            file_bytes = bytes(raw or b'')
+            size_hint = getattr(event, 'size', None)
+            size_bytes = int(size_hint) if isinstance(size_hint, (int, float)) else len(file_bytes)
+            if not file_bytes:
+                size_bytes = 0
+            if size_bytes > TEMPLATE_VAR_MAX_FILE_SIZE:
+                ui.notify('File exceeds 10 MB limit for template variables.', color='warning', timeout=5000)
+                return
+            filename = getattr(event, 'name', '') or 'asset.bin'
+            raw_type = str(getattr(event, 'type', '') or '').strip()
+            mime_type = raw_type or detect_mime_type(filename)
+            key = self._suggest_file_key(filename)
+            summary = self.controller.set_template_file_variable(key, file_bytes, mime_type=mime_type, filename=filename)
+            ui.notify(f"Added {summary.key}", color='positive', timeout=2000)
+            self._refresh_template_vars_ui()
+        except Exception as exc:
+            ui.notify(f"File upload failed: {exc}", color='negative', timeout=0, close_button=True)
+
+    async def _handle_template_text_submit(self, *_: Any) -> None:
+        key_input = self._text_var_key_input
+        value_input = self._text_var_value_input
+        if key_input is None or value_input is None:
+            return
+        raw_key = (getattr(key_input, 'value', '') or '').strip()
+        raw_text = getattr(value_input, 'value', '') or ''
+        if not raw_key:
+            ui.notify('Please enter a key name for the text variable.', color='warning', timeout=3000)
+            return
+        if not raw_text.strip():
+            ui.notify('Please enter the text content.', color='warning', timeout=3000)
+            return
+        try:
+            summary = self.controller.set_template_text_variable(raw_key, raw_text)
+            ui.notify(f"Saved {summary.key}", color='positive', timeout=2500)
+            self._refresh_template_vars_ui()
+            await self._set_control_value(key_input, '')
+            await self._set_control_value(value_input, '')
+        except Exception as exc:
+            ui.notify(f"Text variable failed: {exc}", color='negative', timeout=0, close_button=True)
+
+    async def _handle_template_var_remove(self, key: str) -> None:
+        try:
+            self.controller.remove_template_variable(key)
+            ui.notify(f"Removed {key}", color='warning', timeout=2000)
+            self._refresh_template_vars_ui()
+        except Exception as exc:
+            ui.notify(f"Remove failed: {exc}", color='negative', timeout=0, close_button=True)
+
+    def _refresh_template_vars_ui(self) -> None:
+        container = self._template_var_list
+        if container is None:
+            return
+        summaries = self.controller.list_template_variables()
+        self._template_var_items = summaries
+        container.clear()
+        for summary in summaries:
+            self._render_template_variable_entry(summary)
+        show_empty = not summaries
+        empty_label = self._template_var_empty_label
+        if empty_label is not None:
+            try:
+                empty_label.style('display:block' if show_empty else 'display:none')
+            except Exception:
+                pass
+        self._update_template_var_badge(len(summaries))
+
+    def _render_template_variable_entry(self, summary: TemplateVariableSummary) -> None:
+        container = self._template_var_list
+        if container is None:
+            return
+        with container:
+            with ui.row().classes('w-full items-center gap-3 bg-slate-950/70 border border-slate-800 rounded-lg px-3 py-2 text-sm flex-wrap'):
+                ui.label(summary.key).classes('font-semibold text-white min-w-[140px]')
+                badge_text = 'File' if summary.kind == 'file' else 'Text'
+                ui.chip(badge_text).props('outline dense size=sm').classes('text-xs text-slate-100')
+                detail = summary.description or (summary.mime_type if summary.kind == 'file' else '')
+                if summary.kind == 'file' and summary.notes:
+                    detail = f"{detail} · {summary.notes}"
+                if summary.kind == 'file' and summary.filename:
+                    detail = f"{summary.filename} · {detail}"
+                elif summary.kind == 'text':
+                    detail = detail or '(empty)'
+                ui.label(detail).classes('text-xs text-slate-200 flex-grow')
+
+                async def _on_remove(_, key=summary.key):
+                    await self._handle_template_var_remove(key)
+
+                ui.button('Remove', on_click=_on_remove).props('size=sm flat color=negative').classes('text-xs text-red-200')
+
+    def _update_template_var_badge(self, count: int) -> None:
+        badge = self._template_var_badge
+        if badge is None:
+            return
+        text = f"{count} configured" if count else 'No variables'
+        try:
+            badge.text = text
+        except Exception:
+            try:
+                badge.set_text(text)
+            except Exception:
+                pass
+
+    def _suggest_file_key(self, filename: str) -> str:
+        base = Path(filename or '').stem or 'ASSET'
+        cleaned = re.sub(r'[^A-Za-z0-9]+', '_', base).strip('_') or 'ASSET'
+        candidate = cleaned.upper()
+        if not candidate.endswith('_DATA_URL'):
+            candidate = f"{candidate}_DATA_URL"
+        try:
+            normalized = self.controller.normalize_template_key(candidate)
+        except Exception:
+            normalized = 'ASSET_DATA_URL'
+        existing = {entry.key for entry in self.controller.list_template_variables()}
+        unique = normalized
+        suffix = 2
+        while unique in existing:
+            try:
+                unique = self.controller.normalize_template_key(f"{normalized}_{suffix}")
+            except Exception:
+                unique = f"{normalized}_{suffix}"
+            suffix += 1
+        return unique
+
+    async def _set_control_value(self, control: ui.element | None, value: str) -> None:
+        if control is None:
+            return
+        setter = getattr(control, 'set_value', None)
+        if asyncio.iscoroutinefunction(setter):
+            await setter(value)  # type: ignore[arg-type]
+            return
+        if callable(setter):
+            setter(value)
+        else:
+            setattr(control, 'value', value)
+        try:
+            control.update()
+        except Exception:
+            pass
 
     def _default_settings(self, overall_goal: str) -> TransitionSettings:
         return get_settings().load_settings(overall_goal=overall_goal)
@@ -266,6 +486,47 @@ class NiceGUIView(IterationEventListener):
         if any(len(line) > (GOAL_SUMMARY_CHAR_LIMIT // 2) for line in lines):
             return True
         return False
+
+    def _load_prompt_examples(self, prompt_dir: Path) -> List[Dict[str, Any]]:
+        examples: List[Dict[str, Any]] = []
+        if not prompt_dir.exists():
+            return examples
+
+        def _normalize_label(raw: str) -> str:
+            return re.sub(r'\s+', ' ', raw).strip()
+
+        # Prefer JSON presets with embedded template variables
+        for path in sorted(prompt_dir.glob('*.json')):
+            try:
+                data = json.loads(path.read_text(encoding='utf-8'))
+                label = _normalize_label(str(data.get('name') or path.stem))
+                goal = str(data.get('goal') or "").strip()
+                user_feedback = str(data.get('user_feedback') or "")
+                tmpl = data.get('template_variables') or {}
+                text_vars = tmpl.get('text') or {}
+                file_vars = tmpl.get('files') or []
+                examples.append(
+                    {
+                        "label": label,
+                        "goal": goal,
+                        "user_feedback": user_feedback,
+                        "text_vars": text_vars,
+                        "file_vars": file_vars,
+                    }
+                )
+            except Exception as exc:
+                print(f"[prompt_examples] Failed to parse {path}: {exc}")
+
+        # Fallback to legacy .txt prompts if no JSON found
+        if not examples:
+            for path in sorted(prompt_dir.glob('*.txt')):
+                try:
+                    content = path.read_text(encoding='utf-8').strip()
+                    label = _normalize_label(path.stem)
+                    examples.append({"label": label, "goal": content, "user_feedback": "", "text_vars": {}, "file_vars": []})
+                except Exception as exc:
+                    print(f"[prompt_examples] Failed to read {path}: {exc}")
+        return examples
 
     async def _summarize_goal_text(self, goal: str) -> str:
         stripped = goal.strip()

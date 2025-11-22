@@ -63,7 +63,10 @@ async def test_devtools_methods_without_server() -> None:
     assert logs and logs[0]["message"] == "case:simple"
 
     assert await service.press_key_mcp("w") is True
-    assert await service.wait_for_selector_mcp("Hello World") is True
+    wait_result = await service.wait_for_selector_mcp("Hello World")
+    assert isinstance(wait_result, dict)
+    assert wait_result.get("ok") is True
+    assert isinstance(wait_result.get("duration_ms"), int)
     assert await service.performance_trace_start_mcp() is True
     trace = await service.performance_trace_stop_mcp()
     assert isinstance(trace, dict) and trace.get("fps") == 60

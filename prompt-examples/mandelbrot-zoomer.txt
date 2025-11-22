@@ -1,1 +1,0 @@
-Create a mandelbrot zoomer that slowly zooms to an interesting point in the mandelbrot set.

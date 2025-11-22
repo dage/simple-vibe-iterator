@@ -1,0 +1,18 @@
+{
+  "name": "Hello World",
+  "goal": "Write Hello World with the least amount of html possible.",
+  "user_feedback": "",
+  "template_variables": {
+    "text": {
+      "PRESET_HINT": "This preset includes an embedded sample asset for Hello World. Replace it with your own file if needed."
+    },
+    "files": [
+      {
+        "key": "HELLO_WORLD_ASSET_DATA_URL",
+        "filename": "preset-swatch.png",
+        "mime_type": "image/png",
+        "data_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGNgAAACAAEA//8DAAAGAAVX/gAAAABJRU5ErkJggg=="
+      }
+    ]
+  }
+}

@@ -1,1 +1,0 @@
-Write "Hi" with a big font, then use the analyze_screen tool exactly one time and output the visual analysis as static html in the final response html.

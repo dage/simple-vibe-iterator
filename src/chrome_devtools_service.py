@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from contextlib import asynccontextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
@@ -205,7 +206,8 @@ class ChromeDevToolsService:
         await asyncio.sleep(min(hold, 250) / 1000.0)
         return bool(result)
 
-    async def wait_for_selector_mcp(self, selector: str, timeout_ms: int = 5000) -> bool:
+    async def wait_for_selector_mcp(self, selector: str, timeout_ms: int = 5000) -> Dict[str, Any]:
+        started = time.monotonic()
         result = await self._call_tool(
             "wait_for",
             {
@@ -213,7 +215,9 @@ class ChromeDevToolsService:
                 "timeout": timeout_ms,
             },
         )
-        return self._extract_bool(result)
+        ok = self._extract_bool(result)
+        duration_ms = int((time.monotonic() - started) * 1000)
+        return {"ok": ok, "duration_ms": duration_ms}
 
     async def performance_trace_start_mcp(self) -> bool:
         result = await self._call_tool("performance_start_trace")

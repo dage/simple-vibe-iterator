@@ -35,6 +35,10 @@ templates:
     - Always explicitly set a body background color instead of relying on default.
     - When using Three.js, use reliable CDN sources like https://unpkg.com/three/build/three.module.js or https://cdn.jsdelivr.net/npm/three/build/three.module.js for the core library, and for addons use the corresponding /examples/jsm/ path such as https://unpkg.com/three/examples/jsm/controls/OrbitControls.js. Include an import map in your HTML if using bare module specifiers like 'three', and avoid outdated threejs.org/examples/ URLs which are no longer accessible.
     - Do not include any introscreens, start buttons or similar but jump straight into the action.
+    - Available template variables (files and snippets) are listed below. Reference them literally using {{KEY}} in your HTML/JS instead of typing their contents. The controller will inject the actual data URLs or text later.
+
+    TEMPLATE VARIABLES (placeholders to keep in your HTML and prompts):
+    {template_vars_list}
 
     STARTING STATE:
     - The first iteration begins from a blank canvas—there is no existing HTML or captured screenshot yet.
@@ -110,6 +114,7 @@ templates:
     Context (for understanding analysis scope):
     Overall goal: {overall_goal}
     User feedback: {user_feedback}
+    Template variables available to the coding model: {template_vars_list}
 
     Output format (bullet points only, no headers or code blocks):
     - Observation 1
