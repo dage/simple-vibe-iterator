@@ -218,17 +218,17 @@ async def _capture_input_context(
     vision_service: VisionService,
     *,
     template_vars_summary: str = "",
-) -> tuple[TransitionContext, InterpretationResult, str, Dict[str, bool]]:
+) -> tuple[TransitionContext, InterpretationResult, str]:
     context = TransitionContext(html_input=html_input or "")
 
     normalized_models = [slug for slug in models if slug]
-    model_image_support = await _detect_code_model_image_support(normalized_models) if normalized_models else {}
     if not (html_input or "").strip():
         interpretation = InterpretationResult()
-        return context, interpretation, "", model_image_support
+        return context, interpretation, ""
 
     preset_id = (getattr(settings, "feedback_preset_id", "") or "").strip()
     preset = feedback_presets.get_feedback_preset(preset_id) if preset_id else None
+    model_image_support = await _detect_code_model_image_support(normalized_models) if normalized_models else {}
     image_enabled_models = [slug for slug, supported in model_image_support.items() if supported]
 
     if preset:
@@ -272,7 +272,7 @@ async def _capture_input_context(
 
     interpretation = await _interpret_input(settings, context, vision_service, template_vars_summary=template_vars_summary)
     auto_feedback = _format_auto_feedback(context)
-    return context, interpretation, auto_feedback, model_image_support
+    return context, interpretation, auto_feedback
 
 
 def _build_input_artifacts(
@@ -335,7 +335,7 @@ async def δ(
         # Recompute a descriptive summary if the caller forgot to pass one
         template_vars_summary = _summaries_to_prompt_text(_summaries_for_template_vars(template_vars))
     if context is None or interpretation is None or auto_feedback is None:
-        context, interpretation, auto_feedback, model_image_support = await _capture_input_context(
+        context, interpretation, auto_feedback = await _capture_input_context(
             html_input,
             settings,
             models,
@@ -343,61 +343,47 @@ async def δ(
             vision_service,
             template_vars_summary=template_vars_summary,
         )
-    else:
-        model_image_support = await _detect_code_model_image_support(models)
-    attachment_policy = ImageAttachmentPolicy(
-        attachments=interpretation.attachments,
-        support_flags=model_image_support,
-    )
 
     async def _worker(model: str) -> Tuple[str, str, str, dict | None, TransitionArtifacts]:
         try:
-            while True:
-                selected_attachments = attachment_policy.attachments_for(model)
+            payload, template_context = build_code_payload(
+                html_input=context.html_input,
+                settings=settings,
+                interpretation_summary=interpretation.summary,
+                console_logs=context.input_console_logs,
+                auto_feedback=auto_feedback,
+                message_history=message_history,
+                template_vars_summary=template_vars_summary,
+            )
+            html_output, reasoning, meta = await ai_service.generate_html(
+                payload,
+                model,
+                worker=model,
+                template_context=template_context,
+            )
+            final_html, missing_keys = _inject_template_variables(html_output, template_vars)
+            if missing_keys:
                 try:
-                    payload, template_context = build_code_payload(
-                        html_input=context.html_input,
-                        settings=settings,
-                        interpretation_summary=interpretation.summary,
-                        console_logs=context.input_console_logs,
-                        auto_feedback=auto_feedback,
-                        attachments=selected_attachments,
-                        message_history=message_history,
-                        allow_attachments=bool(selected_attachments),
-                        template_vars_summary=template_vars_summary,
+                    joined = ", ".join(sorted(missing_keys))
+                    op_status.enqueue_notification(
+                        f"Missing template variables: {joined}",
+                        color="warning",
+                        timeout=6000,
+                        close_button=True,
                     )
-                    html_output, reasoning, meta = await ai_service.generate_html(
-                        payload,
-                        model,
-                        worker=model,
-                        template_context=template_context,
-                    )
-                    final_html, missing_keys = _inject_template_variables(html_output, template_vars)
-                    if missing_keys:
-                        try:
-                            joined = ", ".join(sorted(missing_keys))
-                            op_status.enqueue_notification(
-                                f"Missing template variables: {joined}",
-                                color="warning",
-                                timeout=6000,
-                                close_button=True,
-                            )
-                        except Exception:
-                            pass
-                    out_screenshots, out_console_logs = await browser_service.render_and_capture(final_html, worker=model)
-                    out_screenshot_path = out_screenshots[0] if out_screenshots else ""
-                    artifacts = _create_artifacts(
-                        model=model,
-                        context=context,
-                        interpretation=interpretation,
-                        screenshot_path=out_screenshot_path,
-                        console_logs=out_console_logs,
-                        vision_output=interpretation.summary,
-                    )
-                    return model, final_html, (reasoning or ""), (meta or None), artifacts
-                except Exception as exc:
-                    if not attachment_policy.handle_error(model, exc):
-                        raise
+                except Exception:
+                    pass
+            out_screenshots, out_console_logs = await browser_service.render_and_capture(final_html, worker=model)
+            out_screenshot_path = out_screenshots[0] if out_screenshots else ""
+            artifacts = _create_artifacts(
+                model=model,
+                context=context,
+                interpretation=interpretation,
+                screenshot_path=out_screenshot_path,
+                console_logs=out_console_logs,
+                vision_output=interpretation.summary,
+            )
+            return model, final_html, (reasoning or ""), (meta or None), artifacts
         finally:
             try:
                 op_status.clear_phase(model)
@@ -620,69 +606,6 @@ def _format_auto_feedback(context: TransitionContext) -> str:
     return "Auto feedback → " + ", ".join(parts)
 
 
-class ImageAttachmentPolicy:
-    def __init__(
-        self,
-        attachments: Sequence[IterationAsset],
-        support_flags: Dict[str, bool],
-    ) -> None:
-        self._base = [asset for asset in attachments if asset.kind == "image" and asset.path]
-        self._support: Dict[str, bool] = {
-            slug: bool(flag and self._base)
-            for slug, flag in support_flags.items()
-        }
-        self._caps: Dict[str, int] = {}
-
-    def attachments_for(self, model: str) -> List[IterationAsset]:
-        if not self._support.get(model):
-            return []
-        cap = self._caps.get(model)
-        if not cap or cap >= len(self._base):
-            return list(self._base)
-        return self._base[:cap]
-
-    def handle_error(self, model: str, exc: Exception) -> bool:
-        action = _classify_image_attachment_error(exc)
-        if action is None:
-            return False
-        if action == "disable":
-            self._support[model] = False
-            self._caps[model] = 0
-            _notify_image_policy_issue(
-                f"Model '{model}' rejected screenshot input; retrying without attachments.",
-            )
-            return True
-        if action == "reduce":
-            if len(self._base) <= 1:
-                self._support[model] = False
-                self._caps[model] = 0
-                _notify_image_policy_issue(
-                    f"Model '{model}' cannot handle screenshots; falling back to text-only retries.",
-                )
-                return True
-            current = self._caps.get(model) or len(self._base)
-            next_cap = max(1, current - 1)
-            if next_cap >= current:
-                next_cap = current - 1
-            if next_cap <= 0:
-                self._support[model] = False
-                self._caps[model] = 0
-                return True
-            self._caps[model] = next_cap
-            _notify_image_policy_issue(
-                f"Model '{model}' screenshot limit reduced to {next_cap} due to provider constraints.",
-            )
-            return True
-        return False
-
-
-def _notify_image_policy_issue(message: str) -> None:
-    try:
-        op_status.enqueue_notification(message, color="warning", timeout=4000, close_button=True)
-    except Exception:
-        pass
-
-
 async def _detect_code_model_image_support(models: Sequence[str]) -> Dict[str, bool]:
     normalized = [slug.strip() for slug in models if slug.strip()]
     if not normalized:
@@ -693,15 +616,6 @@ async def _detect_code_model_image_support(models: Sequence[str]) -> Dict[str, b
         available = []
     image_ids = {getattr(m, "id", "") for m in available}
     return {slug: slug in image_ids for slug in normalized}
-
-
-def _classify_image_attachment_error(exc: Exception) -> str | None:
-    text = str(getattr(exc, "message", None) or exc).lower()
-    if any(keyword in text for keyword in ("image input", "no endpoints")):
-        return "disable"
-    if any(keyword in text for keyword in ("length limit", "request body", "413")):
-        return "reduce"
-    return None
 
 
 class IterationController:
@@ -1057,7 +971,7 @@ class IterationController:
 
         template_vars_summary = self.template_vars_prompt_text()
 
-        context, interpretation, auto_feedback, _ = await _capture_input_context(
+        context, interpretation, auto_feedback = await _capture_input_context(
             html_input,
             settings,
             models,

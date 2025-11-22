@@ -3,9 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any, Dict, Iterable, List
 
-from .interfaces import IterationAsset, TransitionSettings
-from .image_downscale import load_scaled_image_bytes
-from . import or_client as orc
+from .interfaces import TransitionSettings
 
 
 class PromptPayload:
@@ -80,25 +78,7 @@ def _format_template(template: str, ctx: Dict[str, Any]) -> str:
 
 def _build_user_message(
     prompt_text: str,
-    attachments: List[IterationAsset],
-    include_images: bool,
 ) -> Dict[str, Any]:
-    if include_images:
-        parts: List[Dict[str, Any]] = []
-        if prompt_text.strip():
-            parts.append({"type": "text", "text": prompt_text})
-        for asset in attachments:
-            if asset.kind != "image" or not asset.path:
-                continue
-            scaled_bytes = load_scaled_image_bytes(asset.path)
-            data_source = scaled_bytes if scaled_bytes is not None else asset.path
-            try:
-                data_url = orc.encode_image_to_data_url(data_source)
-            except Exception:
-                continue
-            parts.append({"type": "image_url", "image_url": {"url": data_url}})
-        if parts:
-            return {"role": "user", "content": parts}
     return {"role": "user", "content": prompt_text}
 
 
@@ -125,13 +105,10 @@ def build_code_payload(
     settings: TransitionSettings,
     interpretation_summary: str,
     console_logs: List[str] | None,
-    attachments: Iterable[IterationAsset],
     message_history: List[Dict[str, Any]] | None = None,
     auto_feedback: str = "",
-    allow_attachments: bool = False,
     template_vars_summary: str = "",
 ) -> tuple[PromptPayload, Dict[str, Any]]:
-    attachments = list(attachments if allow_attachments else [])
     ctx = _build_template_context(
         html_input=html_input,
         settings=settings,
@@ -153,12 +130,12 @@ def build_code_payload(
     system_prompt = _format_template(system_template, ctx)
 
     messages = list(message_history or [])
-    if messages and not allow_attachments:
+    if messages:
         messages = _strip_images_from_history(messages)
     if not messages or str(messages[0].get("role")) != "system":
         if system_prompt.strip():
             messages.insert(0, {"role": "system", "content": system_prompt})
-    user_message = _build_user_message(base_iteration_prompt, attachments, bool(attachments))
+    user_message = _build_user_message(base_iteration_prompt)
     messages.append(user_message)
     template_context = {
         "vision_template": settings.vision_template,

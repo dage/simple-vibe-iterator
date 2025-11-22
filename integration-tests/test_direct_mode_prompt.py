@@ -129,7 +129,7 @@ class RecordingAICodeService:
         )
 
 
-async def test_direct_mode_prompt_contains_image() -> Tuple[bool, str]:
+async def test_direct_mode_prompt_omits_image() -> Tuple[bool, str]:
     from src.controller import IterationController
     from src.interfaces import TransitionSettings
 
@@ -172,28 +172,27 @@ async def test_direct_mode_prompt_contains_image() -> Tuple[bool, str]:
     if not vision.called:
         return False, "vision service should be invoked in direct mode now"
 
-    if not ai.last_messages:
-        return False, "direct mode prompt did not include image content"
+    def _has_image(parts: List[Dict[str, object]]) -> bool:
+        return any(
+            isinstance(part, dict)
+            and part.get("type") == "image_url"
+            and isinstance(part.get("image_url", {}).get("url"), str)
+            for part in parts
+        )
 
-    has_image = any(
-        isinstance(part, dict)
-        and part.get("type") == "image_url"
-        and isinstance(part.get("image_url", {}).get("url"), str)
-        for part in ai.last_messages
-    )
-    if not has_image:
-        return False, "image attachment missing from prompt"
+    if ai.last_messages and _has_image(ai.last_messages):
+        return False, "prompt should not include screenshot attachments"
 
     if "vision" not in ai.last_prompt_text.lower():
         return False, "prompt text should include vision analysis now"
 
-    return True, "direct mode prompt attaches screenshot"
+    return True, "direct mode prompt relies on vision text only"
 
 
 async def main() -> int:
     ensure_root_cwd()
     inject_src()
-    ok, info = await test_direct_mode_prompt_contains_image()
+    ok, info = await test_direct_mode_prompt_omits_image()
     status = "OK" if ok else "FAIL"
     print(f"[ {status} ] Direct mode prompt: {info}")
     return 0 if ok else 1

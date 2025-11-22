@@ -65,7 +65,6 @@ class StubVisionService:
 class FlakyAICodeService:
     def __init__(self) -> None:
         self.calls: List[List[Dict[str, object]]] = []
-        self.fail_next_with_images = True
 
     async def generate_html(
         self,
@@ -83,18 +82,6 @@ class FlakyAICodeService:
         else:
             messages = [{"role": "user", "content": str(prompt)}]
         self.calls.append(messages)
-
-        def _has_images(msgs: List[Dict[str, object]]) -> bool:
-            if not msgs:
-                return False
-            content = msgs[-1].get("content") if isinstance(msgs[-1], dict) else None
-            if isinstance(content, list):
-                return any(isinstance(part, dict) and part.get("type") == "image_url" for part in content)
-            return False
-
-        if self.fail_next_with_images and _has_images(messages):
-            self.fail_next_with_images = False
-            raise RuntimeError("No endpoints found that support image input")
 
         html = (
             "<!DOCTYPE html><html><head><meta charset=\"utf-8\"></head>"
@@ -139,12 +126,8 @@ async def test_retry_without_image_support() -> Tuple[bool, str]:
     if not node:
         return False, "child node missing"
 
-    if len(ai.calls) < 3:
-        return False, "expected multiple AI calls for retry"
-
-    # Focus on the last two calls from the second iteration
-    first_retry = ai.calls[-2]
-    second_retry = ai.calls[-1]
+    if len(ai.calls) != 2:
+        return False, f"expected one call per iteration, got {len(ai.calls)}"
 
     def _has_images(msgs: List[Dict[str, object]]) -> bool:
         if not msgs:
@@ -154,10 +137,10 @@ async def test_retry_without_image_support() -> Tuple[bool, str]:
             return any(isinstance(part, dict) and part.get("type") == "image_url" for part in content)
         return False
 
-    if not (_has_images(first_retry) and not _has_images(second_retry)):
-        return False, "retry did not remove screenshot attachments"
+    if any(_has_images(call) for call in ai.calls):
+        return False, "image attachments should not be present in prompts"
 
-    return True, "retry removes screenshots after failure"
+    return True, "code prompts omit screenshot attachments"
 
 
 async def main() -> int:

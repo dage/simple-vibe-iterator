@@ -207,9 +207,9 @@ async def _run_case(case: _Case, tmp_dir: Path) -> Tuple[bool, str]:
 
     if not ai.calls:
         return False, f"{case.name}: ai not called"
-    ai_count = len(ai.calls[-1][1])
-    if ai_count != case.expected:
-        return False, f"{case.name}: ai saw {ai_count}"
+    ai_images = tuple(ai.calls[-1][1])
+    if ai_images:
+        return False, f"{case.name}: ai prompt should omit screenshots"
 
     return True, f"{case.name}: ok"
 
