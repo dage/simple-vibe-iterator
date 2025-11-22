@@ -267,6 +267,35 @@ def _format_console_log_entries(entries: Optional[Sequence[Dict[str, Any]]]) -> 
     return formatted
 
 
+def _truncate_console_messages(entries: Optional[Sequence[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    """Limit console messages to first 20 and last 20 with a gap marker when needed."""
+
+    if not entries:
+        return []
+    total = len(entries)
+    if total <= 40:
+        return list(entries)
+
+    omitted = total - 40
+    head = list(entries[:20])
+    tail = list(entries[-20:])
+    marker = {"level": "info", "message": f"Omitted {omitted} entries..."}
+    return head + [marker] + tail
+
+
+def _is_result_too_large(result: Any, limit_bytes: int = 100_000) -> bool:
+    """Detect oversized evaluate_script results using UTF-8 length."""
+
+    try:
+        serialized = json.dumps(result, ensure_ascii=False, default=str)
+    except Exception:
+        try:
+            serialized = str(result)
+        except Exception:
+            return False
+    return len(serialized.encode("utf-8")) > limit_bytes
+
+
 def _format_template_safe(template: str, ctx: Dict[str, Any]) -> str:
     if not template:
         return ""
@@ -368,7 +397,8 @@ async def _execute_browser_tool(name: str, payload: Dict[str, Any]) -> Dict[str,
                 return {"error": "missing html_content"}
             return {"ok": await service.load_html_mcp(html)}
         if name == "list_console_messages":
-            return {"messages": await service.get_console_messages_mcp(level=payload.get("level"))}
+            raw_messages = await service.get_console_messages_mcp(level=payload.get("level"))
+            return {"messages": _truncate_console_messages(raw_messages)}
         if name == "press_key":
             key = str(payload.get("key", "")).strip()
             if not key:
@@ -379,7 +409,13 @@ async def _execute_browser_tool(name: str, payload: Dict[str, Any]) -> Dict[str,
             script = str(payload.get("script", ""))
             if not script.strip():
                 return {"error": "missing script"}
-            return {"result": await service.evaluate_script_mcp(script)}
+            result = await service.evaluate_script_mcp(script)
+            if _is_result_too_large(result):
+                return {
+                    "error": "evaluate_script_result_too_large",
+                    "message": "Result exceeded 100000 bytes and was filtered out.",
+                }
+            return {"result": result}
         if name == "wait_for":
             selector = str(payload.get("selector", "")).strip()
             if not selector:
