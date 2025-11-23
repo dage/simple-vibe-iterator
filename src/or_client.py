@@ -395,7 +395,17 @@ async def _execute_browser_tool(name: str, payload: Dict[str, Any]) -> Dict[str,
             html = str(payload.get("html_content", ""))
             if not html.strip():
                 return {"error": "missing html_content"}
-            return {"ok": await service.load_html_mcp(html)}
+            load_result = await service.load_html_mcp(html)
+            if isinstance(load_result, dict):
+                ok = bool(load_result.get("ok"))
+                try:
+                    duration_ms = int(load_result.get("duration_ms", 0) or 0)
+                except Exception:
+                    duration_ms = 0
+            else:
+                ok = bool(load_result)
+                duration_ms = 0
+            return {"ok": ok, "duration_ms": duration_ms}
         if name == "list_console_messages":
             raw_messages = await service.get_console_messages_mcp(level=payload.get("level"))
             return {"messages": _truncate_console_messages(raw_messages)}
@@ -426,15 +436,18 @@ async def _execute_browser_tool(name: str, payload: Dict[str, Any]) -> Dict[str,
             )
             ok = False
             duration_ms = 0
+            status = "timed_out"
             if isinstance(wait_result, dict):
                 ok = bool(wait_result.get("ok"))
                 try:
                     duration_ms = int(wait_result.get("duration_ms", 0))
                 except Exception:
                     duration_ms = 0
+                status = str(wait_result.get("status") or ("ok" if ok else "timed_out"))
             else:
                 ok = bool(wait_result)
-            return {"ok": ok, "duration_ms": duration_ms}
+                status = "ok" if ok else "timed_out"
+            return {"ok": ok, "duration_ms": duration_ms, "status": status}
         if name == "performance_start_trace":
             return {"ok": await service.performance_trace_start_mcp()}
         if name == "performance_stop_trace":

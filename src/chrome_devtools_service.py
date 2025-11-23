@@ -59,8 +59,9 @@ class ChromeDevToolsService:
         self._command = build_command(command, args)
         logger.info("Chrome DevTools MCP configured with command: %s", " ".join(self._command))
 
-    async def load_html_mcp(self, html: str) -> bool:
+    async def load_html_mcp(self, html: str) -> Dict[str, Any]:
         """Replace the page contents with provided HTML using document.write."""
+        started = time.monotonic()
         if not html:
             html = "<!DOCTYPE html><title>Empty</title><body></body>"
         escaped = json.dumps(html)
@@ -74,10 +75,13 @@ class ChromeDevToolsService:
             "  return true;"
             "}"
         )
+        await self._install_console_capture(reset_logs=True)
         result = await self.evaluate_script_mcp(fn, is_function=True)
-        await self._install_console_capture()
         await self._wait_for_page_ready()
-        return bool(result) if isinstance(result, bool) else True
+        await self._install_console_capture(reset_logs=False)
+        duration_ms = int((time.monotonic() - started) * 1000)
+        ok = bool(result) if isinstance(result, bool) else True
+        return {"ok": ok, "duration_ms": duration_ms}
 
     async def take_screenshot_mcp(self) -> Optional[str]:
         if not self.enabled:
@@ -135,25 +139,51 @@ class ChromeDevToolsService:
         except Exception:
             return None
 
-    async def _install_console_capture(self) -> None:
+    async def _install_console_capture(self, *, reset_logs: bool = False) -> None:
+        reset_literal = "true" if reset_logs else "false"
         script = (
             "() => {"
-            " if (window.__sviLogs && window.__sviLogs.__patched) { return true; }"
+            f" const resetLogs = {reset_literal};"
             " const stringify = (value) => {"
             "   if (typeof value === 'string') { return value; }"
             "   try { return JSON.stringify(value); } catch (err) { return String(value); }"
             " };"
             " const levels = ['log','info','warn','error'];"
-            " window.__sviLogs = [];"
-            " window.__sviLogs.__patched = true;"
+            " const ensureBuffer = () => {"
+            "   if (!Array.isArray(window.__sviLogs)) {"
+            "     window.__sviLogs = [];"
+            "   } else if (resetLogs) {"
+            "     window.__sviLogs.length = 0;"
+            "   }"
+            " };"
+            " const pushEntry = (level, args) => {"
+            "   try {"
+            "     const items = Array.isArray(args) ? args : Array.from(args || []);"
+            "     const message = items.map(stringify).join(' ');"
+            "     const entry = { level, message };"
+            "     if (typeof Date !== 'undefined' && typeof Date.now === 'function') {"
+            "       entry.timestamp = Date.now();"
+            "     }"
+            "     window.__sviLogs.push(entry);"
+            "   } catch (err) {"
+            "     try { window.__sviLogs.push({ level, message: '[capture-error] ' + err }); } catch (ignore) {}"
+            "   }"
+            " };"
+            " ensureBuffer();"
+            " if (!window.__sviConsoleOriginals) { window.__sviConsoleOriginals = {}; }"
             " levels.forEach((level) => {"
-            "   const original = console[level];"
+            "   const originals = window.__sviConsoleOriginals;"
+            "   if (!originals[level]) { originals[level] = console[level]; }"
+            "   const original = originals[level];"
             "   console[level] = (...args) => {"
-            "     const message = args.map(stringify).join(' ');"
-            "     window.__sviLogs.push({ level, message });"
-            "     if (original && original.apply) { original.apply(console, args); }"
+            "     pushEntry(level, args);"
+            "     try {"
+            "       if (original && original.apply) { original.apply(console, args); }"
+            "       else if (typeof original === 'function') { original(...args); }"
+            "     } catch (err) { }"
             "   };"
             " });"
+            " window.__sviLogs.__patched = true;"
             " return true;"
             "}"
         )
@@ -264,16 +294,15 @@ class ChromeDevToolsService:
 
     async def wait_for_selector_mcp(self, selector: str, timeout_ms: int = 5000) -> Dict[str, Any]:
         started = time.monotonic()
-        result = await self._call_tool(
-            "wait_for",
-            {
-                "text": selector,
-                "timeout": timeout_ms,
-            },
-        )
+        payload = {
+            "selector": selector,
+            "timeout_ms": max(0, int(timeout_ms)),
+        }
+        result = await self._call_tool("wait_for", payload)
         ok = self._extract_bool(result)
         duration_ms = int((time.monotonic() - started) * 1000)
-        return {"ok": ok, "duration_ms": duration_ms}
+        status = self._extract_status(result, ok)
+        return {"ok": ok, "duration_ms": duration_ms, "status": status}
 
     async def performance_trace_start_mcp(self) -> bool:
         result = await self._call_tool("performance_start_trace")
@@ -438,6 +467,18 @@ class ChromeDevToolsService:
             if "success" in result:
                 return bool(result["success"])
         return bool(result)
+
+    @staticmethod
+    def _extract_status(result: Any, ok: bool) -> str:
+        if isinstance(result, dict):
+            status = result.get("status")
+            if isinstance(status, str) and status:
+                return status
+            if result.get("timed_out") is True:
+                return "timed_out"
+            if result.get("error"):
+                return "error"
+        return "ok" if ok else "timed_out"
 
 
 def create_chrome_devtools_service(

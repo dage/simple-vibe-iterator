@@ -216,8 +216,14 @@ HTML = """<!DOCTYPE html>
 
 async def main():
     service = ChromeDevToolsService()
-    ok = await service.load_html_mcp(HTML)
-    print("load ok", ok)
+    load_result = await service.load_html_mcp(HTML)
+    if isinstance(load_result, dict):
+        ok = bool(load_result.get("ok"))
+        duration_ms = load_result.get("duration_ms")
+    else:
+        ok = bool(load_result)
+        duration_ms = None
+    print("load ok", ok, "duration", duration_ms)
     data_url = await service.take_screenshot_mcp()
     if not data_url:
         print("no screenshot")
