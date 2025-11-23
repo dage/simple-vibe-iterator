@@ -210,7 +210,33 @@ class OpenRouterAICodeService(AICodeService):
             # Add prompt messages (with any image attachments) and assistant response
             if meta is None:
                 meta = {}
-            meta["messages"] = messages
+            # Preserve the full conversation (including tool calls) returned by chat_with_meta.
+            # If missing or malformed, fall back to the prompt messages but surface a warning to the user.
+            if "messages" not in meta:
+                try:
+                    op_status.enqueue_notification(
+                        f"{model}: provider returned no message history; showing prompt messages only",
+                        color="warning",
+                        timeout=6000,
+                        close_button=True,
+                    )
+                except Exception:
+                    print(f"[warn] {model}: provider returned no message history; showing prompt messages only")
+                meta["messages"] = list(messages)
+            else:
+                try:
+                    meta["messages"] = list(meta.get("messages") or [])
+                except Exception:
+                    try:
+                        op_status.enqueue_notification(
+                            f"{model}: message history malformed; showing prompt messages only",
+                            color="warning",
+                            timeout=6000,
+                            close_button=True,
+                        )
+                    except Exception:
+                        print(f"[warn] {model}: message history malformed; showing prompt messages only")
+                    meta["messages"] = list(messages)
             meta["assistant_response"] = content or ""
 
             op_status.clear_phase(worker)
