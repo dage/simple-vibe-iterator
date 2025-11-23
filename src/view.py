@@ -470,7 +470,7 @@ class NiceGUIView(IterationEventListener):
                     value=goal,
                 ).props('filled autogrow readonly').classes('w-full text-sm').style('white-space: pre-wrap;')
                 ui.button('Close', on_click=dialog.close).props('outlined')
-        await dialog.open()
+        dialog.open()
 
     def _should_summarize_goal(self, goal: str) -> bool:
         stripped = goal.strip()
