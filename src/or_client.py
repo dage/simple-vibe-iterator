@@ -906,6 +906,16 @@ async def _chat_with_meta_impl(
         "total_cost": total_cost,
         "generation_time": generation_time,
     }
-    meta["messages"] = conversation
+    # Normalize conversation to plain JSON-serializable dicts so downstream UI can render tool calls.
+    conversation_snapshot: List[Dict[str, Any]] = []
+    for entry in conversation:
+        try:
+            conversation_snapshot.append(json.loads(json.dumps(entry, ensure_ascii=False)))
+        except Exception:
+            try:
+                conversation_snapshot.append(dict(entry))
+            except Exception:
+                conversation_snapshot.append({"error": "unserializable message"})
+    meta["messages"] = conversation_snapshot
     meta["tool_call_count"] = context_data.get("tool_call_count", 0)
     return (content or "", meta)

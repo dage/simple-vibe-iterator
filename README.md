@@ -135,6 +135,7 @@ The harness pre-populates the code-model selector, auto-expands the dropdown, an
 - `src/interfaces.py`: dataclasses and service/controller interfaces (no UI deps)
 - `src/controller.py`: framework-agnostic iteration controller
 - `src/services.py`: OpenRouter AI services + Chrome DevTools browser service
+- `src/message_history.py`: message history dialog renderer
 - `src/view.py`: NiceGUI view (UI only); reads defaults from `config.yaml` via `src/config.py`
 - `src/main.py`: dependency wiring and app entry (OpenRouter-only)
 

@@ -1,8 +1,9 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- Source: `src/` (framework‑agnostic controller/services and NiceGUI view)
+- Source: `src/` (framework-agnostic controller/services and NiceGUI view)
   - `controller.py`, `services.py`, `interfaces.py`, `view.py`, `main.py`, `config.py`
+- Message history renderer: `src/message_history.py` (UI dialog for stored messages; shows raw JSON and tool calls, including nested/parallel tool_calls)
 - Tests: `integration-tests/` (`test_*.py` and `run_all.py`)
 - Feedback presets: `feedback_presets.yaml` (declarative wait/keypress/screenshot recipes; override path via `FEEDBACK_PRESETS_PATH`)
 - Config: `config.yaml` (models/templates), `.env` (OpenRouter credentials; not committed)

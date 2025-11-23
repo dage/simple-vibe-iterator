@@ -27,6 +27,7 @@ from .node_summary_dialog import create_node_summary_dialog
 from .status_panel import StatusPanel
 from . import or_client as orc
 from .services import detect_mime_type
+from .message_history import render_message_history_dialog
 
 GOAL_SUMMARY_MODEL = "x-ai/grok-4-fast"
 GOAL_SUMMARY_CHAR_LIMIT = 280
@@ -765,7 +766,7 @@ class NiceGUIView(IterationEventListener):
                 msgs_snapshot = list(input_messages)
 
                 def _open_messages_dialog(msgs=msgs_snapshot) -> None:
-                    self._render_messages_dialog(messages_dialog, list(msgs))
+                    render_message_history_dialog(messages_dialog, list(msgs))
                     messages_dialog.open()
 
                 messages_dialog.on('hide', lambda _: messages_dialog.clear())
@@ -991,7 +992,7 @@ class NiceGUIView(IterationEventListener):
 
                                     selector.on('update:model-value', _on_change)
 
-                            self._render_messages_dialog(output_messages_dialog, history, header_controls=_header_controls)
+                            render_message_history_dialog(output_messages_dialog, history, header_controls=_header_controls)
 
                         _render_for(message_slugs[0])
                         output_messages_dialog.open()
@@ -1213,230 +1214,6 @@ class NiceGUIView(IterationEventListener):
                 # Best-effort; drop malformed items
                 pass
 
-    def _render_messages_dialog(self, dialog: ui.dialog, messages: List[Dict[str, Any]], header_controls: Callable[[ui.row], None] | None = None) -> None:
-        """Lazy-render the heavy message history dialog only when the user opens it."""
-        def _format_structured_value(value: Any) -> str:
-            if isinstance(value, str):
-                return value
-            try:
-                return json.dumps(value, ensure_ascii=False, indent=2)
-            except Exception:
-                try:
-                    return str(value)
-                except Exception:
-                    return ""
-
-        def _append_text_part(parts: List[Dict[str, Any]], text: str | None) -> None:
-            if text:
-                parts.append({'type': 'text', 'text': str(text)})
-
-        def _append_tool_metadata(parts: List[Dict[str, Any]], message: Dict[str, Any]) -> None:
-            metadata_lines: List[str] = []
-            tool_name = message.get('name') or message.get('tool')
-            if tool_name:
-                metadata_lines.append(f"Tool: {tool_name}")
-            tool_id = message.get('tool_call_id')
-            if tool_id:
-                metadata_lines.append(f"Call ID: {tool_id}")
-            arguments = message.get('arguments')
-            if arguments is not None:
-                metadata_lines.append("Arguments:")
-                metadata_lines.append(_format_structured_value(arguments))
-            if metadata_lines:
-                _append_text_part(parts, "\n".join(metadata_lines))
-
-        def _append_tool_call_details(parts: List[Dict[str, Any]], message: Dict[str, Any]) -> bool:
-            tool_calls = message.get('tool_calls')
-            if not isinstance(tool_calls, list) or not tool_calls:
-                return False
-            handled_any = False
-            for idx, call in enumerate(tool_calls, start=1):
-                if not isinstance(call, dict):
-                    continue
-                lines: List[str] = [f"Tool call #{idx}"]
-                call_type = call.get('type')
-                if call_type:
-                    lines.append(f"Type: {call_type}")
-                call_id = call.get('id') or call.get('tool_call_id')
-                if call_id:
-                    lines.append(f"Call ID: {call_id}")
-                function_meta = call.get('function')
-                if isinstance(function_meta, dict):
-                    fn_name = function_meta.get('name')
-                    arguments = function_meta.get('arguments')
-                else:
-                    fn_name = call.get('name')
-                    arguments = call.get('arguments')
-                if fn_name:
-                    lines.append(f"Function: {fn_name}")
-                if arguments is not None:
-                    arg_value: Any = arguments
-                    if isinstance(arg_value, str):
-                        stripped = arg_value.strip()
-                        if stripped:
-                            try:
-                                arg_value = json.loads(stripped)
-                            except Exception:
-                                arg_value = stripped
-                    lines.append("Arguments:")
-                    lines.append(_format_structured_value(arg_value))
-                _append_text_part(parts, "\n".join(lines))
-                handled_any = True
-            return handled_any
-
-        def _handle_tool_output(parts: List[Dict[str, Any]], content: Any) -> bool:
-            if not isinstance(content, str):
-                return False
-            parsed: Any
-            try:
-                parsed = json.loads(content)
-            except Exception:
-                return False
-            if not isinstance(parsed, dict):
-                return False
-            handled = False
-            if 'result' in parsed:
-                _append_text_part(parts, f"Result:\n{_format_structured_value(parsed['result'])}")
-                handled = True
-            if 'console' in parsed:
-                console_raw = parsed['console']
-                lines: List[str]
-                if isinstance(console_raw, list):
-                    lines = [str(line) for line in console_raw]
-                else:
-                    lines = [str(console_raw)]
-                _append_text_part(parts, "Console:\n" + "\n".join(lines))
-                handled = True
-            for key in sorted(parsed.keys()):
-                if key in {'result', 'console'}:
-                    continue
-                _append_text_part(parts, f"{key}: {_format_structured_value(parsed[key])}")
-                handled = True
-            return handled
-
-        dialog.clear()
-        with dialog:
-            with ui.card().classes('w-[90vw] max-w-[1200px]'):
-                with ui.row().classes('items-center justify-between w-full'):
-                    ui.label('Message History').classes('text-lg font-semibold')
-                    controls_row = ui.row().classes('items-center gap-2')
-                    if header_controls:
-                        header_controls(controls_row)
-                    ui.button(icon='close', on_click=dialog.close).props('flat round dense')
-                ui.html('''<style>
-                .messages-container { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; background: #0b0f17; color: #e5e7eb; border: 1px solid #334155; border-radius: 6px; padding: 16px; max-height: 70vh; overflow: auto; }
-                .msg-pre { white-space: pre-wrap; word-break: break-word; background: #0b0f17; color: #e5e7eb; border: 1px solid #334155; border-radius: 6px; padding: 10px; }
-                .msg-thumb { width: 260px; height: auto; border: 1px solid #334155; border-radius: 6px; }
-                .msg-expansion .q-item__label { border-radius: 9999px; padding: 2px 8px; font-size: 12px; font-weight: 600; display: inline-block; }
-                .msg-expansion.chip-system .q-item__label { background: #1f2937; color: #93c5fd; }
-                .msg-expansion.chip-user .q-item__label { background: #0f766e; color: #a7f3d0; }
-                .msg-expansion.chip-assistant .q-item__label { background: #4c1d95; color: #c4b5fd; }
-                .msg-expansion.chip-tool .q-item__label { background: #374151; color: #f59e0b; }
-                </style>''')
-                msgs = list(messages)
-                with ui.column().classes('w-full').style('gap: 10px;'):
-                    with ui.row().classes('items-center justify-between w-full'):
-                        raw_toggle = ui.checkbox('Raw JSON', value=False).props('dense')
-                        ui.button(icon='close', on_click=dialog.close).props('flat round dense')
-
-                    structured_container = ui.column().classes('w-full').style('gap: 10px;')
-                    raw_container = ui.column().classes('w-full').style('gap: 10px; display: none;')
-
-                    with raw_container:
-                        messages_json = json.dumps(msgs, indent=2, ensure_ascii=False)
-                        escaped_json = _html.escape(messages_json)
-                        ui.html(f"<div class='messages-container'><pre class='messages-content'>{escaped_json}</pre></div>")
-
-                    with structured_container:
-                        for m in msgs:
-                            role = str(m.get('role', '')) if isinstance(m, dict) else ''
-                            content = m.get('content') if isinstance(m, dict) else m
-                            parts: List[Dict[str, Any]] = []
-                            message_dict = m if isinstance(m, dict) else {}
-                            has_tool_calls = bool(message_dict.get('tool_calls'))
-                            special_handled = False
-                            if role == 'tool':
-                                _append_tool_metadata(parts, message_dict)
-                                special_handled = _handle_tool_output(parts, content)
-                            elif role == 'assistant' and has_tool_calls:
-                                special_handled = _append_tool_call_details(parts, message_dict)
-                            if not special_handled:
-                                try:
-                                    if isinstance(content, list):
-                                        for p in content:
-                                            if isinstance(p, dict) and p.get('type') == 'image_url':
-                                                url = p.get('image_url', {})
-                                                if isinstance(url, dict):
-                                                    url = url.get('url', '')
-                                                parts.append({'type': 'image_url', 'url': str(url)})
-                                            elif isinstance(p, dict) and p.get('type') == 'text':
-                                                parts.append({'type': 'text', 'text': str(p.get('text', ''))})
-                                            else:
-                                                parts.append({'type': 'text', 'text': json.dumps(p, ensure_ascii=False)})
-                                    elif isinstance(content, dict):
-                                        parts.append({'type': 'text', 'text': json.dumps(content, ensure_ascii=False)})
-                                    else:
-                                        parts.append({'type': 'text', 'text': str(content)})
-                                except Exception:
-                                    parts.append({'type': 'text', 'text': str(content)})
-                            exp = ui.expansion('').classes('msg-expansion ' + (
-                                'chip-user' if role == 'user' else ('chip-assistant' if role == 'assistant' else ('chip-system' if role == 'system' else 'chip-tool'))
-                            ))
-                            try:
-                                pretty = json.dumps(m, ensure_ascii=False)
-                                kb = len(pretty.encode('utf-8')) / 1024.0
-                                size_label = f"{kb:.2f} KB"
-                            except Exception:
-                                size_label = ''
-                            with exp.add_slot('header'):
-                                with ui.row().classes('items-center justify-between w-full'):
-                                    role_class = 'chip-user' if role == 'user' else ('chip-assistant' if role == 'assistant' else ('chip-system' if role == 'system' else 'chip-tool'))
-                                    chip_label = 'Tool response' if role == 'tool' else ('Assistant tool call' if role == 'assistant' and has_tool_calls else (role or 'unknown'))
-                                    ui.html(f"<span class='msg-chip {role_class}'>{_html.escape(chip_label)}</span>")
-                                    ui.label(size_label).classes('text-xs text-gray-400')
-                            try:
-                                exp.set_value(False)
-                            except Exception:
-                                try:
-                                    exp.value = False
-                                except Exception:
-                                    pass
-                            with exp:
-                                with ui.row().classes('items-center justify-end w-full'):
-                                    if any(p.get('type') == 'text' and p.get('text') for p in parts):
-                                        _copy_text = '\n\n'.join([p.get('text','') for p in parts if p.get('type')=='text'])
-                                        ui.button('Copy', on_click=(lambda t=_copy_text: (lambda: self._copy_to_clipboard(t)))()).props('flat dense')
-                                image_parts = [p for p in parts if p.get('type') == 'image_url']
-                                text_parts = [p for p in parts if p.get('type') == 'text']
-                                ordered = (image_parts + text_parts) if role == 'user' else (text_parts + image_parts)
-                                for p in ordered:
-                                    if p.get('type') == 'text':
-                                        safe = _html.escape(str(p.get('text') or ''), quote=False)
-                                        ui.html(f"<pre class='msg-pre'>{safe}</pre>")
-                                    elif p.get('type') == 'image_url':
-                                        url = str(p.get('url') or '')
-                                        with ui.row().classes('items-center gap-2'):
-                                            if url:
-                                                ui.image(url).classes('msg-thumb')
-                                            else:
-                                                ui.label('(invalid image url)')
-
-                    def _toggle_raw() -> None:
-                        try:
-                            is_raw = bool(getattr(raw_toggle, 'value', False))
-                        except Exception:
-                            is_raw = False
-                        try:
-                            raw_container.style('display: block;' if is_raw else 'display: none;')
-                        except Exception:
-                            pass
-                        try:
-                            structured_container.style('display: none;' if is_raw else 'display: block;')
-                        except Exception:
-                            pass
-
-                    raw_toggle.on_value_change(lambda _: _toggle_raw())
-                    _toggle_raw()
 
     def _register_selector(self, selector: ModelSelector, *, persistent: bool) -> ModelSelector:
         target = self._persistent_selectors if persistent else self._ephemeral_selectors
