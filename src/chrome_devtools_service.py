@@ -304,15 +304,6 @@ class ChromeDevToolsService:
         status = self._extract_status(result, ok)
         return {"ok": ok, "duration_ms": duration_ms, "status": status}
 
-    async def performance_trace_start_mcp(self) -> bool:
-        result = await self._call_tool("performance_start_trace")
-        return self._extract_bool(result)
-
-    async def performance_trace_stop_mcp(self) -> Optional[Dict[str, Any]]:
-        result = await self._call_tool("performance_stop_trace")
-        if isinstance(result, dict):
-            return result
-        return None
 
     @staticmethod
     def _format_function(script: str) -> str:

@@ -168,8 +168,8 @@ async def test_screenshot_downscale_used_by_llm_contexts() -> Tuple[bool, str]:
     if scale >= 1 or scale <= 0:
         return False, "test requires config.screenshot_scale to be between 0 and 1"
 
-    if len(encode_calls) != 2:
-        return False, f"expected 2 image encodes, got {len(encode_calls)}"
+    if len(encode_calls) != 1:
+        return False, f"expected 1 image encode (vision only), got {len(encode_calls)}"
 
     if any(dim != (expected_width, expected_height) for dim in encode_calls):
         return False, f"scaled dims mismatch: expected {(expected_width, expected_height)}, got {encode_calls}"
@@ -177,7 +177,15 @@ async def test_screenshot_downscale_used_by_llm_contexts() -> Tuple[bool, str]:
     if expected_width >= orig_width or expected_height >= orig_height:
         return False, "computed target size is not smaller than original"
 
-    return True, "downscaled screenshots are used by both vision and code contexts"
+    latest_call = code_service.calls[-1] if code_service.calls else []
+    for msg in latest_call:
+        content = msg.get("content")
+        if isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "image_url":
+                    return False, "code prompt should not include screenshots"
+
+    return True, "downscaled screenshots used by vision only; code prompt omitted images"
 
 
 async def main() -> int:

@@ -17,8 +17,6 @@ class BrowserToolProvider:
             self.get_press_key_tool(),
             self.get_evaluate_script_tool(),
             self.get_wait_for_tool(),
-            self.get_performance_start_trace_tool(),
-            self.get_performance_stop_trace_tool(),
         ]
 
     @staticmethod
@@ -171,24 +169,3 @@ class BrowserToolProvider:
             },
         }
 
-    @staticmethod
-    def get_performance_start_trace_tool() -> Dict[str, Any]:
-        return {
-            "type": "function",
-            "function": {
-                "name": "performance_start_trace",
-                "description": "Begin recording a performance trace.",
-                "parameters": {"type": "object", "properties": {}, "required": []},
-            },
-        }
-
-    @staticmethod
-    def get_performance_stop_trace_tool() -> Dict[str, Any]:
-        return {
-            "type": "function",
-            "function": {
-                "name": "performance_stop_trace",
-                "description": "Stop the trace and retrieve metrics.",
-                "parameters": {"type": "object", "properties": {}, "required": []},
-            },
-        }

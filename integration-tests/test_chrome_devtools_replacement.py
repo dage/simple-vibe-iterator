@@ -38,8 +38,6 @@ async def test_devtools_methods_without_server() -> None:
         ],
         "press_key": [{"ok": True}],
         "wait_for": [{"ok": True}],
-        "performance_start_trace": [{"ok": True}],
-        "performance_stop_trace": [{"fps": 60}],
     }
 
     async def fake_eval(self, script: str, *, is_function: bool = False):

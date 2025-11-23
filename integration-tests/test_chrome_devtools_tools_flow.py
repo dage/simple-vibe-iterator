@@ -142,13 +142,6 @@ async def test_full_tools_flow() -> Tuple[bool, str]:
                 if not (wait_title.get("ok") and wait_late.get("ok")):
                     return False, f"wait_for did not succeed: {wait_title}, {wait_late}"
 
-                perf_start = await or_client._execute_browser_tool("performance_start_trace", {})
-                if perf_start.get("ok") is not True:
-                    return False, f"performance_start_trace failed: {perf_start}"
-                perf_stop = await or_client._execute_browser_tool("performance_stop_trace", {})
-                if not isinstance(perf_stop.get("result"), dict) or "fps" not in perf_stop["result"]:
-                    return False, f"performance_stop_trace missing fps: {perf_stop}"
-
                 analysis = await or_client._execute_browser_tool("analyze_screen", {"query": "describe initial"})
                 if not analysis.get("analysis"):
                     return False, f"analyze_screen missing analysis: {analysis}"

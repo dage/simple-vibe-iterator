@@ -448,10 +448,6 @@ async def _execute_browser_tool(name: str, payload: Dict[str, Any]) -> Dict[str,
                 ok = bool(wait_result)
                 status = "ok" if ok else "timed_out"
             return {"ok": ok, "duration_ms": duration_ms, "status": status}
-        if name == "performance_start_trace":
-            return {"ok": await service.performance_trace_start_mcp()}
-        if name == "performance_stop_trace":
-            return {"result": await service.performance_trace_stop_mcp()}
         return {"error": f"unsupported_tool: {name}"}
     except Exception as exc:  # pragma: no cover - defensive logging
         return {"error": f"chrome_devtools_error: {exc}"}

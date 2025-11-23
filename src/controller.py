@@ -24,12 +24,11 @@ from .interfaces import (
 )
 from . import op_status
 from . import task_registry
-from .prompt_builder import PromptPayload, build_code_payload, build_vision_prompt
+from .prompt_builder import build_code_payload, build_vision_prompt
 from .model_capabilities import get_image_limit, get_input_screenshot_interval
 from . import feedback_presets
 from . import or_client as orc
 from .services import encode_file_to_data_url
-from .image_downscale import load_scaled_image_bytes
 
 
 @dataclass
@@ -40,7 +39,6 @@ class TransitionContext:
     input_limit_note: str = ""
     feedback_preset_id: str = ""
     input_screenshot_labels: List[str] = field(default_factory=list)
-    code_model_image_support: Dict[str, bool] = field(default_factory=dict)
 
 
 @dataclass
@@ -231,7 +229,6 @@ async def _capture_input_context(
     preset_id = (getattr(settings, "feedback_preset_id", "") or "").strip()
     preset = feedback_presets.get_feedback_preset(preset_id) if preset_id else None
     model_image_support = await _detect_code_model_image_support(normalized_models) if normalized_models else {}
-    context.code_model_image_support = dict(model_image_support)
     image_enabled_models = [slug for slug, supported in model_image_support.items() if supported]
 
     if preset:
@@ -358,9 +355,8 @@ async def δ(
                 message_history=message_history,
                 template_vars_summary=template_vars_summary,
             )
-            prompt_payload = PromptPayload(_attach_input_screenshots(payload.messages, context, model))
             html_output, reasoning, meta = await ai_service.generate_html(
-                prompt_payload,
+                payload,
                 model,
                 worker=model,
                 template_context=template_context,
@@ -608,46 +604,6 @@ def _format_auto_feedback(context: TransitionContext) -> str:
     if context.feedback_preset_id:
         return f"Preset {context.feedback_preset_id} steps → " + ", ".join(parts)
     return "Auto feedback → " + ", ".join(parts)
-
-
-def _attach_input_screenshots(
-    messages: List[Dict[str, Any]],
-    context: TransitionContext,
-    model: str,
-) -> List[Dict[str, Any]]:
-    """Append input screenshots as image parts to the final user message when supported."""
-    supports_images = bool(context.code_model_image_support.get(model))
-    if not supports_images or not context.input_screenshot_paths or not messages:
-        return messages
-
-    updated: List[Dict[str, Any]] = list(messages)
-    last = dict(updated[-1])
-    content = last.get("content")
-
-    if isinstance(content, list):
-        parts = list(content)
-    elif content is None:
-        parts = []
-    else:
-        parts = [{"type": "text", "text": str(content)}]
-
-    for path in context.input_screenshot_paths:
-        if not (path or "").strip():
-            continue
-        scaled_bytes = load_scaled_image_bytes(path)
-        data_source = scaled_bytes if scaled_bytes is not None else path
-        try:
-            data_url = orc.encode_image_to_data_url(data_source)
-        except Exception:
-            continue
-        parts.append({"type": "image_url", "image_url": {"url": data_url}})
-
-    if not parts:
-        return messages
-
-    last["content"] = parts
-    updated[-1] = last
-    return updated
 
 
 async def _detect_code_model_image_support(models: Sequence[str]) -> Dict[str, bool]:
