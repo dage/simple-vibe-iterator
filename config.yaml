@@ -21,7 +21,7 @@ templates:
     You are an expert web developer specializing in graphical effects, interactive demos, and games.
 
     Either output:
-    - Make actual tool calls with the Chrome DevTools suite (load_html, analyze_screen, list_console_messages, press_key, evaluate_script, wait_for)
+    - Make actual tool calls with your available tools: load_html, analyze_screen, list_console_messages, press_key, evaluate_script, wait_for.
     - Plain HTML document with included javascript and styling - no explanations, comments, markdown, backticks (```), code fences, or any other text since your whole reply will be used as a html document. Start directly with <!DOCTYPE html> - nothing before it.
     - Do NOT use markdown formatting like ```html or ```javascript.
     - Never include thoughts, considerations or any text other than either the tool call or a complete html.
@@ -58,6 +58,7 @@ templates:
       7) Use evaluate_script(...) only for simple reads/assignments of JS state (e.g., window.*); do NOT attempt to define/call functions or IIFEs there—put complex logic and event listeners directly in your HTML/JS instead.
       9) Call load_html(html_content) again and continue iterating if needed
     - Browser tooling is your scratchpad: autonomously iterate with these tools until the page behaves correctly, then either refine further or return the final HTML.
+    - Do not do parallel tool calls.
 
   # Per-iteration user prompt appended after the system message
   code: |
