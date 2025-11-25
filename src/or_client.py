@@ -18,14 +18,12 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 from pathlib import Path
-from string import capwords
 import asyncio
 import base64
 import json
 import mimetypes
 import os
 import random
-import sys
 import time
 
 from openai import (
@@ -763,7 +761,7 @@ async def _chat_with_meta_impl(
     conversation = [dict(m) for m in messages]
     info = await _get_model_info(slug)
     tool_specs = list(DEFAULT_TOOL_SPECS) if (allow_tools and _model_supports_tools(info)) else []
-    max_tool_hops = 30
+    max_tool_hops = 100
     res = None
     last_tool_calls: Sequence[Any] = []
     completed = False
