@@ -79,6 +79,7 @@
 - Whenever the user provides "research reports" or big blobs of texts that seems to be AI generated, remember that you are a better coding agent than the llm that created the research report so always be critical and you be the authority in terms of what parts of the research report you should use. They are mainly provided to get up-to-date knowledge from after your knowledge cutoff date and to get benefits from developer experiences that have worked on the exact issue and have shared their experiences, so it should be valuable for you, just don't automatically accept the coding sugestions since you are a better coder.
 
 ## Commit & Pull Request Guidelines
+- **NO AUTOMATIC COMMITS.** The human developer is the code reviewer and uses an IDE. You must **STOP** after verification and **propose** a short, one-line commit message. Do not execute `git commit` or suggest git CLI commands.
 - Format: type: imperative summary ≤50 chars (no scope in parentheses).
 - Commit message body is PLAIN TEXT (not Markdown). Start at line 3 (line 2 blank) and write each bullet as a literal line beginning with `- ` at column 1. Example: `- add X`
 - Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert.
